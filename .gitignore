@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+
+# Env/local
+.env
+.env.*
+
+
+# Go build artifacts
+simiclaw
+*.exe
+*.test
+
+# Coverage
+coverage.out
+*.cover
+*.coverprofile
