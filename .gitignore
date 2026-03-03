@@ -16,6 +16,8 @@
 .env
 .env.*
 
+# Runtime workspace
+workspace/
 
 # Go build artifacts
 simiclaw

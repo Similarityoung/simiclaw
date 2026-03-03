@@ -16,6 +16,7 @@ type MessageBus struct {
 	closed  atomic.Bool
 }
 
+// NewMessageBus creates a new MessageBus with the specified capacity for inbound events.
 func NewMessageBus(inboundCapacity int) *MessageBus {
 	if inboundCapacity <= 0 {
 		inboundCapacity = 1024
