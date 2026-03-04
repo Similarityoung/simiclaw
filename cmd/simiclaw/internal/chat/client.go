@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -93,6 +94,9 @@ func (c *HTTPClient) ingest(ctx context.Context, req model.IngestRequest) (model
 func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
 	deadline := time.Now().Add(c.pollTimeout)
 	for {
+		if !time.Now().Before(deadline) {
+			return model.EventRecord{}, fmt.Errorf("poll timeout after %s", c.pollTimeout)
+		}
 		rec, err := c.getEvent(ctx, eventID)
 		if err != nil {
 			return model.EventRecord{}, err
@@ -102,9 +106,6 @@ func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.Event
 		}
 		if rec.Status == model.EventStatusCommitted && isTerminalDeliveryStatus(rec.DeliveryStatus) {
 			return rec, nil
-		}
-		if time.Now().After(deadline) {
-			return model.EventRecord{}, fmt.Errorf("poll timeout after %s", c.pollTimeout)
 		}
 
 		select {
@@ -117,7 +118,7 @@ func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.Event
 
 func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
 	var rec model.EventRecord
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/events/"+eventID, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/events/"+url.PathEscape(eventID), nil)
 	if err != nil {
 		return rec, err
 	}

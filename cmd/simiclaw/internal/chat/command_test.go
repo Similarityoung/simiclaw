@@ -3,6 +3,7 @@ package chat
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -70,6 +71,54 @@ func TestRunREPLSendAndQuit(t *testing.T) {
 	}
 	if got := out.String(); !bytes.Contains([]byte(got), []byte("bot> 已收到: hello")) {
 		t.Fatalf("unexpected output: %q", got)
+	}
+}
+
+func TestRunREPLCancelWhileWaitingInput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reader, writer := io.Pipe()
+	defer writer.Close()
+
+	out := &bytes.Buffer{}
+	client := &fakeClient{}
+	done := make(chan error, 1)
+	go func() {
+		done <- runREPL(ctx, reader, out, client, "demo", time.Now)
+	}()
+
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for {
+		if bytes.Contains(out.Bytes(), []byte("you> ")) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("prompt not printed, output=%q", out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runREPL: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("runREPL did not exit after context cancellation")
+	}
+
+	if len(client.requests) != 0 {
+		t.Fatalf("unexpected request count: %d", len(client.requests))
+	}
+}
+
+func TestFormatErrorWithoutCode(t *testing.T) {
+	err := formatError(&APIError{StatusCode: 500, Message: "gateway unavailable"})
+	if err != "gateway unavailable" {
+		t.Fatalf("unexpected formatted error: %q", err)
 	}
 }
 

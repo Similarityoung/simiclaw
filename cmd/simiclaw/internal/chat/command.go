@@ -36,6 +36,12 @@ type ChatClient interface {
 	SendAndWait(ctx context.Context, req model.IngestRequest) (model.EventRecord, error)
 }
 
+type replInput struct {
+	text string
+	err  error
+	eof  bool
+}
+
 func Run(args []string) error {
 	cfg, err := parseConfig(args)
 	if err != nil {
@@ -78,26 +84,37 @@ func parseConfig(args []string) (Config, error) {
 func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, now func() time.Time) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
+	inputCh := startScanner(ctx, scanner)
 	seq := now().UnixMilli()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
 		if _, err := fmt.Fprint(out, "you> "); err != nil {
 			return err
 		}
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil && ctx.Err() == nil {
-				return err
+
+		var (
+			in replInput
+			ok bool
+		)
+		select {
+		case <-ctx.Done():
+			return nil
+		case in, ok = <-inputCh:
+			if !ok {
+				return nil
+			}
+		}
+		if in.err != nil {
+			if ctx.Err() == nil {
+				return in.err
 			}
 			return nil
 		}
+		if in.eof {
+			return nil
+		}
 
-		text := strings.TrimSpace(scanner.Text())
+		text := strings.TrimSpace(in.text)
 		if text == "" {
 			continue
 		}
@@ -143,10 +160,39 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 	}
 }
 
+func startScanner(ctx context.Context, scanner *bufio.Scanner) <-chan replInput {
+	out := make(chan replInput, 1)
+	go func() {
+		defer close(out)
+		for scanner.Scan() {
+			line := scanner.Text()
+			select {
+			case out <- replInput{text: line}:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			select {
+			case out <- replInput{err: err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		select {
+		case out <- replInput{eof: true}:
+		case <-ctx.Done():
+		}
+	}()
+	return out
+}
+
 func formatError(err error) string {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return fmt.Sprintf("%s: %s", apiErr.Code, apiErr.Message)
+		return apiErr.Error()
 	}
 	return err.Error()
 }
