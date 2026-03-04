@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -92,15 +94,21 @@ func sanitizeSessionFile(path string) (sessionRecoveryState, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	reader := bufio.NewReaderSize(f, 64*1024)
 
 	rawLines := make([][]byte, 0, 64)
 	lines := make([]sessionLine, 0, 64)
 	parseFailed := false
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return sessionRecoveryState{}, err
+		}
+		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 		var parsed sessionLine
@@ -112,9 +120,9 @@ func sanitizeSessionFile(path string) (sessionRecoveryState, error) {
 		copy(raw, line)
 		rawLines = append(rawLines, raw)
 		lines = append(lines, parsed)
-	}
-	if err := scanner.Err(); err != nil {
-		return sessionRecoveryState{}, err
+		if errors.Is(err, io.EOF) {
+			break
+		}
 	}
 	if len(lines) == 0 {
 		return sessionRecoveryState{}, nil
