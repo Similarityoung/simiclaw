@@ -72,6 +72,10 @@ func TestInitAndJSONOutput(t *testing.T) {
 	if got["key"] != "value" {
 		t.Fatalf("key=%v", got["key"])
 	}
+	caller, ok := got["caller"].(string)
+	if !ok || !strings.Contains(caller, "logger_test.go") {
+		t.Fatalf("caller=%v", got["caller"])
+	}
 	if _, ok := got["ts"]; !ok {
 		t.Fatal("missing ts field")
 	}

@@ -139,7 +139,7 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), sink, parsed)
-	return zap.New(core, zap.AddCaller()), nil
+	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
 }
 
 func (l *Logger) unwrap() *zap.Logger {
