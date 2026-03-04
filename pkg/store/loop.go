@@ -151,7 +151,7 @@ func (s *StoreLoop) commit(req CommitRequest) (string, error) {
 	}
 
 	s.recordOrder("update_sessions")
-	if err := s.sessions.UpdateIndex(req.SessionKey, req.SessionID, req.Now); err != nil {
+	if err := s.sessions.UpdateProgress(req.SessionKey, req.SessionID, req.RunTrace.RunID, commitID, req.Now); err != nil {
 		logger.Error("storeloop.commit_failed",
 			logging.String("status", "failed"),
 			logging.String("error_code", model.ErrorCodeInternal),

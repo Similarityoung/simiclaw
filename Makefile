@@ -48,7 +48,14 @@ test-integration:
 test-e2e-smoke:
 	@stage=$$(cat VERSION_STAGE); \
 	echo "running e2e smoke for $$stage"; \
-	go test ./tests/e2e/... -run Smoke
+	case "$$stage" in \
+		M1) regex='SmokeM1' ;; \
+		M2) regex='SmokeM1|SmokeM2' ;; \
+		M3) regex='SmokeM1|SmokeM2|SmokeM3' ;; \
+		M4) regex='SmokeM1|SmokeM2|SmokeM3|SmokeM4' ;; \
+		*) echo "unknown VERSION_STAGE=$$stage"; exit 1 ;; \
+	esac; \
+	go test ./tests/e2e/... -run "$$regex"
 
 # 运行所有端到端 (E2E) 测试，禁止缓存
 test-e2e:
@@ -62,9 +69,9 @@ test-fault-injection:
 accept-m1: test-integration test-e2e-smoke
 	@echo "accept-m1 passed"
 
-# 运行 M2 阶段的自动化验收测试（待实现）
-accept-m2:
-	@echo "stage not ready: accept-m2 (M2 pending)"
+# 运行 M2 阶段的自动化验收测试
+accept-m2: test-integration test-e2e-smoke
+	@echo "accept-m2 passed"
 
 # 运行 M3 阶段的自动化验收测试（待实现）
 accept-m3:
