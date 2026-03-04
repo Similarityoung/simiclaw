@@ -96,6 +96,9 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("create pipe: %v", err)
 	}
 	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+	}()
 
 	done := make(chan string, 1)
 	go func() {
@@ -105,10 +108,10 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	fn()
 	_ = w.Close()
-	os.Stdout = old
+	out := <-done
 	_ = r.Close()
 
-	return <-done
+	return out
 }
 
 func firstNonEmptyLine(out string) string {
