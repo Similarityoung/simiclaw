@@ -73,9 +73,9 @@ accept-m1: test-integration test-e2e-smoke
 accept-m2: test-integration test-e2e-smoke
 	@echo "accept-m2 passed"
 
-# 运行 M3 阶段的自动化验收测试（待实现）
-accept-m3:
-	@echo "stage not ready: accept-m3 (M3 pending)"
+# 运行 M3 阶段的自动化验收测试
+accept-m3: test-integration test-e2e-smoke
+	@echo "accept-m3 passed"
 
 # 运行 M4 阶段的自动化验收测试（待实现）
 accept-m4:
