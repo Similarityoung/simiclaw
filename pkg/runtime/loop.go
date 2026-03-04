@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/bus"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
@@ -64,7 +65,16 @@ func (l *EventLoop) StopAfterDrain() {
 }
 
 func (l *EventLoop) handle(evt model.InternalEvent) {
-	now := time.Now().UTC()
+	start := time.Now()
+	now := start.UTC()
+	logger := logging.L("eventloop").With(
+		logging.String("event_id", evt.EventID),
+		logging.String("tenant_id", evt.TenantID),
+		logging.String("conversation_id", evt.Conversation.ConversationID),
+		logging.String("session_key", evt.SessionKey),
+		logging.String("session_id", evt.ActiveSessionID),
+	)
+
 	_ = l.repo.Update(evt.EventID, func(rec *model.EventRecord) {
 		rec.Status = model.EventStatusRunning
 		rec.DeliveryStatus = model.DeliveryStatusNotApplicable
@@ -77,6 +87,12 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 			rec.Status = model.EventStatusFailed
 			rec.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
 		})
+		logger.Error("eventloop.run_failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Error(err),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return
 	}
 
@@ -99,6 +115,14 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 			rec.Status = model.EventStatusFailed
 			rec.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: fmt.Sprintf("commit failed: %v", err)}
 		})
+		logger.Error("eventloop.commit_failed",
+			logging.String("status", "failed"),
+			logging.String("run_id", output.RunID),
+			logging.String("run_mode", string(output.RunMode)),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Error(err),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return
 	}
 
@@ -111,12 +135,27 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 		rec.DeliveryStatus = model.DeliveryStatusPending
 		rec.DeliveryDetail = model.DeliveryDetailDirect
 	})
+	logger.Info("eventloop.committed",
+		logging.String("status", string(model.EventStatusCommitted)),
+		logging.String("run_id", output.RunID),
+		logging.String("run_mode", string(output.RunMode)),
+		logging.String("commit_id", commitID),
+		logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+	)
 
 	if output.SuppressOutput {
 		_ = l.repo.Update(evt.EventID, func(rec *model.EventRecord) {
 			rec.DeliveryStatus = model.DeliveryStatusSuppressed
 			rec.DeliveryDetail = model.DeliveryDetailNotApplicable
 		})
+		logger.Info("eventloop.outbound.result",
+			logging.String("status", string(model.EventStatusCommitted)),
+			logging.String("run_id", output.RunID),
+			logging.String("run_mode", string(output.RunMode)),
+			logging.String("commit_id", commitID),
+			logging.String("delivery_status", string(model.DeliveryStatusSuppressed)),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return
 	}
 
@@ -129,4 +168,25 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 			rec.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: res.Err.Error()}
 		}
 	})
+	if res.Err != nil {
+		logger.Warn("eventloop.outbound.result",
+			logging.String("status", string(model.EventStatusCommitted)),
+			logging.String("run_id", output.RunID),
+			logging.String("run_mode", string(output.RunMode)),
+			logging.String("commit_id", commitID),
+			logging.String("delivery_status", string(res.DeliveryStatus)),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Error(res.Err),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
+		return
+	}
+	logger.Info("eventloop.outbound.result",
+		logging.String("status", string(model.EventStatusCommitted)),
+		logging.String("run_id", output.RunID),
+		logging.String("run_mode", string(output.RunMode)),
+		logging.String("commit_id", commitID),
+		logging.String("delivery_status", string(res.DeliveryStatus)),
+		logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+	)
 }

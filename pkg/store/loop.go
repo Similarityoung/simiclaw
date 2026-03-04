@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -88,10 +89,18 @@ func (s *StoreLoop) Commit(ctx context.Context, req CommitRequest) (string, erro
 }
 
 func (s *StoreLoop) commit(req CommitRequest) (string, error) {
+	start := time.Now()
 	if req.Now.IsZero() {
 		req.Now = time.Now().UTC()
 	}
 	commitID := fmt.Sprintf("c_%d", req.Now.UnixNano())
+	logger := logging.L("storeloop").With(
+		logging.String("session_key", req.SessionKey),
+		logging.String("session_id", req.SessionID),
+		logging.String("run_id", req.RunTrace.RunID),
+		logging.String("commit_id", commitID),
+	)
+
 	lastEntryID := ""
 	if len(req.Entries) > 0 {
 		lastEntryID = req.Entries[len(req.Entries)-1].EntryID
@@ -116,19 +125,48 @@ func (s *StoreLoop) commit(req CommitRequest) (string, error) {
 
 	s.recordOrder("append_batch")
 	if err := AppendJSONL(s.sessions.SessionFilePath(req.SessionID), batch...); err != nil {
+		logger.Error("storeloop.commit_failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.String("step", "append_batch"),
+			logging.Error(err),
+			logging.Int("entry_count", len(req.Entries)),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return "", err
 	}
 
 	runPath := filepath.Join(s.workspace, "runtime", "runs", fmt.Sprintf("%s.json", req.RunTrace.RunID))
 	s.recordOrder("write_run")
 	if err := AtomicWriteJSON(runPath, req.RunTrace, 0o644); err != nil {
+		logger.Error("storeloop.commit_failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.String("step", "write_run"),
+			logging.Error(err),
+			logging.Int("entry_count", len(req.Entries)),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return "", err
 	}
 
 	s.recordOrder("update_sessions")
 	if err := s.sessions.UpdateIndex(req.SessionKey, req.SessionID, req.Now); err != nil {
+		logger.Error("storeloop.commit_failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.String("step", "update_sessions"),
+			logging.Error(err),
+			logging.Int("entry_count", len(req.Entries)),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		return "", err
 	}
+	logger.Info("storeloop.commit_succeeded",
+		logging.String("status", "committed"),
+		logging.Int("entry_count", len(req.Entries)),
+		logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+	)
 	return commitID, nil
 }
 

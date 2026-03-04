@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/chat"
@@ -10,10 +9,15 @@ import (
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/initcmd"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 func main() {
-	common.SetupDefaultLogger()
+	if err := common.SetupLogger("info"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer common.SyncLogger()
 
 	if len(os.Args) < 2 {
 		usage()
@@ -38,7 +42,7 @@ func main() {
 	}
 
 	if err != nil {
-		slog.Error(cmd+" failed", "error", err)
+		logging.L("cmd").Error(cmd+" failed", logging.Error(err))
 		os.Exit(1)
 	}
 }

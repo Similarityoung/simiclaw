@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 // Duration wraps time.Duration with human-readable JSON (e.g. "200ms", "5s").
@@ -42,6 +44,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 type Config struct {
 	Workspace             string   `json:"workspace"`
 	ListenAddr            string   `json:"listen_addr"`
+	LogLevel              string   `json:"log_level"`
 	APIKey                string   `json:"api_key"`
 	TenantID              string   `json:"tenant_id"`
 	EventQueueCapacity    int      `json:"event_queue_capacity"`
@@ -56,6 +59,7 @@ type Config struct {
 const (
 	defaultWorkspace             = "."
 	defaultListenAddr            = ":8080"
+	defaultLogLevel              = "info"
 	defaultTenantID              = "local"
 	defaultEventQueueCapacity    = 1024
 	defaultIngestEnqueueTimeout  = 200 * time.Millisecond
@@ -71,6 +75,7 @@ func Default() Config {
 	return Config{
 		Workspace:             defaultWorkspace,
 		ListenAddr:            defaultListenAddr,
+		LogLevel:              defaultLogLevel,
 		TenantID:              defaultTenantID,
 		EventQueueCapacity:    defaultEventQueueCapacity,
 		IngestEnqueueTimeout:  Duration{defaultIngestEnqueueTimeout},
@@ -101,6 +106,12 @@ func Load(path string) (Config, error) {
 	cfg.Workspace = filepath.Clean(cfg.Workspace)
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
+	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = defaultLogLevel
+	}
+	if _, err := logging.ParseLevel(cfg.LogLevel); err != nil {
+		return cfg, err
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = defaultTenantID

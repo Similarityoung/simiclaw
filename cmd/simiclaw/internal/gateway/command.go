@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log/slog"
 	"os/signal"
 	"syscall"
 
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 // Run 解析启动参数并运行网关 HTTP 服务，处理进程退出信号。
@@ -40,6 +41,9 @@ func Run(args []string) error {
 	if cfg.Workspace == "" {
 		cfg.Workspace = "."
 	}
+	if err := common.SetupLogger(cfg.LogLevel); err != nil {
+		return err
+	}
 
 	app, err := api.NewApp(cfg)
 	if err != nil {
@@ -49,7 +53,7 @@ func Run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	slog.Info("simiclaw serving", "addr", cfg.ListenAddr, "workspace", cfg.Workspace)
+	logging.L("cmd").Info("simiclaw serving", logging.String("addr", cfg.ListenAddr), logging.String("workspace", cfg.Workspace))
 	err = app.RunHTTPServer(ctx)
 	if err != nil && (errors.Is(err, context.Canceled) || err.Error() == "http: Server closed") {
 		return nil

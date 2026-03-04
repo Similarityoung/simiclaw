@@ -1,10 +1,13 @@
 package common
 
 import (
-	"log/slog"
-	"os"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
-func SetupDefaultLogger() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+func SetupLogger(level string) error {
+	return logging.Init(level)
+}
+
+func SyncLogger() {
+	logging.Sync()
 }
