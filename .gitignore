@@ -20,7 +20,7 @@
 workspace/
 
 # Go build artifacts
-simiclaw
+/simiclaw
 *.exe
 *.test
 
