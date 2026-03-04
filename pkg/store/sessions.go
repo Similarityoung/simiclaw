@@ -98,11 +98,13 @@ func (s *SessionStore) ResolveSession(sessionKey string, conv model.Conversation
 		}
 		if changed {
 			row.UpdatedAt = now
-			s.index.Sessions[sessionKey] = row
-			s.index.UpdatedAt = now
-			if err := AtomicWriteJSON(s.sessionsPath, s.index, 0o644); err != nil {
+			next := cloneSessionIndex(s.index)
+			next.Sessions[sessionKey] = row
+			next.UpdatedAt = now
+			if err := AtomicWriteJSON(s.sessionsPath, next, 0o644); err != nil {
 				return "", false, err
 			}
+			s.index = next
 		}
 		return row.ActiveSessionID, false, nil
 	}
@@ -120,7 +122,8 @@ func (s *SessionStore) ResolveSession(sessionKey string, conv model.Conversation
 		return "", false, err
 	}
 	// 再更新索引，建立 session_key -> active_session_id 的映射关系。
-	s.index.Sessions[sessionKey] = model.SessionIndexRow{
+	next := cloneSessionIndex(s.index)
+	next.Sessions[sessionKey] = model.SessionIndexRow{
 		ActiveSessionID: sessionID,
 		UpdatedAt:       now,
 		ConversationID:  conv.ConversationID,
@@ -128,10 +131,11 @@ func (s *SessionStore) ResolveSession(sessionKey string, conv model.Conversation
 		ParticipantID:   conv.ParticipantID,
 		DMScope:         dmScope,
 	}
-	s.index.UpdatedAt = now
-	if err := AtomicWriteJSON(s.sessionsPath, s.index, 0o644); err != nil {
+	next.UpdatedAt = now
+	if err := AtomicWriteJSON(s.sessionsPath, next, 0o644); err != nil {
 		return "", false, err
 	}
+	s.index = next
 	return sessionID, true, nil
 }
 
@@ -151,9 +155,14 @@ func (s *SessionStore) UpdateProgress(sessionKey, sessionID, runID, commitID str
 	if commitID != "" {
 		row.LastCommitID = commitID
 	}
-	s.index.Sessions[sessionKey] = row
-	s.index.UpdatedAt = now
-	return AtomicWriteJSON(s.sessionsPath, s.index, 0o644)
+	next := cloneSessionIndex(s.index)
+	next.Sessions[sessionKey] = row
+	next.UpdatedAt = now
+	if err := AtomicWriteJSON(s.sessionsPath, next, 0o644); err != nil {
+		return err
+	}
+	s.index = next
+	return nil
 }
 
 // Get 返回指定 session_key 的索引记录。
@@ -168,12 +177,16 @@ func (s *SessionStore) Get(sessionKey string) (model.SessionIndexRow, bool) {
 func (s *SessionStore) Snapshot() model.SessionIndex {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return cloneSessionIndex(s.index)
+}
+
+func cloneSessionIndex(src model.SessionIndex) model.SessionIndex {
 	out := model.SessionIndex{
-		FormatVersion: s.index.FormatVersion,
-		UpdatedAt:     s.index.UpdatedAt,
-		Sessions:      make(map[string]model.SessionIndexRow, len(s.index.Sessions)),
+		FormatVersion: src.FormatVersion,
+		UpdatedAt:     src.UpdatedAt,
+		Sessions:      make(map[string]model.SessionIndexRow, len(src.Sessions)),
 	}
-	for k, v := range s.index.Sessions {
+	for k, v := range src.Sessions {
 		out.Sessions[k] = v
 	}
 	return out

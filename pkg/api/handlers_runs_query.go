@@ -240,7 +240,7 @@ func redactMap(in map[string]any) map[string]any {
 		case "native", "native_ref":
 			out[k] = "<redacted>"
 		case "args":
-			out["args_summary"] = "<redacted>"
+			out[k] = "<redacted>"
 		default:
 			out[k] = redactValue(v)
 		}

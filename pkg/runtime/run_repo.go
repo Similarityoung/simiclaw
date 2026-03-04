@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -38,6 +39,7 @@ func (r *RunRepo) Get(runID string) (model.RunTrace, bool, error) {
 
 // List 返回 runs 目录下所有可解析的 run trace（按 run_id 升序稳定输出）。
 func (r *RunRepo) List() ([]model.RunTrace, error) {
+	logger := logging.L("runrepo")
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -56,13 +58,26 @@ func (r *RunRepo) List() ([]model.RunTrace, error) {
 
 	out := make([]model.RunTrace, 0, len(names))
 	for _, name := range names {
-		b, err := os.ReadFile(filepath.Join(r.dir, name))
+		path := filepath.Join(r.dir, name)
+		b, err := os.ReadFile(path)
 		if err != nil {
-			return nil, err
+			logger.Warn("runrepo.list.skip_file",
+				logging.String("status", "skipped"),
+				logging.String("reason", "read_failed"),
+				logging.String("run_file", path),
+				logging.Error(err),
+			)
+			continue
 		}
 		var trace model.RunTrace
 		if err := json.Unmarshal(b, &trace); err != nil {
-			return nil, err
+			logger.Warn("runrepo.list.skip_file",
+				logging.String("status", "skipped"),
+				logging.String("reason", "decode_failed"),
+				logging.String("run_file", path),
+				logging.Error(err),
+			)
+			continue
 		}
 		out = append(out, trace)
 	}
