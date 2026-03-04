@@ -2,18 +2,30 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/chat"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/initcmd"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
+	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
+const bootstrapLogLevelEnv = "SIMICLAW_LOG_LEVEL"
+
 func main() {
-	common.SetupDefaultLogger()
+	if err := common.SetupLogger(resolveBootstrapLogLevel()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := common.SyncLogger(); err != nil {
+			fmt.Fprintf(os.Stderr, "logger sync failed: %v\n", err)
+		}
+	}()
 
 	if len(os.Args) < 2 {
 		usage()
@@ -38,11 +50,18 @@ func main() {
 	}
 
 	if err != nil {
-		slog.Error(cmd+" failed", "error", err)
+		logging.L("cmd").Error(cmd+" failed", logging.Error(err))
 		os.Exit(1)
 	}
 }
 
 func usage() {
 	fmt.Println("Usage: simiclaw <init|serve|gateway|chat|version> [flags]")
+}
+
+func resolveBootstrapLogLevel() string {
+	if level := strings.TrimSpace(os.Getenv(bootstrapLogLevelEnv)); level != "" {
+		return level
+	}
+	return config.Default().LogLevel
 }

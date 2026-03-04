@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -42,6 +44,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 type Config struct {
 	Workspace             string   `json:"workspace"`
 	ListenAddr            string   `json:"listen_addr"`
+	LogLevel              string   `json:"log_level"`
 	APIKey                string   `json:"api_key"`
 	TenantID              string   `json:"tenant_id"`
 	EventQueueCapacity    int      `json:"event_queue_capacity"`
@@ -56,6 +59,7 @@ type Config struct {
 const (
 	defaultWorkspace             = "."
 	defaultListenAddr            = ":8080"
+	defaultLogLevel              = "info"
 	defaultTenantID              = "local"
 	defaultEventQueueCapacity    = 1024
 	defaultIngestEnqueueTimeout  = 200 * time.Millisecond
@@ -71,6 +75,7 @@ func Default() Config {
 	return Config{
 		Workspace:             defaultWorkspace,
 		ListenAddr:            defaultListenAddr,
+		LogLevel:              defaultLogLevel,
 		TenantID:              defaultTenantID,
 		EventQueueCapacity:    defaultEventQueueCapacity,
 		IngestEnqueueTimeout:  Duration{defaultIngestEnqueueTimeout},
@@ -102,6 +107,12 @@ func Load(path string) (Config, error) {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
 	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = defaultLogLevel
+	}
+	if err := validateLogLevel(cfg.LogLevel); err != nil {
+		return cfg, err
+	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = defaultTenantID
 	}
@@ -127,4 +138,14 @@ func Load(path string) (Config, error) {
 		cfg.RateLimitSessionBurst = defaultRateLimitSessionBurst
 	}
 	return cfg, nil
+}
+
+func validateLogLevel(raw string) error {
+	level := strings.ToLower(strings.TrimSpace(raw))
+	switch level {
+	case "debug", "info", "warn", "error":
+		return nil
+	default:
+		return fmt.Errorf("invalid log_level %q: must be one of debug|info|warn|error", raw)
+	}
 }
