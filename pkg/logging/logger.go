@@ -1,9 +1,9 @@
 package logging
 
 import (
-	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"go.uber.org/zap"
@@ -109,14 +109,15 @@ func (l *Logger) Error(msg string, fields ...Field) {
 }
 
 // Sync 刷新 logger 缓冲；忽略 stdout/stderr 的常见无效 sync 错误。
-func Sync() {
+func Sync() error {
 	err := zap.L().Sync()
 	if err == nil {
-		return
+		return nil
 	}
 	if isIgnorableSyncError(err) {
-		return
+		return nil
 	}
+	return err
 }
 
 func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
@@ -161,13 +162,98 @@ func toZapFields(fields []Field) []zap.Field {
 }
 
 func isIgnorableSyncError(err error) bool {
-	for e := err; e != nil; e = errors.Unwrap(e) {
-		msg := strings.ToLower(e.Error())
-		if strings.Contains(msg, "invalid argument") ||
-			strings.Contains(msg, "inappropriate ioctl for device") ||
-			strings.Contains(msg, "bad file descriptor") {
-			return true
+	leafErrors := collectLeafErrors(err)
+	if len(leafErrors) == 0 {
+		return false
+	}
+	for _, e := range leafErrors {
+		if !isIgnorableSyncErrorMessage(e) {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func collectLeafErrors(err error) []error {
+	if err == nil {
+		return nil
+	}
+
+	const maxTraverseNodes = 1024
+	visitedPointers := make(map[uintptr]struct{})
+	stack := []error{err}
+	leaves := make([]error, 0, 1)
+	processed := 0
+
+	for len(stack) > 0 {
+		processed++
+		if processed > maxTraverseNodes {
+			// Traversal guard for malformed cyclic error chains.
+			return nil
+		}
+
+		n := len(stack) - 1
+		cur := stack[n]
+		stack = stack[:n]
+
+		if cur == nil {
+			continue
+		}
+		if ptr, ok := errorPointer(cur); ok {
+			if _, seen := visitedPointers[ptr]; seen {
+				continue
+			}
+			visitedPointers[ptr] = struct{}{}
+		}
+
+		children := unwrapErrors(cur)
+		if len(children) == 0 {
+			leaves = append(leaves, cur)
+			continue
+		}
+		for _, child := range children {
+			if child != nil {
+				stack = append(stack, child)
+			}
+		}
+	}
+
+	return leaves
+}
+
+func errorPointer(err error) (uintptr, bool) {
+	v := reflect.ValueOf(err)
+	if !v.IsValid() || v.Kind() != reflect.Pointer || v.IsNil() {
+		return 0, false
+	}
+	return v.Pointer(), true
+}
+
+func unwrapErrors(err error) []error {
+	type unwrapOne interface {
+		Unwrap() error
+	}
+	type unwrapMany interface {
+		Unwrap() []error
+	}
+
+	if uw, ok := err.(unwrapMany); ok {
+		return uw.Unwrap()
+	}
+	if uw, ok := err.(unwrapOne); ok {
+		if child := uw.Unwrap(); child != nil {
+			return []error{child}
+		}
+	}
+	return nil
+}
+
+func isIgnorableSyncErrorMessage(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid argument") ||
+		strings.Contains(msg, "inappropriate ioctl for device") ||
+		strings.Contains(msg, "bad file descriptor")
 }

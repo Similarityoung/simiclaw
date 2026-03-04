@@ -8,6 +8,6 @@ func SetupLogger(level string) error {
 	return logging.Init(level)
 }
 
-func SyncLogger() {
-	logging.Sync()
+func SyncLogger() error {
+	return logging.Sync()
 }

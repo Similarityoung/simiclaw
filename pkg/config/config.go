@@ -3,11 +3,11 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
-	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 // Duration wraps time.Duration with human-readable JSON (e.g. "200ms", "5s").
@@ -110,7 +110,7 @@ func Load(path string) (Config, error) {
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultLogLevel
 	}
-	if _, err := logging.ParseLevel(cfg.LogLevel); err != nil {
+	if err := validateLogLevel(cfg.LogLevel); err != nil {
 		return cfg, err
 	}
 	if cfg.TenantID == "" {
@@ -138,4 +138,14 @@ func Load(path string) (Config, error) {
 		cfg.RateLimitSessionBurst = defaultRateLimitSessionBurst
 	}
 	return cfg, nil
+}
+
+func validateLogLevel(raw string) error {
+	level := strings.ToLower(strings.TrimSpace(raw))
+	switch level {
+	case "debug", "info", "warn", "error":
+		return nil
+	default:
+		return fmt.Errorf("invalid log_level %q: must be one of debug|info|warn|error", raw)
+	}
 }
