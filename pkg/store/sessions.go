@@ -20,6 +20,8 @@ type SessionStore struct {
 	index        model.SessionIndex
 }
 
+const defaultDMScope = "default"
+
 // NewSessionStore 创建会话存储并从 sessions.json 加载内存索引。
 func NewSessionStore(workspace string) (*SessionStore, error) {
 	s := &SessionStore{
@@ -36,32 +38,75 @@ func NewSessionStore(workspace string) (*SessionStore, error) {
 func (s *SessionStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
 	var idx model.SessionIndex
 	b, err := os.ReadFile(s.sessionsPath)
+	if err != nil || len(b) == 0 {
+		recovered, recoverErr := RecoverSessionIndex(s.workspace, model.SessionIndex{}, now)
+		if recoverErr != nil {
+			if err != nil {
+				return err
+			}
+			return recoverErr
+		}
+		s.index = recovered
+		return nil
+	}
+
+	if err := decodeJSON(b, &idx); err != nil {
+		recovered, recoverErr := RecoverSessionIndex(s.workspace, model.SessionIndex{}, now)
+		if recoverErr != nil {
+			return err
+		}
+		s.index = recovered
+		return nil
+	}
+	recovered, err := RecoverSessionIndex(s.workspace, idx, now)
 	if err != nil {
 		return err
 	}
-	if len(b) == 0 {
-		idx = model.SessionIndex{FormatVersion: "1", UpdatedAt: time.Now().UTC(), Sessions: map[string]model.SessionIndexRow{}}
-	} else {
-		if err := decodeJSON(b, &idx); err != nil {
-			return err
-		}
-		if idx.Sessions == nil {
-			idx.Sessions = map[string]model.SessionIndexRow{}
-		}
-	}
-	s.index = idx
+	s.index = recovered
 	return nil
 }
 
 // ResolveSession 返回已有 session，或为首次出现的 session_key 创建新 session。
-func (s *SessionStore) ResolveSession(sessionKey string, now time.Time) (string, bool, error) {
+func (s *SessionStore) ResolveSession(sessionKey string, conv model.Conversation, dmScope string, now time.Time) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if dmScope == "" {
+		dmScope = defaultDMScope
+	}
 	if row, ok := s.index.Sessions[sessionKey]; ok {
+		changed := false
+		if row.ConversationID == "" && conv.ConversationID != "" {
+			row.ConversationID = conv.ConversationID
+			changed = true
+		}
+		if row.ChannelType == "" && conv.ChannelType != "" {
+			row.ChannelType = conv.ChannelType
+			changed = true
+		}
+		if row.ParticipantID == "" && conv.ParticipantID != "" {
+			row.ParticipantID = conv.ParticipantID
+			changed = true
+		}
+		if row.DMScope == "" {
+			row.DMScope = dmScope
+			changed = true
+		}
+		if changed {
+			row.UpdatedAt = now
+			s.index.Sessions[sessionKey] = row
+			s.index.UpdatedAt = now
+			if err := AtomicWriteJSON(s.sessionsPath, s.index, 0o644); err != nil {
+				return "", false, err
+			}
+		}
 		return row.ActiveSessionID, false, nil
 	}
+
 	sessionID := s.newSessionID(now)
 	header := model.SessionHeader{
 		Type:          "header",
@@ -75,7 +120,14 @@ func (s *SessionStore) ResolveSession(sessionKey string, now time.Time) (string,
 		return "", false, err
 	}
 	// 再更新索引，建立 session_key -> active_session_id 的映射关系。
-	s.index.Sessions[sessionKey] = model.SessionIndexRow{ActiveSessionID: sessionID, UpdatedAt: now}
+	s.index.Sessions[sessionKey] = model.SessionIndexRow{
+		ActiveSessionID: sessionID,
+		UpdatedAt:       now,
+		ConversationID:  conv.ConversationID,
+		ChannelType:     conv.ChannelType,
+		ParticipantID:   conv.ParticipantID,
+		DMScope:         dmScope,
+	}
 	s.index.UpdatedAt = now
 	if err := AtomicWriteJSON(s.sessionsPath, s.index, 0o644); err != nil {
 		return "", false, err
@@ -83,13 +135,48 @@ func (s *SessionStore) ResolveSession(sessionKey string, now time.Time) (string,
 	return sessionID, true, nil
 }
 
-// UpdateIndex 刷新 session_key 的活跃会话指针并持久化索引。
-func (s *SessionStore) UpdateIndex(sessionKey, sessionID string, now time.Time) error {
+// UpdateProgress 刷新 session_key 对应会话的最新提交元信息并持久化索引。
+func (s *SessionStore) UpdateProgress(sessionKey, sessionID, runID, commitID string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.index.Sessions[sessionKey] = model.SessionIndexRow{ActiveSessionID: sessionID, UpdatedAt: now}
+	row := s.index.Sessions[sessionKey]
+	row.ActiveSessionID = sessionID
+	row.UpdatedAt = now
+	if row.DMScope == "" {
+		row.DMScope = defaultDMScope
+	}
+	if runID != "" {
+		row.LastRunID = runID
+	}
+	if commitID != "" {
+		row.LastCommitID = commitID
+	}
+	s.index.Sessions[sessionKey] = row
 	s.index.UpdatedAt = now
 	return AtomicWriteJSON(s.sessionsPath, s.index, 0o644)
+}
+
+// Get 返回指定 session_key 的索引记录。
+func (s *SessionStore) Get(sessionKey string) (model.SessionIndexRow, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.index.Sessions[sessionKey]
+	return row, ok
+}
+
+// Snapshot 返回会话索引快照，用于查询接口筛选。
+func (s *SessionStore) Snapshot() model.SessionIndex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := model.SessionIndex{
+		FormatVersion: s.index.FormatVersion,
+		UpdatedAt:     s.index.UpdatedAt,
+		Sessions:      make(map[string]model.SessionIndexRow, len(s.index.Sessions)),
+	}
+	for k, v := range s.index.Sessions {
+		out.Sessions[k] = v
+	}
+	return out
 }
 
 // SessionFilePath 返回指定 session_id 对应的 JSONL 文件路径。

@@ -16,14 +16,16 @@ import (
 )
 
 type App struct {
-	Cfg       config.Config
-	Bus       *bus.MessageBus
-	Gateway   *gateway.Service
-	Events    *runtime.EventRepo
-	Sessions  *store.SessionStore
-	StoreLoop *store.StoreLoop
-	EventLoop *runtime.EventLoop
-	Handler   http.Handler
+	Cfg         config.Config
+	Bus         *bus.MessageBus
+	Gateway     *gateway.Service
+	Events      *runtime.EventRepo
+	Runs        *runtime.RunRepo
+	Sessions    *store.SessionStore
+	Idempotency *idempotency.Store
+	StoreLoop   *store.StoreLoop
+	EventLoop   *runtime.EventLoop
+	Handler     http.Handler
 }
 
 // NewApp 初始化工作区和核心组件，并组装可运行的应用实例。
@@ -40,6 +42,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	runRepo := runtime.NewRunRepo(cfg.Workspace)
 	sessions, err := store.NewSessionStore(cfg.Workspace)
 	if err != nil {
 		return nil, err
@@ -53,13 +56,15 @@ func NewApp(cfg config.Config) (*App, error) {
 	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
 
 	app := &App{
-		Cfg:       cfg,
-		Bus:       eventBus,
-		Gateway:   g,
-		Events:    eventRepo,
-		Sessions:  sessions,
-		StoreLoop: storeLoop,
-		EventLoop: eventLoop,
+		Cfg:         cfg,
+		Bus:         eventBus,
+		Gateway:     g,
+		Events:      eventRepo,
+		Runs:        runRepo,
+		Sessions:    sessions,
+		Idempotency: idStore,
+		StoreLoop:   storeLoop,
+		EventLoop:   eventLoop,
 	}
 	app.Handler = app.routes()
 	return app, nil

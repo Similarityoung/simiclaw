@@ -103,7 +103,7 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 	}
 
 	eventID := fmt.Sprintf("evt_%d", now.UnixNano())
-	sessionID, _, err := s.sessions.ResolveSession(sessionKey, now)
+	sessionID, _, err := s.sessions.ResolveSession(sessionKey, req.Conversation, "default", now)
 	if err != nil {
 		logger.Error("gateway.ingest.failed",
 			logging.String("status", "failed"),

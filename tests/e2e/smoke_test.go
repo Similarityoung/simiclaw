@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func TestSmokeM1_IngestToSend(t *testing.T) {

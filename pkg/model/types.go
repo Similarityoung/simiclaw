@@ -133,6 +133,12 @@ type SessionIndex struct {
 type SessionIndexRow struct {
 	ActiveSessionID string    `json:"active_session_id"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	ConversationID  string    `json:"conversation_id,omitempty"`
+	ChannelType     string    `json:"channel_type,omitempty"`
+	ParticipantID   string    `json:"participant_id,omitempty"`
+	DMScope         string    `json:"dm_scope,omitempty"`
+	LastCommitID    string    `json:"last_commit_id,omitempty"`
+	LastRunID       string    `json:"last_run_id,omitempty"`
 }
 
 type SessionHeader struct {
