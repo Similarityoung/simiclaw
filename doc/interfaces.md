@@ -418,6 +418,7 @@ Response：
   "run_id": "run_01H...",
   "run_mode": "NORMAL|NO_REPLY",
   "commit_id": "c_101",
+  "assistant_reply": "已收到: hello",
   "received_at": "2026-03-03T12:00:00.120Z",
   "error": null,
   "updated_at": "2026-03-03T12:00:03Z"
@@ -455,6 +456,7 @@ Response：
 - `status=committed` 仅表示 StoreLoop commit 成功（jsonl + runtrace + sessions.json）
 - `delivery_status=sent` 仅在 adapter 返回成功（或 spool 标记 sent）后成立
 - `run_mode=NO_REPLY` 时，`delivery_status=suppressed`
+- `assistant_reply` 为本次回合生成的最终文本回复；`run_mode=NO_REPLY` 或无文本回复时可省略
 - `delivery_status=not_applicable` 用于“尚未进入投递阶段”的事件（通常 `status=accepted|running`），或“该事件本身不产生出站动作”的场景；一旦进入投递阶段应转换为 `pending|sent|suppressed|failed`
 - 字段组合约束：`delivery_status=not_applicable` 时，`delivery_detail=not_applicable`，且 `outbox_id` 必须为 `null` 或省略
 - 字段组合约束：`delivery_detail=direct` 时，`outbox_id` 必须为 `null` 或省略

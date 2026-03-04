@@ -35,6 +35,9 @@ func TestSmokeM1_IngestToSend(t *testing.T) {
 	if rec.Status != model.EventStatusCommitted || rec.DeliveryStatus != model.DeliveryStatusSent {
 		t.Fatalf("unexpected event state: %+v", rec)
 	}
+	if rec.AssistantReply != "已收到: smoke" {
+		t.Fatalf("unexpected assistant_reply: %+v", rec)
+	}
 }
 
 func TestSmokeM1_NoReply(t *testing.T) {
@@ -58,6 +61,9 @@ func TestSmokeM1_NoReply(t *testing.T) {
 	rec := pollEvent(t, app, resp.EventID)
 	if rec.DeliveryStatus != model.DeliveryStatusSuppressed {
 		t.Fatalf("expected suppressed, got %+v", rec)
+	}
+	if rec.AssistantReply != "" {
+		t.Fatalf("expected empty assistant_reply for no-reply event, got %+v", rec)
 	}
 }
 

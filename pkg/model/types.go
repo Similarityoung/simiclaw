@@ -117,6 +117,7 @@ type EventRecord struct {
 	RunID          string         `json:"run_id,omitempty"`
 	RunMode        RunMode        `json:"run_mode,omitempty"`
 	CommitID       string         `json:"commit_id,omitempty"`
+	AssistantReply string         `json:"assistant_reply,omitempty"`
 	ReceivedAt     time.Time      `json:"received_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	PayloadHash    string         `json:"payload_hash"`

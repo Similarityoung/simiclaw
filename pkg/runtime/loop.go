@@ -107,6 +107,7 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 		rec.RunID = output.RunID
 		rec.RunMode = output.RunMode
 		rec.CommitID = commitID
+		rec.AssistantReply = output.OutboundBody
 		rec.DeliveryStatus = model.DeliveryStatusPending
 		rec.DeliveryDetail = model.DeliveryDetailDirect
 	})
