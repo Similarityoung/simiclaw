@@ -1,4 +1,4 @@
-package routing
+package sessionkey
 
 import (
 	"crypto/sha256"
@@ -9,8 +9,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-// ComputeKey generates a session key based on tenant ID, conversation details, and DM scope.
-func ComputeKey(tenantID string, conv model.Conversation, dmScope string) (string, error) {
+func ComputeSessionKey(tenantID string, conv model.Conversation, dmScope string) (string, error) {
 	if tenantID == "" {
 		return "", errors.New("tenant_id is required")
 	}

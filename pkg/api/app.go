@@ -3,16 +3,12 @@ package api
 import (
 	"context"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
-	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
 	"github.com/similarityyoung/simiclaw/pkg/runtime"
@@ -30,6 +26,7 @@ type App struct {
 	Handler   http.Handler
 }
 
+// NewApp 初始化工作区和核心组件，并组装可运行的应用实例。
 func NewApp(cfg config.Config) (*App, error) {
 	if err := store.InitWorkspace(cfg.Workspace); err != nil {
 		return nil, err
@@ -68,59 +65,20 @@ func NewApp(cfg config.Config) (*App, error) {
 	return app, nil
 }
 
+// Start 启动存储循环和事件循环，开始处理系统内消息。
 func (a *App) Start() {
 	a.StoreLoop.Start()
 	a.EventLoop.Start()
 }
 
+// Stop 按顺序关闭总线与后台循环，尽量完成剩余任务后退出。
 func (a *App) Stop() {
 	a.Bus.Close()
 	a.EventLoop.StopAfterDrain()
 	a.StoreLoop.Stop()
 }
 
-func (a *App) routes() http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, 200, map[string]any{"status": "ok"})
-	})
-
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		paths := []string{
-			filepath.Join(a.Cfg.Workspace, "runtime", "sessions.json"),
-			filepath.Join(a.Cfg.Workspace, "runtime", "sessions"),
-			filepath.Join(a.Cfg.Workspace, "runtime", "runs"),
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err != nil {
-				writeJSON(w, 503, map[string]any{"status": "not_ready", "error": err.Error()})
-				return
-			}
-		}
-		writeJSON(w, 200, map[string]any{"status": "ready", "queue_depth": a.Bus.InboundDepth(), "time": time.Now().UTC().Format(time.RFC3339Nano)})
-	})
-
-	mux.Handle("POST /v1/events:ingest", a.withAuth(http.HandlerFunc(a.handleIngest)))
-	mux.Handle("GET /v1/events/{event_id}", a.withAuth(http.HandlerFunc(a.handleGetEvent)))
-
-	return mux
-}
-
-func (a *App) withAuth(next http.Handler) http.Handler {
-	if a.Cfg.APIKey == "" {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")) != a.Cfg.APIKey {
-			writeAPIError(w, &gateway.APIError{StatusCode: 401, Code: model.ErrorCodeUnauthorized, Message: "missing or invalid api key"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
+// RunHTTPServer 启动 HTTP 服务并在上下文取消时执行优雅关闭。
 func (a *App) RunHTTPServer(ctx context.Context) error {
 	a.Start()
 	defer a.Stop()

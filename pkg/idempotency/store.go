@@ -13,8 +13,10 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
+// ErrConflict 表示同一幂等键对应了不同 payload，属于语义冲突。
 var ErrConflict = errors.New("idempotency payload hash mismatch")
 
+// Store 管理 inbound/outbound 幂等账本，并负责账本文件持久化。
 type Store struct {
 	mu           sync.Mutex
 	inbound      map[string]model.InboundLedgerRow
@@ -23,6 +25,7 @@ type Store struct {
 	outboundPath string
 }
 
+// New 创建幂等账本存储并从磁盘恢复历史记录。
 func New(workspace string) (*Store, error) {
 	s := &Store{
 		inbound:      map[string]model.InboundLedgerRow{},
@@ -36,6 +39,7 @@ func New(workspace string) (*Store, error) {
 	return s, nil
 }
 
+// load 读取 inbound/outbound JSONL 账本到内存映射。
 func (s *Store) load() error {
 	inboundRows, err := store.ReadJSONLines[model.InboundLedgerRow](s.inboundPath)
 	if err != nil {
@@ -55,6 +59,7 @@ func (s *Store) load() error {
 	return nil
 }
 
+// RegisterInbound 注册 inbound 幂等键；若已存在则返回已有记录或冲突。
 func (s *Store) RegisterInbound(idempotencyKey, payloadHash, eventID, sessionKey, activeSessionID string, receivedAt time.Time) (row model.InboundLedgerRow, duplicated bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -81,6 +86,7 @@ func (s *Store) RegisterInbound(idempotencyKey, payloadHash, eventID, sessionKey
 	return row, false, nil
 }
 
+// LookupInbound 查询 inbound 幂等记录是否存在。
 func (s *Store) LookupInbound(idempotencyKey string) (model.InboundLedgerRow, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,6 +94,7 @@ func (s *Store) LookupInbound(idempotencyKey string) (model.InboundLedgerRow, bo
 	return row, ok
 }
 
+// RegisterOutbound 注册 outbound 幂等键，避免同一事件重复对外发送。
 func (s *Store) RegisterOutbound(outboundIdempotencyKey, outboxID string, now time.Time) (row model.OutboundLedgerRow, duplicated bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,6 +113,7 @@ func (s *Store) RegisterOutbound(outboundIdempotencyKey, outboxID string, now ti
 	return row, false, nil
 }
 
+// DeleteInbound 删除指定 inbound 幂等记录并重写 inbound 账本文件。
 func (s *Store) DeleteInbound(idempotencyKey string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -117,11 +125,13 @@ func (s *Store) DeleteInbound(idempotencyKey string) error {
 	return s.rewriteInboundLocked()
 }
 
+// rewriteInboundLocked 将内存中的 inbound 映射重建为稳定有序的 JSONL 文件。
 func (s *Store) rewriteInboundLocked() error {
 	rows := make([]model.InboundLedgerRow, 0, len(s.inbound))
 	for _, row := range s.inbound {
 		rows = append(rows, row)
 	}
+	// 按时间再按幂等键排序，保证重写结果可预测、便于排查差异。
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].ReceivedAt.Equal(rows[j].ReceivedAt) {
 			return rows[i].IdempotencyKey < rows[j].IdempotencyKey

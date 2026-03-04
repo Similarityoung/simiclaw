@@ -66,7 +66,7 @@ M0 起必须提供统一入口：
   - `./pkg/runtime/...`
   - `./pkg/store/...`
   - `./pkg/idempotency/...`
-  - `./pkg/routing/...`
+  - `./pkg/sessionkey/...`
   - 若目录尚未落地，target 可临时 no-op，但必须在输出中明确提示“core package pending”。
 
 ## 4. 测试分层（Testing Pyramid）

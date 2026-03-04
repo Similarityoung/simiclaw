@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CORE_PKGS := ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/... ./pkg/idempotency/... ./pkg/routing/...
+CORE_PKGS := ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/... ./pkg/idempotency/... ./pkg/sessionkey/...
 
 .PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e test-fault-injection accept-current accept-m1 accept-m2 accept-m3 accept-m4 docs-consistency
 
