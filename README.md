@@ -55,7 +55,23 @@ go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 go run ./cmd/simiclaw gateway --workspace ./workspace --listen :8080
 ```
 
-### 4. 调用 ingest
+### 4. 使用 chat CLI（推荐）
+
+在另一个终端运行：
+
+```bash
+go run ./cmd/simiclaw chat
+```
+
+可选参数（精简）：
+
+- `--base-url`：网关地址，默认 `http://127.0.0.1:8080`
+- `--conversation`：会话 ID，默认 `cli_default`
+- `--api-key`：当服务端配置了 `api_key` 时传入
+
+输入 `/quit` 或 `/exit` 退出。
+
+### 5. 手动调用 ingest（可选）
 
 ```bash
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -78,7 +94,7 @@ curl -sS -X POST "http://127.0.0.1:8080/v1/events:ingest" \
   }"
 ```
 
-### 5. 查询事件状态
+### 6. 查询事件状态
 
 将上一步响应里的 `event_id` 带入：
 
