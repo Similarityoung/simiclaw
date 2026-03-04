@@ -176,16 +176,19 @@ type CommitMarker struct {
 }
 
 type RunTrace struct {
-	RunID       string            `json:"run_id"`
-	EventID     string            `json:"event_id"`
-	SessionKey  string            `json:"session_key"`
-	SessionID   string            `json:"session_id"`
-	RunMode     RunMode           `json:"run_mode"`
-	Actions     []Action          `json:"actions"`
-	StartedAt   time.Time         `json:"started_at"`
-	FinishedAt  time.Time         `json:"finished_at"`
-	Error       *ErrorBlock       `json:"error,omitempty"`
-	Diagnostics map[string]string `json:"diagnostics,omitempty"`
+	RunID           string            `json:"run_id"`
+	EventID         string            `json:"event_id"`
+	SessionKey      string            `json:"session_key"`
+	SessionID       string            `json:"session_id"`
+	RunMode         RunMode           `json:"run_mode"`
+	ContextManifest *ContextManifest  `json:"context_manifest,omitempty"`
+	RAGHits         []RAGHit          `json:"rag_hits,omitempty"`
+	ToolExecutions  []ToolExecution   `json:"tool_executions,omitempty"`
+	Actions         []Action          `json:"actions"`
+	StartedAt       time.Time         `json:"started_at"`
+	FinishedAt      time.Time         `json:"finished_at"`
+	Error           *ErrorBlock       `json:"error,omitempty"`
+	Diagnostics     map[string]string `json:"diagnostics,omitempty"`
 }
 
 type Action struct {
@@ -196,6 +199,33 @@ type Action struct {
 	Risk                 string         `json:"risk"`
 	RequiresApproval     bool           `json:"requires_approval"`
 	Payload              map[string]any `json:"payload"`
+}
+
+type ContextManifest struct {
+	HistoryRange HistoryRange `json:"history_range"`
+}
+
+type HistoryRange struct {
+	Mode           string `json:"mode"`
+	CutoffCommitID string `json:"cutoff_commit_id,omitempty"`
+	TailLimit      int    `json:"tail_limit,omitempty"`
+}
+
+type RAGHit struct {
+	Path    string  `json:"path"`
+	Scope   string  `json:"scope"`
+	Lines   []int   `json:"lines"`
+	Score   float64 `json:"score"`
+	Preview string  `json:"preview"`
+}
+
+type ToolExecution struct {
+	ToolCallID  string         `json:"tool_call_id"`
+	Name        string         `json:"name"`
+	Args        map[string]any `json:"args,omitempty"`
+	ArgsSummary map[string]any `json:"args_summary,omitempty"`
+	Result      map[string]any `json:"result,omitempty"`
+	Error       *ErrorBlock    `json:"error,omitempty"`
 }
 
 type InboundLedgerRow struct {

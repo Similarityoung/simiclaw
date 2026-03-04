@@ -13,6 +13,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/runner"
 	"github.com/similarityyoung/simiclaw/pkg/runtime"
 	"github.com/similarityyoung/simiclaw/pkg/store"
+	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
 type App struct {
@@ -51,7 +52,9 @@ func NewApp(cfg config.Config) (*App, error) {
 	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
 	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
 	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
-	run := runner.NewProcessRunner()
+	registry := tools.NewRegistry()
+	tools.RegisterBuiltins(registry)
+	run := runner.NewProcessRunner(cfg.Workspace, registry)
 	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, cfg.MaxToolRounds)
 	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
 
