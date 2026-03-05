@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/skills"
 )
 
 func TestNewFileReadTool(t *testing.T) {
@@ -442,5 +444,66 @@ func TestEditWorkspaceFileReplaceAll(t *testing.T) {
 	}
 	if out.ReplacedCount != 2 {
 		t.Fatalf("replaced_count = %d, want 2", out.ReplacedCount)
+	}
+}
+
+func TestInstructionInjectionAndBashLoopViability(t *testing.T) {
+	workspace := t.TempDir()
+	skillContent := strings.Join([]string{
+		"# OpenClaw Loop Skill",
+		"Run command: ./scripts/loop_viability.sh",
+		"Expected signal: OPENCLAW_LOOP_OK",
+	}, "\n") + "\n"
+
+	skillPath := filepath.Join(workspace, "skills", "ops", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	scriptPath := filepath.Join(workspace, "scripts", "loop_viability.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
+		t.Fatalf("mkdir scripts dir: %v", err)
+	}
+	script := "#!/usr/bin/env bash\nprintf 'OPENCLAW_LOOP_OK'\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write script file: %v", err)
+	}
+
+	injection, err := skills.AssembleInstructionInjection(workspace)
+	if err != nil {
+		t.Fatalf("assemble injection: %v", err)
+	}
+	if !strings.Contains(injection, skills.SkillsInjectionHeader) {
+		t.Fatalf("injection missing header: %q", injection)
+	}
+	if !strings.Contains(injection, "### ops/SKILL.md") {
+		t.Fatalf("injection missing skill path: %q", injection)
+	}
+	if !strings.Contains(injection, "Run command: ./scripts/loop_viability.sh") {
+		t.Fatalf("injection missing instructed command: %q", injection)
+	}
+	if !strings.Contains(injection, "Expected signal: OPENCLAW_LOOP_OK") {
+		t.Fatalf("injection missing expected signal: %q", injection)
+	}
+
+	cwd, err := resolveBashWorkingDirectory(workspace, ".")
+	if err != nil {
+		t.Fatalf("resolve bash cwd: %v", err)
+	}
+	out, err := runBashCommand(cwd, "./scripts/loop_viability.sh", 2*time.Second)
+	if err != nil {
+		t.Fatalf("run bash command: %v", err)
+	}
+	if out.TimedOut {
+		t.Fatalf("timed_out = true, want false")
+	}
+	if out.ExitCode != 0 {
+		t.Fatalf("exit_code = %d, want 0 (stderr=%q)", out.ExitCode, out.Stderr)
+	}
+	if out.Stdout != "OPENCLAW_LOOP_OK" {
+		t.Fatalf("stdout = %q, want %q", out.Stdout, "OPENCLAW_LOOP_OK")
 	}
 }
