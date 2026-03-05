@@ -23,6 +23,6 @@ func RegisterMemorySearch(reg *Registry) {
 		if err != nil {
 			return Result{Error: &model.ErrorBlock{Code: model.ErrorCodeInvalidArgument, Message: fmt.Sprintf("memory_search failed: %v", err)}}
 		}
-		return Result{Output: map[string]any{"disabled": res.Disabled, "hits": res.Hits}}
+		return Result{Disabled: res.Disabled, Output: map[string]any{"disabled": res.Disabled, "hits": res.Hits}}
 	})
 }

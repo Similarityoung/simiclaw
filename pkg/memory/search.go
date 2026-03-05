@@ -78,10 +78,7 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 			if score <= 0 {
 				continue
 			}
-			preview := line
-			if len(preview) > 120 {
-				preview = preview[:120] + "..."
-			}
+			preview := truncatePreview(line, 120)
 			candidates = append(candidates, SearchHit{
 				Path:    f.Path,
 				Scope:   f.Scope,
@@ -143,4 +140,15 @@ func scoreLine(line, full string, tokens []string) int {
 		}
 	}
 	return score
+}
+
+func truncatePreview(line string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(line)
+	if len(runes) <= maxRunes {
+		return line
+	}
+	return string(runes[:maxRunes]) + "..."
 }

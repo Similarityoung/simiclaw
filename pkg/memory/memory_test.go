@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestSearchScopeAutoByChannelType(t *testing.T) {
@@ -79,6 +80,42 @@ func TestSearchGroupIgnoresMemoryMDSymlinkToPrivate(t *testing.T) {
 	}
 	if len(dmRes.Hits) == 0 {
 		t.Fatalf("dm auto should include private hit, got=%+v", dmRes.Hits)
+	}
+}
+
+func TestSearchPreviewIsUTF8Safe(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir public: %v", err)
+	}
+
+	long := strings.Repeat("你", 140)
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "utf8.md"), []byte("前缀"+long+"\n"), 0o644); err != nil {
+		t.Fatalf("write utf8 file: %v", err)
+	}
+
+	res, err := Search(workspace, SearchArgs{
+		Query:       "你",
+		Scope:       "public",
+		ChannelType: "group",
+		TopK:        1,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("expected one hit, got=%d", len(res.Hits))
+	}
+
+	preview := res.Hits[0].Preview
+	if !utf8.ValidString(preview) {
+		t.Fatalf("preview should be valid UTF-8, got=%q", preview)
+	}
+	if !strings.HasSuffix(preview, "...") {
+		t.Fatalf("preview should be truncated with ellipsis, got=%q", preview)
+	}
+	if len([]rune(preview)) != 123 {
+		t.Fatalf("preview rune length should be 123 (120+...), got=%d", len([]rune(preview)))
 	}
 }
 
