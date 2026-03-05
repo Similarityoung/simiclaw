@@ -111,10 +111,7 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 func resolveScopes(scope, channelType string) (map[string]bool, error) {
 	switch scope {
 	case "", "auto":
-		if channelType == "group" || channelType == "channel" {
-			return map[string]bool{"public": true}, nil
-		}
-		return map[string]bool{"private": true, "public": true}, nil
+		return allowedScopesForChannel(channelType), nil
 	case "private":
 		return map[string]bool{"private": true}, nil
 	case "public":

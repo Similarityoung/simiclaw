@@ -13,6 +13,24 @@ func RegisterMemoryGet(reg *Registry) {
 	reg.Register("memory_get", func(_ context.Context, toolCtx Context, args map[string]any) Result {
 		path, _ := args["path"].(string)
 		lines := parseLines(args["lines"])
+
+		_, _, scope, err := memory.ResolvePath(toolCtx.Workspace, path)
+		if err != nil {
+			code := model.ErrorCodeInvalidArgument
+			if errors.Is(err, memory.ErrPathDenied) {
+				code = model.ErrorCodeForbidden
+			}
+			return Result{Error: &model.ErrorBlock{Code: code, Message: fmt.Sprintf("memory_get failed: %v", err)}}
+		}
+		if !memory.CanAccessScope(toolCtx.Conversation.ChannelType, scope) {
+			return Result{
+				Error: &model.ErrorBlock{
+					Code:    model.ErrorCodeForbidden,
+					Message: "memory_get failed: scope denied",
+				},
+			}
+		}
+
 		res, err := memory.Get(toolCtx.Workspace, memory.GetArgs{Path: path, Lines: lines}, memory.DefaultMaxGetChars)
 		if err != nil {
 			code := model.ErrorCodeInvalidArgument

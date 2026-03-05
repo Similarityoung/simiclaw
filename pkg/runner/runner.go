@@ -144,8 +144,10 @@ func (r *ProcessRunner) handleNoReply(event model.InternalEvent, runID string, n
 		}
 	case "compaction":
 		summary, cutoffCommitID := r.buildCompactionSummary(event.ActiveSessionID)
-		if path, err := r.writer.WriteCurated(summary, now); err == nil {
-			*actions = append(*actions, newWriteMemoryAction(runID, len(*actions), now, "curated", path, "compaction"))
+		if isPublicConversation(event.Conversation.ChannelType) {
+			if path, err := r.writer.WriteCurated(summary, now); err == nil {
+				*actions = append(*actions, newWriteMemoryAction(runID, len(*actions), now, "curated", path, "compaction"))
+			}
 		}
 		*entries = append(*entries, model.SessionEntry{
 			Type:    "compaction_summary",
@@ -211,8 +213,10 @@ func (r *ProcessRunner) handleInteractive(
 		if dailyPath, err := r.writer.WriteDaily("user:"+event.Conversation.ParticipantID, fact, now); err == nil {
 			*actions = append(*actions, newWriteMemoryAction(runID, len(*actions), now, "daily", dailyPath, "user_fact"))
 		}
-		if curatedPath, err := r.writer.WriteCurated(fact, now); err == nil {
-			*actions = append(*actions, newWriteMemoryAction(runID, len(*actions), now, "curated", curatedPath, "user_fact"))
+		if isPublicConversation(event.Conversation.ChannelType) {
+			if curatedPath, err := r.writer.WriteCurated(fact, now); err == nil {
+				*actions = append(*actions, newWriteMemoryAction(runID, len(*actions), now, "curated", curatedPath, "user_fact"))
+			}
 		}
 		*entries = append(*entries, model.SessionEntry{
 			Type:    "assistant",
@@ -456,6 +460,15 @@ func shouldRemember(text string) bool {
 		return true
 	}
 	return strings.Contains(text, "记住")
+}
+
+func isPublicConversation(channelType string) bool {
+	switch strings.ToLower(strings.TrimSpace(channelType)) {
+	case "group", "channel":
+		return true
+	default:
+		return false
+	}
 }
 
 func extractRememberFact(text string) string {
