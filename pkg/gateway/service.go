@@ -15,18 +15,20 @@ type Service struct {
 	idempotency    *idempotency.Store
 	sessions       *store.SessionStore
 	events         *runtime.EventRepo
+	adkRouter      adkSessionRouter
 	tenantLimiter  *limiter
 	sessionLimiter *limiter
 }
 
 // NewService 构造网关服务，并初始化租户级/会话级限流器。
-func NewService(cfg config.Config, eventBus *bus.MessageBus, idem *idempotency.Store, sessions *store.SessionStore, events *runtime.EventRepo) *Service {
+func NewService(cfg config.Config, eventBus *bus.MessageBus, idem *idempotency.Store, sessions *store.SessionStore, events *runtime.EventRepo, adkRouter adkSessionRouter) *Service {
 	return &Service{
 		cfg:            cfg,
 		eventBus:       eventBus,
 		idempotency:    idem,
 		sessions:       sessions,
 		events:         events,
+		adkRouter:      adkRouter,
 		tenantLimiter:  newLimiter(cfg.RateLimitTenantRPS, cfg.RateLimitTenantBurst),
 		sessionLimiter: newLimiter(cfg.RateLimitSessionRPS, cfg.RateLimitSessionBurst),
 	}

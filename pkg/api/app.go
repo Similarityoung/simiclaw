@@ -2,9 +2,16 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"iter"
 	"net/http"
+	"strings"
 	"time"
 
+	adkagent "google.golang.org/adk/agent"
+	adksession "google.golang.org/adk/session"
+
+	"github.com/similarityyoung/simiclaw/pkg/adkruntime"
 	"github.com/similarityyoung/simiclaw/pkg/agent"
 	"github.com/similarityyoung/simiclaw/pkg/approval"
 	"github.com/similarityyoung/simiclaw/pkg/bus"
@@ -12,6 +19,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
 	"github.com/similarityyoung/simiclaw/pkg/llm"
+	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
 	"github.com/similarityyoung/simiclaw/pkg/runtime"
@@ -21,6 +29,7 @@ import (
 
 type App struct {
 	Cfg         config.Config
+	ADKRuntime  *adkruntime.Runtime
 	Bus         *bus.MessageBus
 	Gateway     *gateway.Service
 	Events      *runtime.EventRepo
@@ -56,6 +65,16 @@ func NewApp(cfg config.Config) (*App, error) {
 	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
 	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
 	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
+	var adkRuntime *adkruntime.Runtime
+	var adkRouter gatewayADKSessionRouter
+	if cfg.EnableADKGateway {
+		var adkErr error
+		adkRuntime, adkErr = newGatewayADKRuntime(cfg)
+		if adkErr != nil {
+			return nil, fmt.Errorf("initialize gateway adk runtime: %w", adkErr)
+		}
+		adkRouter = gatewayADKSessionRouter{runtime: adkRuntime, appName: defaultGatewayADKAppName}
+	}
 	approvalSvc, err := approval.NewService(cfg.Workspace, eventBus)
 	if err != nil {
 		return nil, err
@@ -64,10 +83,11 @@ func NewApp(cfg config.Config) (*App, error) {
 	tools.RegisterBuiltins(registry)
 	run := newRunner(cfg, registry)
 	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, approvalSvc, cfg.MaxToolRounds)
-	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
+	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo, adkRouter)
 
 	app := &App{
 		Cfg:         cfg,
+		ADKRuntime:  adkRuntime,
 		Bus:         eventBus,
 		Gateway:     g,
 		Events:      eventRepo,
@@ -80,6 +100,68 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	app.Handler = app.routes()
 	return app, nil
+}
+
+const defaultGatewayADKAppName = "simiclaw-gateway-adk"
+
+type gatewayADKSessionRouter struct {
+	runtime *adkruntime.Runtime
+	appName string
+}
+
+func (r gatewayADKSessionRouter) RouteIngest(ctx context.Context, req model.IngestRequest, sessionKey, sessionID string) error {
+	if r.runtime == nil {
+		return fmt.Errorf("runtime is nil")
+	}
+	userID := adkRouteUserID(req, sessionKey)
+	_, err := r.runtime.SessionService().Get(ctx, &adksession.GetRequest{
+		AppName:   r.appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	})
+	if err == nil {
+		return nil
+	}
+	_, err = r.runtime.SessionService().Create(ctx, &adksession.CreateRequest{
+		AppName:   r.appName,
+		UserID:    userID,
+		SessionID: sessionID,
+		State: map[string]any{
+			"session_key": sessionKey,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create adk session: %w", err)
+	}
+	return nil
+}
+
+func adkRouteUserID(req model.IngestRequest, sessionKey string) string {
+	if v := strings.TrimSpace(req.Conversation.ParticipantID); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(req.Conversation.ConversationID); v != "" {
+		return v
+	}
+	return sessionKey
+}
+
+func newGatewayADKRuntime(cfg config.Config) (*adkruntime.Runtime, error) {
+	rootAgent, err := adkagent.New(adkagent.Config{
+		Name:        "simiclaw_gateway_adk_bridge",
+		Description: "Gateway ADK bridge agent for side-by-side session routing",
+		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+			return func(yield func(*adksession.Event, error) bool) {}
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create adk bridge root agent: %w", err)
+	}
+	return adkruntime.NewRuntime(adkruntime.Config{
+		Workspace: cfg.Workspace,
+		AppName:   defaultGatewayADKAppName,
+		RootAgent: rootAgent,
+	})
 }
 
 // Start 启动存储循环和事件循环，开始处理系统内消息。

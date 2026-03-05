@@ -46,6 +46,7 @@ type Config struct {
 	Workspace             string   `json:"workspace"`
 	ListenAddr            string   `json:"listen_addr"`
 	LogLevel              string   `json:"log_level"`
+	EnableADKGateway      bool     `json:"enable_adk_gateway,omitempty"`
 	APIKey                string   `json:"api_key"`
 	TenantID              string   `json:"tenant_id"`
 	EventQueueCapacity    int      `json:"event_queue_capacity"`
