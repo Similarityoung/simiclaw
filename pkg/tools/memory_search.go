@@ -9,7 +9,20 @@ import (
 )
 
 func RegisterMemorySearch(reg *Registry) {
-	reg.Register("memory_search", func(_ context.Context, toolCtx Context, args map[string]any) Result {
+	schema := Schema{
+		Name:        "memory_search",
+		Description: "在工作区记忆中搜索相关信息，返回匹配的片段列表。",
+		Parameters: ParameterSchema{
+			Type: "object",
+			Properties: map[string]ParameterSchema{
+				"query":  {Type: "string", Description: "搜索关键词"},
+				"scope":  {Type: "string", Description: "auto | daily | curated", Enum: []string{"auto", "daily", "curated"}},
+				"top_k":  {Type: "integer", Description: "返回条数，默认 6"},
+			},
+			Required: []string{"query"},
+		},
+	}
+	reg.Register("memory_search", schema, func(_ context.Context, toolCtx Context, args map[string]any) Result {
 		query, _ := args["query"].(string)
 		scope, _ := args["scope"].(string)
 		topK := parseInt(args["top_k"], 6)
