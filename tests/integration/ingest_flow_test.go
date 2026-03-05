@@ -106,6 +106,60 @@ func TestDuplicateAndConflict(t *testing.T) {
 	}
 }
 
+func TestADKSessionRoutingDMParticipantSemantics(t *testing.T) {
+	app := newTestApp(t, true, 16)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	req1 := model.IngestRequest{
+		Source: "cli",
+		Conversation: model.Conversation{
+			ConversationID: "conv_adk_session",
+			ChannelType:    "dm",
+			ParticipantID:  "u1",
+		},
+		IdempotencyKey: "cli:conv_adk_session:1",
+		Timestamp:      now,
+		Payload:        model.EventPayload{Type: "message", Text: "first"},
+	}
+	resp1, code := postIngest(t, app, req1)
+	if code != 202 {
+		t.Fatalf("expected first request 202, got %d", code)
+	}
+
+	req2 := req1
+	req2.IdempotencyKey = "cli:conv_adk_session:2"
+	req2.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	req2.Payload.Text = "second"
+	resp2, code := postIngest(t, app, req2)
+	if code != 202 {
+		t.Fatalf("expected second request 202, got %d", code)
+	}
+
+	if resp1.SessionKey != resp2.SessionKey {
+		t.Fatalf("expected same participant to reuse session key, got %q vs %q", resp1.SessionKey, resp2.SessionKey)
+	}
+	if resp1.ActiveSessionID != resp2.ActiveSessionID {
+		t.Fatalf("expected same participant to reuse active session id, got %q vs %q", resp1.ActiveSessionID, resp2.ActiveSessionID)
+	}
+
+	req3 := req1
+	req3.IdempotencyKey = "cli:conv_adk_session:3"
+	req3.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	req3.Conversation.ParticipantID = "u2"
+	req3.Payload.Text = "third"
+	resp3, code := postIngest(t, app, req3)
+	if code != 202 {
+		t.Fatalf("expected third request 202, got %d", code)
+	}
+
+	if resp1.SessionKey == resp3.SessionKey {
+		t.Fatalf("expected different participant to produce different session key, both are %q", resp1.SessionKey)
+	}
+	if resp1.ActiveSessionID == resp3.ActiveSessionID {
+		t.Fatalf("expected different participant to produce different active session id, both are %q", resp1.ActiveSessionID)
+	}
+}
+
 func TestQueueFull(t *testing.T) {
 	app := newTestApp(t, false, 1)
 	now := time.Now().UTC().Format(time.RFC3339)
