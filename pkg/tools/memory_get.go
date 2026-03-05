@@ -10,7 +10,19 @@ import (
 )
 
 func RegisterMemoryGet(reg *Registry) {
-	reg.Register("memory_get", func(_ context.Context, toolCtx Context, args map[string]any) Result {
+	schema := Schema{
+		Name:        "memory_get",
+		Description: "读取工作区记忆文件的内容，支持指定行范围。",
+		Parameters: ParameterSchema{
+			Type: "object",
+			Properties: map[string]ParameterSchema{
+				"path":  {Type: "string", Description: "文件路径，相对于 workspace"},
+				"lines": {Type: "array", Description: "[start, end] 行号范围（可选）", Items: &ParameterSchema{Type: "integer"}},
+			},
+			Required: []string{"path"},
+		},
+	}
+	reg.Register("memory_get", schema, func(_ context.Context, toolCtx Context, args map[string]any) Result {
 		path, _ := args["path"].(string)
 		lines := parseLines(args["lines"])
 
