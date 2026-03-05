@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/similarityyoung/simiclaw/pkg/plugins"
 	"github.com/similarityyoung/simiclaw/pkg/skills"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 	"google.golang.org/adk/agent"
@@ -100,6 +101,11 @@ func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 		return nil, fmt.Errorf("initialize primary llm agent tool bash: %w", err)
 	}
 
+	mcpToolsets, err := plugins.LoadDynamicMCPToolsets(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent dynamic plugins: %w", err)
+	}
+
 	name := cfg.Name
 	if name == "" {
 		name = DefaultPrimaryLlmAgentName
@@ -121,6 +127,7 @@ func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 		Model:       cfg.Model,
 		Instruction: instruction,
 		Tools:       []adktool.Tool{fileReadTool, fileWriteTool, fileEditTool, bashTool},
+		Toolsets:    mcpToolsets,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize primary llm agent: %w", err)
