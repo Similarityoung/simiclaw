@@ -111,9 +111,9 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 }
 
 // newRunner constructs the appropriate Runner based on config.
-// 当 LLMAPIKey 非空时使用 AgentRunner（真实 LLM）；否则回退到 ProcessRunner（内置规则引擎）。
+// 仅当 LLMAPIKey 非空时使用 AgentRunner（真实 LLM）；否则回退到 ProcessRunner（内置规则引擎）。
 func newRunner(cfg config.Config, registry *tools.Registry) runner.Runner {
-	if cfg.LLMAPIKey != "" || cfg.LLMBaseURL != "" {
+	if cfg.LLMAPIKey != "" {
 		llmClient := llm.New(llm.Config{
 			BaseURL: cfg.LLMBaseURL,
 			APIKey:  cfg.LLMAPIKey,
