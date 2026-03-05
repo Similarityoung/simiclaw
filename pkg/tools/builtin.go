@@ -1,11 +1,15 @@
 package tools
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	adktool "google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -16,6 +20,9 @@ const (
 	fileReadDefaultLimit = 2000
 	fileWriteToolName    = "file_write"
 	fileEditToolName     = "file_edit"
+	bashToolName         = "bash"
+	bashDefaultTimeout   = 5 * time.Second
+	bashMaxTimeout       = 30 * time.Second
 )
 
 var errFileReadPathDenied = errors.New("path denied")
@@ -56,6 +63,19 @@ type FileEditOutput struct {
 	Path          string `json:"path"`
 	ReplacedCount int    `json:"replaced_count"`
 	BytesWritten  int    `json:"bytes_written"`
+}
+
+type BashInput struct {
+	Command        string `json:"command"`
+	CWD            string `json:"cwd,omitempty"`
+	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
+}
+
+type BashOutput struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+	TimedOut bool   `json:"timed_out"`
 }
 
 func NewFileReadTool(workspace string) (adktool.Tool, error) {
@@ -129,6 +149,134 @@ func NewFileEditTool(workspace string) (adktool.Tool, error) {
 	}, func(_ adktool.Context, input FileEditInput) (FileEditOutput, error) {
 		return editWorkspaceFile(workspace, input)
 	})
+}
+
+func NewBashTool(workspace string) (adktool.Tool, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return nil, fmt.Errorf("invalid_argument: workspace is required")
+	}
+
+	return functiontool.New[BashInput, BashOutput](functiontool.Config{
+		Name:        bashToolName,
+		Description: "Run bash commands in workspace with strict cwd and timeout controls.",
+	}, func(_ adktool.Context, input BashInput) (BashOutput, error) {
+		command := strings.TrimSpace(input.Command)
+		if command == "" {
+			return BashOutput{}, fmt.Errorf("invalid_argument: command is required")
+		}
+
+		cwd, err := resolveBashWorkingDirectory(workspace, input.CWD)
+		if err != nil {
+			if errors.Is(err, errFileReadPathDenied) {
+				return BashOutput{}, fmt.Errorf("forbidden: %w", err)
+			}
+			return BashOutput{}, fmt.Errorf("invalid_argument: %w", err)
+		}
+
+		timeout, err := resolveBashTimeout(input.TimeoutSeconds)
+		if err != nil {
+			return BashOutput{}, fmt.Errorf("invalid_argument: %w", err)
+		}
+
+		return runBashCommand(cwd, command, timeout)
+	})
+}
+
+func resolveBashWorkingDirectory(workspace, cwd string) (string, error) {
+	rel := strings.TrimSpace(cwd)
+	if rel == "" || rel == "." {
+		workspaceAbs, err := filepath.Abs(workspace)
+		if err != nil {
+			return "", err
+		}
+		workspaceReal := workspaceAbs
+		if resolvedWorkspace, err := filepath.EvalSymlinks(workspaceAbs); err == nil {
+			workspaceReal = resolvedWorkspace
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		info, err := os.Stat(workspaceReal)
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("workspace is not a directory")
+		}
+		return workspaceReal, nil
+	}
+
+	_, absPath, err := resolveFileReadPath(workspace, rel)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("working directory does not exist")
+		}
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("working directory is not a directory")
+	}
+	return absPath, nil
+}
+
+func resolveBashTimeout(timeoutSeconds *int) (time.Duration, error) {
+	if timeoutSeconds == nil {
+		return bashDefaultTimeout, nil
+	}
+	if *timeoutSeconds < 1 {
+		return 0, fmt.Errorf("timeout_seconds must be >= 1")
+	}
+	timeout := time.Duration(*timeoutSeconds) * time.Second
+	if timeout > bashMaxTimeout {
+		return 0, fmt.Errorf("timeout_seconds must be <= %d", int(bashMaxTimeout/time.Second))
+	}
+	return timeout, nil
+}
+
+func runBashCommand(cwd, command string, timeout time.Duration) (BashOutput, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	cmd.Dir = cwd
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	output := BashOutput{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: 0,
+		TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded),
+	}
+
+	if err == nil {
+		return output, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		exitCode := exitErr.ExitCode()
+		if output.TimedOut {
+			exitCode = -1
+		}
+		output.ExitCode = exitCode
+		return output, nil
+	}
+
+	if output.TimedOut {
+		output.ExitCode = -1
+		return output, nil
+	}
+
+	return BashOutput{}, fmt.Errorf("internal: run bash command: %w", err)
 }
 
 func writeWorkspaceFile(workspace string, input FileWriteInput) (FileWriteOutput, error) {

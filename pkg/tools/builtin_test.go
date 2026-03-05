@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewFileReadTool(t *testing.T) {
@@ -122,6 +123,133 @@ func TestNewFileEditTool(t *testing.T) {
 	}
 	if tool.Name() != fileEditToolName {
 		t.Fatalf("tool name = %q, want %q", tool.Name(), fileEditToolName)
+	}
+}
+
+func TestNewBashTool(t *testing.T) {
+	workspace := t.TempDir()
+
+	tool, err := NewBashTool(workspace)
+	if err != nil {
+		t.Fatalf("NewBashTool error: %v", err)
+	}
+	if tool.Name() != bashToolName {
+		t.Fatalf("tool name = %q, want %q", tool.Name(), bashToolName)
+	}
+}
+
+func TestResolveBashWorkingDirectoryRejectsTraversal(t *testing.T) {
+	workspace := t.TempDir()
+
+	_, err := resolveBashWorkingDirectory(workspace, "../outside")
+	if err == nil {
+		t.Fatalf("expected traversal rejection")
+	}
+	if !errors.Is(err, errFileReadPathDenied) {
+		t.Fatalf("expected errFileReadPathDenied, got %v", err)
+	}
+}
+
+func TestResolveBashWorkingDirectoryRejectsSymlinkEscape(t *testing.T) {
+	workspace := t.TempDir()
+	externalDir := t.TempDir()
+
+	if err := os.Symlink(externalDir, filepath.Join(workspace, "link")); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	_, err := resolveBashWorkingDirectory(workspace, "link")
+	if err == nil {
+		t.Fatalf("expected symlink escape rejection")
+	}
+	if !errors.Is(err, errFileReadPathDenied) {
+		t.Fatalf("expected errFileReadPathDenied, got %v", err)
+	}
+}
+
+func TestResolveBashWorkingDirectoryRejectsMissingDirectory(t *testing.T) {
+	workspace := t.TempDir()
+
+	_, err := resolveBashWorkingDirectory(workspace, "missing")
+	if err == nil {
+		t.Fatalf("expected missing directory rejection")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("error = %q, want does not exist", err.Error())
+	}
+}
+
+func TestResolveBashTimeout(t *testing.T) {
+	def, err := resolveBashTimeout(nil)
+	if err != nil {
+		t.Fatalf("resolveBashTimeout default error: %v", err)
+	}
+	if def != bashDefaultTimeout {
+		t.Fatalf("default timeout = %v, want %v", def, bashDefaultTimeout)
+	}
+
+	zero := 0
+	if _, err := resolveBashTimeout(&zero); err == nil {
+		t.Fatalf("expected timeout lower bound error")
+	}
+
+	tooLarge := int(bashMaxTimeout/time.Second) + 1
+	if _, err := resolveBashTimeout(&tooLarge); err == nil {
+		t.Fatalf("expected timeout upper bound error")
+	}
+}
+
+func TestRunBashCommandSuccess(t *testing.T) {
+	workspace := t.TempDir()
+
+	out, err := runBashCommand(workspace, "printf 'hello'", 2*time.Second)
+	if err != nil {
+		t.Fatalf("runBashCommand error: %v", err)
+	}
+	if out.Stdout != "hello" {
+		t.Fatalf("stdout = %q, want %q", out.Stdout, "hello")
+	}
+	if out.Stderr != "" {
+		t.Fatalf("stderr = %q, want empty", out.Stderr)
+	}
+	if out.ExitCode != 0 {
+		t.Fatalf("exit_code = %d, want 0", out.ExitCode)
+	}
+	if out.TimedOut {
+		t.Fatalf("timed_out = true, want false")
+	}
+}
+
+func TestRunBashCommandTimeout(t *testing.T) {
+	workspace := t.TempDir()
+
+	out, err := runBashCommand(workspace, "sleep 2", time.Second)
+	if err != nil {
+		t.Fatalf("runBashCommand error: %v", err)
+	}
+	if !out.TimedOut {
+		t.Fatalf("timed_out = false, want true")
+	}
+	if out.ExitCode != -1 {
+		t.Fatalf("exit_code = %d, want -1", out.ExitCode)
+	}
+}
+
+func TestRunBashCommandNonZeroExit(t *testing.T) {
+	workspace := t.TempDir()
+
+	out, err := runBashCommand(workspace, "printf 'boom' 1>&2; exit 7", 2*time.Second)
+	if err != nil {
+		t.Fatalf("runBashCommand error: %v", err)
+	}
+	if out.ExitCode != 7 {
+		t.Fatalf("exit_code = %d, want 7", out.ExitCode)
+	}
+	if out.Stderr != "boom" {
+		t.Fatalf("stderr = %q, want %q", out.Stderr, "boom")
+	}
+	if out.TimedOut {
+		t.Fatalf("timed_out = true, want false")
 	}
 }
 
