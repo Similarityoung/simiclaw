@@ -104,6 +104,7 @@ func Default() Config {
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path == "" {
+		applyEnvOverrides(&cfg)
 		return cfg, nil
 	}
 	b, err := os.ReadFile(path)
