@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/agent"
 	"github.com/similarityyoung/simiclaw/pkg/approval"
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
+	"github.com/similarityyoung/simiclaw/pkg/llm"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
 	"github.com/similarityyoung/simiclaw/pkg/runtime"
@@ -60,7 +62,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	registry := tools.NewRegistry()
 	tools.RegisterBuiltins(registry)
-	run := runner.NewProcessRunner(cfg.Workspace, registry)
+	run := newRunner(cfg, registry)
 	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, approvalSvc, cfg.MaxToolRounds)
 	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
 
@@ -106,4 +108,23 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
+}
+
+// newRunner constructs the appropriate Runner based on config.
+// 当 LLMAPIKey 非空时使用 AgentRunner（真实 LLM）；否则回退到 ProcessRunner（内置规则引擎）。
+func newRunner(cfg config.Config, registry *tools.Registry) runner.Runner {
+	if cfg.LLMAPIKey != "" || cfg.LLMBaseURL != "" {
+		llmClient := llm.New(llm.Config{
+			BaseURL: cfg.LLMBaseURL,
+			APIKey:  cfg.LLMAPIKey,
+			Model:   cfg.LLMModel,
+			Timeout: cfg.LLMTimeout.Duration,
+		})
+		return agent.New(agent.Config{
+			Workspace: cfg.Workspace,
+			LLM:       llmClient,
+			Registry:  registry,
+		})
+	}
+	return runner.NewProcessRunner(cfg.Workspace, registry)
 }
