@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/similarityyoung/simiclaw/pkg/skills"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
@@ -109,11 +110,16 @@ func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 		description = DefaultPrimaryLlmAgentDescription
 	}
 
+	instruction, err := buildPrimaryInstruction(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent instruction: %w", err)
+	}
+
 	llmAgent, err := llmagent.New(llmagent.Config{
 		Name:        name,
 		Description: description,
 		Model:       cfg.Model,
-		Instruction: PrimaryLlmAgentInstruction,
+		Instruction: instruction,
 		Tools:       []adktool.Tool{fileReadTool, fileWriteTool, fileEditTool, bashTool},
 	})
 	if err != nil {
@@ -121,6 +127,17 @@ func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 	}
 
 	return llmAgent, nil
+}
+
+func buildPrimaryInstruction(workspace string) (string, error) {
+	injection, err := skills.AssembleInstructionInjection(workspace)
+	if err != nil {
+		return "", err
+	}
+	if injection == "" {
+		return PrimaryLlmAgentInstruction, nil
+	}
+	return PrimaryLlmAgentInstruction + "\n\n" + injection, nil
 }
 
 func (r *Runtime) Config() Config {

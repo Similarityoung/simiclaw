@@ -3,6 +3,8 @@ package adkruntime
 import (
 	"context"
 	"iter"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,5 +55,30 @@ func TestNewPrimaryLlmAgentReturnsErrorWhenWorkspaceMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid_argument: workspace is required") {
 		t.Fatalf("expected workspace validation error, got: %v", err)
+	}
+}
+
+func TestBuildPrimaryInstructionIncludesInjectedSkills(t *testing.T) {
+	workspace := t.TempDir()
+	skillPath := filepath.Join(workspace, "skills", "ops", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatalf("create skill directory: %v", err)
+	}
+	if err := os.WriteFile(skillPath, []byte("Prefer low-risk migrations."), 0o644); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	instruction, err := buildPrimaryInstruction(workspace)
+	if err != nil {
+		t.Fatalf("expected primary instruction build to succeed, got error: %v", err)
+	}
+	if !strings.HasPrefix(instruction, PrimaryLlmAgentInstruction) {
+		t.Fatalf("expected base instruction prefix, got: %s", instruction)
+	}
+	if !strings.Contains(instruction, "### ops/SKILL.md") {
+		t.Fatalf("expected injected skill file section, got: %s", instruction)
+	}
+	if !strings.Contains(instruction, "Prefer low-risk migrations.") {
+		t.Fatalf("expected injected skill content, got: %s", instruction)
 	}
 }
