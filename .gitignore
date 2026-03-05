@@ -15,6 +15,7 @@
 # Env/local
 .env
 .env.*
+!.env.example
 
 # Runtime workspace
 workspace/
