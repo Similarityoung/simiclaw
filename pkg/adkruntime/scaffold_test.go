@@ -44,9 +44,27 @@ func TestNewRuntimeInitializesADKHandles(t *testing.T) {
 func TestNewRuntimeReturnsErrorWhenRootAgentMissing(t *testing.T) {
 	_, err := NewRuntime(Config{Workspace: t.TempDir()})
 	if err == nil {
-		t.Fatalf("expected error when root agent is missing")
+		t.Fatalf("expected error when root agent and llm model are missing")
 	}
-	if !strings.Contains(err.Error(), "root agent is required") {
-		t.Fatalf("expected root agent validation error, got: %v", err)
+	if !strings.Contains(err.Error(), "llm model is required") {
+		t.Fatalf("expected llm model validation error, got: %v", err)
+	}
+}
+
+func TestNewRuntimeBuildsPrimaryAgentWhenRootAgentMissing(t *testing.T) {
+	rt, err := NewRuntime(Config{
+		Workspace: t.TempDir(),
+		AppName:   "simiclaw-adk",
+		LLM:       stubLLM{},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime initialization to succeed with primary llm agent, got error: %v", err)
+	}
+
+	if rt.Config().RootAgent == nil {
+		t.Fatalf("expected runtime config to include resolved root agent")
+	}
+	if rt.Config().RootAgent.Name() != DefaultPrimaryLlmAgentName {
+		t.Fatalf("expected default root agent name %q, got %q", DefaultPrimaryLlmAgentName, rt.Config().RootAgent.Name())
 	}
 }
