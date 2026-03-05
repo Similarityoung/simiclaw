@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,6 +23,9 @@ func TestParseConfigDefaults(t *testing.T) {
 	if cfg.Conversation != defaultConversation {
 		t.Fatalf("unexpected conversation: %s", cfg.Conversation)
 	}
+	if cfg.Participant != defaultParticipant {
+		t.Fatalf("unexpected participant: %s", cfg.Participant)
+	}
 	if cfg.APIKey != "" {
 		t.Fatalf("unexpected api key: %s", cfg.APIKey)
 	}
@@ -30,6 +35,7 @@ func TestParseConfigOverrides(t *testing.T) {
 	cfg, err := parseConfig([]string{
 		"--base-url", "http://127.0.0.1:19090/",
 		"--conversation", "demo_room",
+		"--participant", "u_demo",
 		"--api-key", "secret",
 	})
 	if err != nil {
@@ -41,7 +47,57 @@ func TestParseConfigOverrides(t *testing.T) {
 	if cfg.Conversation != "demo_room" {
 		t.Fatalf("unexpected conversation: %s", cfg.Conversation)
 	}
+	if cfg.Participant != "u_demo" {
+		t.Fatalf("unexpected participant: %s", cfg.Participant)
+	}
 	if cfg.APIKey != "secret" {
+		t.Fatalf("unexpected api key: %s", cfg.APIKey)
+	}
+}
+
+func TestParseConfigFromGatewayConfig(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	data := []byte(`{"workspace":".","listen_addr":":19091","enable_adk_gateway":true,"api_key":"cfg_secret"}`)
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := parseConfig([]string{"--config", cfgPath})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:19091" {
+		t.Fatalf("unexpected base url: %s", cfg.BaseURL)
+	}
+	if cfg.APIKey != "cfg_secret" {
+		t.Fatalf("unexpected api key: %s", cfg.APIKey)
+	}
+	if cfg.Participant != defaultParticipant {
+		t.Fatalf("unexpected participant: %s", cfg.Participant)
+	}
+}
+
+func TestParseConfigCLIOverridesGatewayConfig(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	data := []byte(`{"workspace":".","listen_addr":":19091","api_key":"cfg_secret"}`)
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := parseConfig([]string{
+		"--config", cfgPath,
+		"--base-url", "http://127.0.0.1:19092",
+		"--api-key", "flag_secret",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:19092" {
+		t.Fatalf("unexpected base url: %s", cfg.BaseURL)
+	}
+	if cfg.APIKey != "flag_secret" {
 		t.Fatalf("unexpected api key: %s", cfg.APIKey)
 	}
 }
@@ -60,7 +116,7 @@ func TestRunREPLSendAndQuit(t *testing.T) {
 	}
 	now := func() time.Time { return time.UnixMilli(12345) }
 
-	if err := runREPL(context.Background(), in, out, client, "demo", now); err != nil {
+	if err := runREPL(context.Background(), in, out, client, "demo", "user_demo", now); err != nil {
 		t.Fatalf("runREPL: %v", err)
 	}
 	if len(client.requests) != 1 {
@@ -68,6 +124,9 @@ func TestRunREPLSendAndQuit(t *testing.T) {
 	}
 	if got := client.requests[0].IdempotencyKey; got != "cli:demo:12345" {
 		t.Fatalf("unexpected idempotency key: %s", got)
+	}
+	if got := client.requests[0].Conversation.ParticipantID; got != "user_demo" {
+		t.Fatalf("unexpected participant: %s", got)
 	}
 	if got := out.String(); !bytes.Contains([]byte(got), []byte("bot> 已收到: hello")) {
 		t.Fatalf("unexpected output: %q", got)
@@ -85,7 +144,7 @@ func TestRunREPLCancelWhileWaitingInput(t *testing.T) {
 	client := &fakeClient{}
 	done := make(chan error, 1)
 	go func() {
-		done <- runREPL(ctx, reader, out, client, "demo", time.Now)
+		done <- runREPL(ctx, reader, out, client, "demo", "user_demo", time.Now)
 	}()
 
 	deadline := time.Now().Add(300 * time.Millisecond)

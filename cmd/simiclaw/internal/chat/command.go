@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,13 +15,14 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/channels/cli"
+	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 const (
 	defaultBaseURL      = "http://127.0.0.1:8080"
 	defaultConversation = "cli_default"
-	fixedParticipantID  = "local_user"
+	defaultParticipant  = "local_user"
 	defaultPollInterval = 50 * time.Millisecond
 	defaultPollTimeout  = 60 * time.Second
 	defaultReqTimeout   = 3 * time.Second
@@ -29,6 +31,7 @@ const (
 type Config struct {
 	BaseURL      string
 	Conversation string
+	Participant  string
 	APIKey       string
 }
 
@@ -52,25 +55,51 @@ func Run(args []string) error {
 	defer stop()
 
 	client := NewHTTPClient(cfg.BaseURL, cfg.APIKey, defaultReqTimeout, defaultPollInterval, defaultPollTimeout)
-	return runREPL(ctx, os.Stdin, os.Stdout, client, cfg.Conversation, time.Now)
+	return runREPL(ctx, os.Stdin, os.Stdout, client, cfg.Conversation, cfg.Participant, time.Now)
 }
 
 func parseConfig(args []string) (Config, error) {
 	cfg := Config{
 		BaseURL:      defaultBaseURL,
 		Conversation: defaultConversation,
+		Participant:  defaultParticipant,
 	}
 	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
+	configPath := fs.String("config", "", "path to gateway config json")
 	baseURL := fs.String("base-url", cfg.BaseURL, "gateway base url")
 	conversation := fs.String("conversation", cfg.Conversation, "conversation id")
+	participant := fs.String("participant", cfg.Participant, "participant id for dm conversation")
 	apiKey := fs.String("api-key", "", "api key for Authorization header")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
 
-	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(*baseURL), "/")
+	setFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		setFlags[f.Name] = true
+	})
+
+	if strings.TrimSpace(*configPath) != "" {
+		svcCfg, err := config.Load(strings.TrimSpace(*configPath))
+		if err != nil {
+			return Config{}, fmt.Errorf("load chat config: %w", err)
+		}
+		if !setFlags["base-url"] {
+			cfg.BaseURL = baseURLFromListenAddr(svcCfg.ListenAddr)
+		}
+		if !setFlags["api-key"] {
+			cfg.APIKey = strings.TrimSpace(svcCfg.APIKey)
+		}
+	}
+
+	if setFlags["base-url"] {
+		cfg.BaseURL = strings.TrimRight(strings.TrimSpace(*baseURL), "/")
+	}
 	cfg.Conversation = strings.TrimSpace(*conversation)
-	cfg.APIKey = strings.TrimSpace(*apiKey)
+	cfg.Participant = strings.TrimSpace(*participant)
+	if setFlags["api-key"] {
+		cfg.APIKey = strings.TrimSpace(*apiKey)
+	}
 
 	if cfg.BaseURL == "" {
 		return Config{}, errors.New("base-url is required")
@@ -78,10 +107,13 @@ func parseConfig(args []string) (Config, error) {
 	if cfg.Conversation == "" {
 		return Config{}, errors.New("conversation is required")
 	}
+	if cfg.Participant == "" {
+		return Config{}, errors.New("participant is required")
+	}
 	return cfg, nil
 }
 
-func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, now func() time.Time) error {
+func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID, participantID string, now func() time.Time) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
 	inputCh := startScanner(ctx, scanner)
@@ -122,7 +154,7 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 			return nil
 		}
 
-		req := cli.BuildIngestRequest(conversationID, fixedParticipantID, seq, text)
+		req := cli.BuildIngestRequest(conversationID, participantID, seq, text)
 		seq++
 		rec, err := client.SendAndWait(ctx, req)
 		if err != nil {
@@ -158,6 +190,38 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 			}
 		}
 	}
+}
+
+func baseURLFromListenAddr(listenAddr string) string {
+	raw := strings.TrimSpace(listenAddr)
+	if raw == "" {
+		return defaultBaseURL
+	}
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return strings.TrimRight(raw, "/")
+	}
+
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		if strings.HasPrefix(raw, ":") {
+			host = "127.0.0.1"
+			port = strings.TrimPrefix(raw, ":")
+		} else {
+			return defaultBaseURL
+		}
+	}
+
+	if strings.TrimSpace(port) == "" {
+		return defaultBaseURL
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return "http://" + host + ":" + port
 }
 
 func startScanner(ctx context.Context, scanner *bufio.Scanner) <-chan replInput {
