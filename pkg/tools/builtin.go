@@ -14,6 +14,8 @@ import (
 const (
 	fileReadToolName     = "file_read"
 	fileReadDefaultLimit = 2000
+	fileWriteToolName    = "file_write"
+	fileEditToolName     = "file_edit"
 )
 
 var errFileReadPathDenied = errors.New("path denied")
@@ -31,6 +33,29 @@ type FileReadOutput struct {
 	EndLine    int    `json:"end_line,omitempty"`
 	TotalLines int    `json:"total_lines"`
 	Truncated  bool   `json:"truncated"`
+}
+
+type FileWriteInput struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type FileWriteOutput struct {
+	Path         string `json:"path"`
+	BytesWritten int    `json:"bytes_written"`
+}
+
+type FileEditInput struct {
+	Path       string `json:"path"`
+	OldText    string `json:"old_text"`
+	NewText    string `json:"new_text"`
+	ReplaceAll bool   `json:"replace_all,omitempty"`
+}
+
+type FileEditOutput struct {
+	Path          string `json:"path"`
+	ReplacedCount int    `json:"replaced_count"`
+	BytesWritten  int    `json:"bytes_written"`
 }
 
 func NewFileReadTool(workspace string) (adktool.Tool, error) {
@@ -76,6 +101,114 @@ func NewFileReadTool(workspace string) (adktool.Tool, error) {
 		}
 		return out, nil
 	})
+}
+
+func NewFileWriteTool(workspace string) (adktool.Tool, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return nil, fmt.Errorf("invalid_argument: workspace is required")
+	}
+
+	return functiontool.New[FileWriteInput, FileWriteOutput](functiontool.Config{
+		Name:        fileWriteToolName,
+		Description: "Write text files in workspace safely.",
+	}, func(_ adktool.Context, input FileWriteInput) (FileWriteOutput, error) {
+		return writeWorkspaceFile(workspace, input)
+	})
+}
+
+func NewFileEditTool(workspace string) (adktool.Tool, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return nil, fmt.Errorf("invalid_argument: workspace is required")
+	}
+
+	return functiontool.New[FileEditInput, FileEditOutput](functiontool.Config{
+		Name:        fileEditToolName,
+		Description: "Replace text in workspace files with controlled matching.",
+	}, func(_ adktool.Context, input FileEditInput) (FileEditOutput, error) {
+		return editWorkspaceFile(workspace, input)
+	})
+}
+
+func writeWorkspaceFile(workspace string, input FileWriteInput) (FileWriteOutput, error) {
+	path, absPath, err := resolveFileReadPath(workspace, input.Path)
+	if err != nil {
+		if errors.Is(err, errFileReadPathDenied) {
+			return FileWriteOutput{}, fmt.Errorf("forbidden: %w", err)
+		}
+		return FileWriteOutput{}, fmt.Errorf("invalid_argument: %w", err)
+	}
+
+	if err := ensureParentPathWithinWorkspace(workspace, absPath); err != nil {
+		if errors.Is(err, errFileReadPathDenied) {
+			return FileWriteOutput{}, fmt.Errorf("forbidden: %w", err)
+		}
+		return FileWriteOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		return FileWriteOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	if err := os.WriteFile(absPath, []byte(input.Content), 0o644); err != nil {
+		return FileWriteOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	return FileWriteOutput{Path: path, BytesWritten: len(input.Content)}, nil
+}
+
+func editWorkspaceFile(workspace string, input FileEditInput) (FileEditOutput, error) {
+	path, absPath, err := resolveFileReadPath(workspace, input.Path)
+	if err != nil {
+		if errors.Is(err, errFileReadPathDenied) {
+			return FileEditOutput{}, fmt.Errorf("forbidden: %w", err)
+		}
+		return FileEditOutput{}, fmt.Errorf("invalid_argument: %w", err)
+	}
+
+	if input.OldText == "" {
+		return FileEditOutput{}, fmt.Errorf("invalid_argument: old_text is required")
+	}
+
+	if err := ensureParentPathWithinWorkspace(workspace, absPath); err != nil {
+		if errors.Is(err, errFileReadPathDenied) {
+			return FileEditOutput{}, fmt.Errorf("forbidden: %w", err)
+		}
+		return FileEditOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return FileEditOutput{}, fmt.Errorf("not_found: %w", err)
+		}
+		return FileEditOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	current := string(content)
+	matches := strings.Count(current, input.OldText)
+	if matches == 0 {
+		return FileEditOutput{}, fmt.Errorf("not_found: old_text not found")
+	}
+	if !input.ReplaceAll && matches > 1 {
+		return FileEditOutput{}, fmt.Errorf("invalid_argument: old_text has multiple matches; set replace_all=true")
+	}
+
+	next := current
+	replaced := matches
+	if input.ReplaceAll {
+		next = strings.ReplaceAll(current, input.OldText, input.NewText)
+	} else {
+		next = strings.Replace(current, input.OldText, input.NewText, 1)
+		replaced = 1
+	}
+
+	if err := os.WriteFile(absPath, []byte(next), 0o644); err != nil {
+		return FileEditOutput{}, fmt.Errorf("internal: %w", err)
+	}
+
+	return FileEditOutput{Path: path, ReplacedCount: replaced, BytesWritten: len(next)}, nil
 }
 
 func resolveFileReadPath(workspace, rawPath string) (string, string, error) {
@@ -139,6 +272,54 @@ func isWithinWorkspace(workspaceAbs, candidateAbs string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func ensureParentPathWithinWorkspace(workspace, absPath string) error {
+	workspaceAbs, err := filepath.Abs(workspace)
+	if err != nil {
+		return err
+	}
+	workspaceReal := workspaceAbs
+	if resolvedWorkspace, err := filepath.EvalSymlinks(workspaceAbs); err == nil {
+		workspaceReal = resolvedWorkspace
+	}
+
+	parent := filepath.Dir(absPath)
+	for {
+		if parent == "." || parent == string(os.PathSeparator) {
+			break
+		}
+		_, statErr := os.Stat(parent)
+		if statErr == nil {
+			resolvedParent, err := filepath.EvalSymlinks(parent)
+			if err != nil {
+				return err
+			}
+			resolvedParentAbs, err := filepath.Abs(resolvedParent)
+			if err != nil {
+				return err
+			}
+			inside, err := isWithinWorkspace(workspaceReal, resolvedParentAbs)
+			if err != nil {
+				return err
+			}
+			if !inside {
+				return fmt.Errorf("%w: symlink escapes workspace", errFileReadPathDenied)
+			}
+			return nil
+		}
+		if !os.IsNotExist(statErr) {
+			return statErr
+		}
+
+		next := filepath.Dir(parent)
+		if next == parent {
+			break
+		}
+		parent = next
+	}
+
+	return nil
 }
 
 func buildFileReadOutput(path, absPath string, startLine, lineLimit int) (FileReadOutput, error) {
