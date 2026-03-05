@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/llm"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
@@ -165,6 +166,18 @@ func (r *AgentRunner) handleInteractive(
 	// 2. Build tool list from registry
 	llmTools := r.buildToolList()
 
+	logger := logging.L("agent").With(
+		logging.String("run_id", runID),
+		logging.String("event_id", event.EventID),
+		logging.String("session_id", event.ActiveSessionID),
+	)
+
+	logger.Info("agent.run.start",
+		logging.Int("history_msgs", len(messages)),
+		logging.Int("tools", len(llmTools)),
+		logging.Int("max_rounds", maxToolRounds),
+	)
+
 	// 3. Tool-calling loop
 	for round := 0; round <= maxToolRounds; round++ {
 		req := llm.ChatRequest{
@@ -174,9 +187,14 @@ func (r *AgentRunner) handleInteractive(
 			req.Tools = llmTools
 		}
 
+		callStart := time.Now()
 		resp, err := r.llm.Chat(ctx, req)
 		if err != nil {
 			errMsg := fmt.Sprintf("LLM 调用失败: %v", err)
+			logger.Error("agent.llm.error",
+				logging.Int("round", round),
+				logging.String("error", err.Error()),
+			)
 			*entries = append(*entries, model.SessionEntry{
 				Type:    "assistant",
 				EntryID: nextID("e_assistant", now),
@@ -202,6 +220,14 @@ func (r *AgentRunner) handleInteractive(
 		choice := resp.Choices[0]
 		assistantMsg := choice.Message
 
+			logger.Info("agent.llm.ok",
+				logging.Int("round", round),
+				logging.String("finish_reason", choice.FinishReason),
+				logging.Int("prompt_tokens", resp.Usage.PromptTokens),
+				logging.Int("completion_tokens", resp.Usage.CompletionTokens),
+				logging.Int64("latency_ms", time.Since(callStart).Milliseconds()),
+			)
+
 		if choice.FinishReason == "tool_calls" && len(assistantMsg.ToolCalls) > 0 {
 			// Record assistant tool-call entry
 			sessionToolCalls := make([]model.ToolCall, 0, len(assistantMsg.ToolCalls))
@@ -226,6 +252,10 @@ func (r *AgentRunner) handleInteractive(
 			// Execute each tool call
 			for _, tc := range assistantMsg.ToolCalls {
 				argsMap := parseArgs(tc.Function.Arguments)
+				logger.Info("agent.tool.call",
+					logging.String("tool", tc.Function.Name),
+					logging.String("tool_call_id", tc.ID),
+				)
 				toolResult := r.executeTool(ctx, event, runID, now, tc.ID, tc.Function.Name, argsMap,
 					entries, toolExecutions, actions)
 				// Append tool result to history
@@ -249,6 +279,11 @@ func (r *AgentRunner) handleInteractive(
 			Content: reply,
 		})
 		*actions = append(*actions, newSendAction(runID, len(*actions), now, reply))
+		logger.Info("agent.run.done",
+			logging.Int("rounds", round+1),
+			logging.Int("reply_len", len(reply)),
+		)
+
 		return reply
 	}
 
