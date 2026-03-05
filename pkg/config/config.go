@@ -54,6 +54,12 @@ type Config struct {
 	RateLimitSessionRPS   float64  `json:"rate_limit_session_rps"`
 	RateLimitSessionBurst float64  `json:"rate_limit_session_burst"`
 	MaxToolRounds         int      `json:"max_tool_rounds"`
+
+	// LLM 配置：接入 OpenAI 兼容 API（GPT-4、DeepSeek、Ollama 等）
+	LLMBaseURL string   `json:"llm_base_url,omitempty"`
+	LLMAPIKey  string   `json:"llm_api_key,omitempty"`
+	LLMModel   string   `json:"llm_model,omitempty"`
+	LLMTimeout Duration `json:"llm_timeout,omitempty"`
 }
 
 const (
@@ -68,6 +74,9 @@ const (
 	defaultRateLimitSessionRPS   = 5
 	defaultRateLimitSessionBurst = 10
 	defaultMaxToolRounds         = 4
+	defaultLLMBaseURL            = "https://api.openai.com/v1"
+	defaultLLMModel              = "gpt-4o"
+	defaultLLMTimeout            = 60 * time.Second
 )
 
 // Default 返回服务配置的默认值。
@@ -84,6 +93,9 @@ func Default() Config {
 		RateLimitSessionRPS:   defaultRateLimitSessionRPS,
 		RateLimitSessionBurst: defaultRateLimitSessionBurst,
 		MaxToolRounds:         defaultMaxToolRounds,
+		LLMBaseURL:            defaultLLMBaseURL,
+		LLMModel:              defaultLLMModel,
+		LLMTimeout:            Duration{defaultLLMTimeout},
 	}
 }
 
@@ -124,6 +136,15 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.MaxToolRounds <= 0 {
 		cfg.MaxToolRounds = defaultMaxToolRounds
+	}
+	if cfg.LLMBaseURL == "" {
+		cfg.LLMBaseURL = defaultLLMBaseURL
+	}
+	if cfg.LLMModel == "" {
+		cfg.LLMModel = defaultLLMModel
+	}
+	if cfg.LLMTimeout.Duration <= 0 {
+		cfg.LLMTimeout = Duration{defaultLLMTimeout}
 	}
 	if cfg.RateLimitTenantRPS <= 0 {
 		cfg.RateLimitTenantRPS = defaultRateLimitTenantRPS
