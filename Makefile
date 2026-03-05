@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 CORE_PKGS := ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/... ./pkg/idempotency/... ./pkg/sessionkey/...
 
-.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e test-fault-injection accept-current accept-m1 accept-m2 accept-m3 accept-m4 docs-consistency
+.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e test-fault-injection test-patch-guard accept-current accept-m1 accept-m2 accept-m3 accept-m4 docs-consistency
 
 # 格式化所有 Go 代码
 fmt:
@@ -23,8 +23,13 @@ lint:
 
 # 运行所有单元测试并输出测试覆盖率
 test-unit:
-	go test ./cmd/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover
-	@go tool cover -func=/tmp/simiclaw-unit.cover | tail -n 1
+	@if go tool | grep -qx 'covdata'; then \
+		go test ./cmd/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover; \
+		go tool cover -func=/tmp/simiclaw-unit.cover | tail -n 1; \
+	else \
+		echo "covdata not available, running unit tests without coverage profile"; \
+		go test ./cmd/... ./pkg/...; \
+	fi
 
 # 针对核心逻辑包运行带有数据竞争检测 (-race) 的单元测试
 test-unit-race-core:
@@ -61,6 +66,10 @@ test-e2e-smoke:
 test-e2e:
 	go test ./tests/e2e/... -count=1
 
+# Patch Guard 最小回归入口（schema/lint/smoke 的 M4 护栏）
+test-patch-guard:
+	go test ./pkg/approval/... -run 'TestPatch|TestDecide' -v
+
 # 运行故障注入测试（尚未实现）
 test-fault-injection:
 	@echo "stage not ready: test-fault-injection"
@@ -77,9 +86,9 @@ accept-m2: test-integration test-e2e-smoke
 accept-m3: test-integration test-e2e-smoke
 	@echo "accept-m3 passed"
 
-# 运行 M4 阶段的自动化验收测试（待实现）
-accept-m4:
-	@echo "stage not ready: accept-m4 (M4 pending)"
+# 运行 M4 阶段的自动化验收测试
+accept-m4: test-integration test-e2e-smoke test-patch-guard
+	@echo "accept-m4 passed"
 
 # 根据 VERSION_STAGE 自动选择执行当前开发阶段的验收流程
 accept-current:

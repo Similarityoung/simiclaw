@@ -60,6 +60,10 @@ type EventPayload struct {
 	Attachments []Attachment      `json:"attachments,omitempty"`
 	Native      json.RawMessage   `json:"native,omitempty"`
 	NativeRef   string            `json:"native_ref,omitempty"`
+	ApprovalID  string            `json:"approval_id,omitempty"`
+	Actor       *ApprovalActor    `json:"actor,omitempty"`
+	Note        string            `json:"note,omitempty"`
+	Actions     []string          `json:"actions,omitempty"`
 	Extra       map[string]string `json:"extra,omitempty"`
 }
 
@@ -199,6 +203,113 @@ type Action struct {
 	Risk                 string         `json:"risk"`
 	RequiresApproval     bool           `json:"requires_approval"`
 	Payload              map[string]any `json:"payload"`
+}
+
+type ApprovalStatus string
+
+const (
+	ApprovalStatusPending  ApprovalStatus = "pending"
+	ApprovalStatusApproved ApprovalStatus = "approved"
+	ApprovalStatusRejected ApprovalStatus = "rejected"
+	ApprovalStatusExpired  ApprovalStatus = "expired"
+)
+
+type ApprovalRisk string
+
+const (
+	ApprovalRiskLow    ApprovalRisk = "low"
+	ApprovalRiskMedium ApprovalRisk = "medium"
+	ApprovalRiskHigh   ApprovalRisk = "high"
+)
+
+type ApprovalActor struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+type ApprovalDecision struct {
+	Actor     ApprovalActor `json:"actor"`
+	Note      string        `json:"note,omitempty"`
+	DecidedAt time.Time     `json:"decided_at"`
+}
+
+type ApprovalActionResult struct {
+	ActionID string `json:"action_id"`
+	OK       bool   `json:"ok"`
+	Message  string `json:"message"`
+}
+
+type ApprovalRecord struct {
+	ApprovalID               string                 `json:"approval_id"`
+	Status                   ApprovalStatus         `json:"status"`
+	Risk                     ApprovalRisk           `json:"risk"`
+	SessionKey               string                 `json:"session_key"`
+	SessionID                string                 `json:"session_id"`
+	RunID                    string                 `json:"run_id"`
+	ConversationID           string                 `json:"conversation_id"`
+	Scopes                   []string               `json:"scopes,omitempty"`
+	Summary                  string                 `json:"summary"`
+	Actions                  []Action               `json:"actions"`
+	CreatedAt                time.Time              `json:"created_at"`
+	ExpiresAt                time.Time              `json:"expires_at"`
+	UpdatedAt                time.Time              `json:"updated_at"`
+	Decision                 *ApprovalDecision      `json:"decision,omitempty"`
+	DecisionEventPublishedAt *time.Time             `json:"decision_event_published_at,omitempty"`
+	Results                  []ApprovalActionResult `json:"results,omitempty"`
+}
+
+type CreateApprovalRequest struct {
+	RunID           string   `json:"run_id"`
+	SessionKey      string   `json:"session_key"`
+	ActiveSessionID string   `json:"active_session_id"`
+	ConversationID  string   `json:"conversation_id"`
+	Scopes          []string `json:"scopes,omitempty"`
+	ExpiresAt       string   `json:"expires_at"`
+	Summary         string   `json:"summary"`
+	Risk            string   `json:"risk"`
+	Actions         []Action `json:"actions"`
+}
+
+type CreateApprovalResponse struct {
+	ApprovalID string         `json:"approval_id"`
+	Status     ApprovalStatus `json:"status"`
+	ApproveURL string         `json:"approve_url"`
+	RejectURL  string         `json:"reject_url"`
+}
+
+type ApprovalDecisionRequest struct {
+	Actor ApprovalActor `json:"actor"`
+	Note  string        `json:"note,omitempty"`
+}
+
+type ApprovalDecisionResponse struct {
+	ApprovalID string         `json:"approval_id"`
+	Status     ApprovalStatus `json:"status"`
+}
+
+type ApprovalListResponse struct {
+	Items      []ApprovalRecord `json:"items"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
+type PatchPayload struct {
+	Target              string `json:"target"`
+	TargetPath          string `json:"target_path"`
+	PatchFormat         string `json:"patch_format"`
+	Diff                string `json:"diff"`
+	ExpectedBaseHash    string `json:"expected_base_hash"`
+	PatchIdempotencyKey string `json:"patch_idempotency_key"`
+}
+
+type PatchApplyResult struct {
+	OK             bool   `json:"ok"`
+	Message        string `json:"message"`
+	TargetPath     string `json:"target_path,omitempty"`
+	ExpectedHash   string `json:"expected_hash,omitempty"`
+	CurrentHash    string `json:"current_hash,omitempty"`
+	AppliedHash    string `json:"applied_hash,omitempty"`
+	RolledBack     bool   `json:"rolled_back,omitempty"`
+	FromIdempotent bool   `json:"from_idempotent,omitempty"`
 }
 
 type ContextManifest struct {
