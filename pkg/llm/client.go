@@ -6,10 +6,12 @@ package llm
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -102,6 +104,12 @@ func New(cfg Config) *Client {
 		model:   cfg.Model,
 		httpClient: &http.Client{
 			Timeout: timeout,
+			Transport: &http.Transport{
+				// Force HTTP/1.1 — some API gateways (including DeepSeek) drop HTTP/2
+				// connections prematurely, causing EOF errors.
+				TLSNextProto:          make(map[string]func(string, *tls.Conn) http.RoundTripper),
+				ResponseHeaderTimeout: timeout,
+			},
 		},
 	}
 }
@@ -117,34 +125,52 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 		return nil, fmt.Errorf("llm: marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("llm: build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	// Retry once on EOF — the server may have closed a kept-alive connection.
+	const maxRetries = 2
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("llm: build request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if c.apiKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("llm: http: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			if attempt < maxRetries-1 && isEOFError(err) {
+				continue // retry with a fresh connection
+			}
+			return nil, fmt.Errorf("llm: http: %w", err)
+		}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("llm: read body: %w", err)
-	}
+		respBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("llm: read body: %w", readErr)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("llm: status %d: %s", resp.StatusCode, string(respBody))
-	}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("llm: status %d: %s", resp.StatusCode, string(respBody))
+		}
 
-	var chatResp ChatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, fmt.Errorf("llm: unmarshal response: %w", err)
+		var chatResp ChatResponse
+		if err := json.Unmarshal(respBody, &chatResp); err != nil {
+			return nil, fmt.Errorf("llm: unmarshal response: %w", err)
+		}
+		return &chatResp, nil
 	}
-	return &chatResp, nil
+	return nil, fmt.Errorf("llm: all %d attempts failed", maxRetries)
+}
+
+// isEOFError reports whether err is an EOF or unexpected-EOF network error,
+// which typically means the server closed a kept-alive connection.
+func isEOFError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "EOF") || strings.Contains(s, "unexpected EOF")
 }
