@@ -1,4 +1,4 @@
-package runner
+package engine
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/pkg/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 

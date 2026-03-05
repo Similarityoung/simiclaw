@@ -10,7 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 type Sender interface {

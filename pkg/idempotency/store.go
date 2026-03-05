@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 // ErrConflict 表示同一幂等键对应了不同 payload，属于语义冲突。

@@ -3,9 +3,9 @@ package gateway
 import (
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
+	runtime "github.com/similarityyoung/simiclaw/pkg/eventing"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
-	"github.com/similarityyoung/simiclaw/pkg/runtime"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 // Service 聚合网关入站处理所需依赖，负责把 HTTP 请求转换为内部事件流程。

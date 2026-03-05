@@ -7,7 +7,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 func TestDecideApproveIdempotentAndRejectConflict(t *testing.T) {

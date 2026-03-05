@@ -15,9 +15,9 @@ func RegisterMemorySearch(reg *Registry) {
 		Parameters: ParameterSchema{
 			Type: "object",
 			Properties: map[string]ParameterSchema{
-				"query":  {Type: "string", Description: "搜索关键词"},
-				"scope":  {Type: "string", Description: "auto | daily | curated", Enum: []string{"auto", "daily", "curated"}},
-				"top_k":  {Type: "integer", Description: "返回条数，默认 6"},
+				"query": {Type: "string", Description: "搜索关键词"},
+				"scope": {Type: "string", Description: "auto | daily | curated", Enum: []string{"auto", "daily", "curated"}},
+				"top_k": {Type: "integer", Description: "返回条数，默认 6"},
 			},
 			Required: []string{"query"},
 		},

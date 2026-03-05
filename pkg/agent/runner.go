@@ -25,12 +25,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	runner "github.com/similarityyoung/simiclaw/pkg/engine"
 	"github.com/similarityyoung/simiclaw/pkg/llm"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/runner"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
@@ -82,7 +82,7 @@ func New(cfg Config) *AgentRunner {
 // ---- runner.Runner implementation -------------------------------------------
 
 // Run processes one InternalEvent and returns a RunOutput.
-// It satisfies the runner.Runner interface defined in pkg/runner.
+// It satisfies the runner.Runner interface defined in pkg/engine.
 func (r *AgentRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int) (runner.RunOutput, error) {
 	now := time.Now().UTC()
 	runID := nextID("run", now)
@@ -220,13 +220,13 @@ func (r *AgentRunner) handleInteractive(
 		choice := resp.Choices[0]
 		assistantMsg := choice.Message
 
-			logger.Info("agent.llm.ok",
-				logging.Int("round", round),
-				logging.String("finish_reason", choice.FinishReason),
-				logging.Int("prompt_tokens", resp.Usage.PromptTokens),
-				logging.Int("completion_tokens", resp.Usage.CompletionTokens),
-				logging.Int64("latency_ms", time.Since(callStart).Milliseconds()),
-			)
+		logger.Info("agent.llm.ok",
+			logging.Int("round", round),
+			logging.String("finish_reason", choice.FinishReason),
+			logging.Int("prompt_tokens", resp.Usage.PromptTokens),
+			logging.Int("completion_tokens", resp.Usage.CompletionTokens),
+			logging.Int64("latency_ms", time.Since(callStart).Milliseconds()),
+		)
 
 		if choice.FinishReason == "tool_calls" && len(assistantMsg.ToolCalls) > 0 {
 			// Record assistant tool-call entry

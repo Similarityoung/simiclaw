@@ -63,8 +63,8 @@ M0 起必须提供统一入口：
 - `make test-integration` 必须固定执行 `go test ./tests/integration/... -tags=integration`，禁止使用 `./...`。
 - `make test-unit-race-core` 的 `core` 范围固定为：
   - `./pkg/gateway/...`
-  - `./pkg/runtime/...`
-  - `./pkg/store/...`
+- `./pkg/eventing/...`
+- `./pkg/persistence/...`
   - `./pkg/idempotency/...`
   - `./pkg/sessionkey/...`
   - 若目录尚未落地，target 可临时 no-op，但必须在输出中明确提示“core package pending”。

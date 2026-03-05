@@ -1,4 +1,4 @@
-package runtime
+package eventing
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 // EventRepo 维护 event_id 到事件记录的内存索引，并负责落盘到 events.json。

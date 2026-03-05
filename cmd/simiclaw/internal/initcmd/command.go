@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 func Run(args []string) error {

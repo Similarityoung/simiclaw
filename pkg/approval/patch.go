@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 )
 
 type actionLedgerRow struct {
