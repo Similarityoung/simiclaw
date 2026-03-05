@@ -17,14 +17,22 @@ func appendEvolution(workspace, title string, lines []string, now time.Time) err
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		header := fmt.Sprintf("# Evolution %s\n\n", date)
-		if err := os.WriteFile(path, []byte(header), 0o644); err != nil {
-			return err
-		}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return err
 	}
 
 	var sb strings.Builder
+	if info.Size() == 0 {
+		sb.WriteString(fmt.Sprintf("# Evolution %s\n\n", date))
+	}
 	sb.WriteString(fmt.Sprintf("## %s %s\n", now.UTC().Format("15:04:05Z"), strings.TrimSpace(title)))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -37,11 +45,6 @@ func appendEvolution(workspace, title string, lines []string, now time.Time) err
 	}
 	sb.WriteByte('\n')
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 	if _, err := f.WriteString(sb.String()); err != nil {
 		return err
 	}
