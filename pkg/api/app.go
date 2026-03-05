@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/approval"
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
@@ -26,6 +27,7 @@ type App struct {
 	Idempotency *idempotency.Store
 	StoreLoop   *store.StoreLoop
 	EventLoop   *runtime.EventLoop
+	Approvals   *approval.Service
 	Handler     http.Handler
 }
 
@@ -52,10 +54,14 @@ func NewApp(cfg config.Config) (*App, error) {
 	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
 	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
 	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
+	approvalSvc, err := approval.NewService(cfg.Workspace, eventBus)
+	if err != nil {
+		return nil, err
+	}
 	registry := tools.NewRegistry()
 	tools.RegisterBuiltins(registry)
 	run := runner.NewProcessRunner(cfg.Workspace, registry)
-	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, cfg.MaxToolRounds)
+	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, approvalSvc, cfg.MaxToolRounds)
 	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
 
 	app := &App{
@@ -68,6 +74,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		Idempotency: idStore,
 		StoreLoop:   storeLoop,
 		EventLoop:   eventLoop,
+		Approvals:   approvalSvc,
 	}
 	app.Handler = app.routes()
 	return app, nil

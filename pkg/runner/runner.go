@@ -204,6 +204,39 @@ func (r *ProcessRunner) handleInteractive(
 		return reply
 	}
 
+	if strings.HasPrefix(text, "/patch") {
+		patchPayload := map[string]any{}
+		for k, v := range event.Payload.Extra {
+			patchPayload[k] = v
+		}
+		if _, ok := patchPayload["target"]; !ok {
+			patchPayload["target"] = "workflow"
+		}
+		if _, ok := patchPayload["patch_format"]; !ok {
+			patchPayload["patch_format"] = "unified-diff"
+		}
+		if _, ok := patchPayload["patch_idempotency_key"]; !ok {
+			patchPayload["patch_idempotency_key"] = fmt.Sprintf("%s:act_patch_%d", runID, len(*actions))
+		}
+		*actions = append(*actions, model.Action{
+			ActionID:             nextID("act", now),
+			ActionIndex:          len(*actions),
+			ActionIdempotencyKey: fmt.Sprintf("%s:%d", runID, len(*actions)),
+			Type:                 "Patch",
+			Risk:                 "high",
+			RequiresApproval:     true,
+			Payload:              patchPayload,
+		})
+		reply := "已生成高风险 Patch 提案，等待审批。"
+		*entries = append(*entries, model.SessionEntry{
+			Type:    "assistant",
+			EntryID: nextID("e_assistant", now),
+			RunID:   runID,
+			Content: reply,
+		})
+		return reply
+	}
+
 	if shouldRemember(text) {
 		fact := extractRememberFact(text)
 		reply := "好的，我记住了。"

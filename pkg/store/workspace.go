@@ -15,10 +15,14 @@ func InitWorkspace(workspace string) error {
 		filepath.Join(workspace, "runtime"),
 		filepath.Join(workspace, "runtime", "sessions"),
 		filepath.Join(workspace, "runtime", "runs"),
+		filepath.Join(workspace, "runtime", "approvals"),
+		filepath.Join(workspace, "runtime", "approvals", "pending"),
+		filepath.Join(workspace, "runtime", "approvals", "done"),
 		filepath.Join(workspace, "runtime", "idempotency"),
 		filepath.Join(workspace, "runtime", "outbound_spool"),
 		filepath.Join(workspace, "runtime", "native"),
 		filepath.Join(workspace, "runtime", "events"),
+		filepath.Join(workspace, "evolution"),
 		filepath.Join(workspace, "tests"),
 	}
 	for _, p := range paths {
