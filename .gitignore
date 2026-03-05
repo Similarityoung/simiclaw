@@ -20,6 +20,9 @@
 # Runtime workspace
 workspace/
 
+# oh my opencode
+.sisyphus
+
 # Go build artifacts
 /simiclaw
 *.exe
