@@ -22,7 +22,7 @@ const (
 	defaultConversation = "cli_default"
 	fixedParticipantID  = "local_user"
 	defaultPollInterval = 50 * time.Millisecond
-	defaultPollTimeout  = 5 * time.Second
+	defaultPollTimeout  = 60 * time.Second
 	defaultReqTimeout   = 3 * time.Second
 )
 
