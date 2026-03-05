@@ -9,5 +9,6 @@ const (
 	ErrorCodeQueueUnavailable = "QUEUE_UNAVAILABLE"
 	ErrorCodeCanceled         = "CANCELED"
 	ErrorCodeUnauthorized     = "UNAUTHORIZED"
+	ErrorCodeForbidden        = "FORBIDDEN"
 	ErrorCodeNotFound         = "NOT_FOUND"
 )
