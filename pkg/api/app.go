@@ -65,16 +65,11 @@ func NewApp(cfg config.Config) (*App, error) {
 	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
 	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
 	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
-	var adkRuntime *adkruntime.Runtime
-	var adkRouter gatewayADKSessionRouter
-	if cfg.EnableADKGateway {
-		var adkErr error
-		adkRuntime, adkErr = newGatewayADKRuntime(cfg)
-		if adkErr != nil {
-			return nil, fmt.Errorf("initialize gateway adk runtime: %w", adkErr)
-		}
-		adkRouter = gatewayADKSessionRouter{runtime: adkRuntime, appName: defaultGatewayADKAppName}
+	adkRuntime, err := newGatewayADKRuntime(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize gateway adk runtime: %w", err)
 	}
+	adkRouter := gatewayADKSessionRouter{runtime: adkRuntime, appName: defaultGatewayADKAppName}
 	approvalSvc, err := approval.NewService(cfg.Workspace, eventBus)
 	if err != nil {
 		return nil, err

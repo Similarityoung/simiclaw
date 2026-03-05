@@ -58,7 +58,7 @@ func TestParseConfigOverrides(t *testing.T) {
 func TestParseConfigFromGatewayConfig(t *testing.T) {
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "config.json")
-	data := []byte(`{"workspace":".","listen_addr":":19091","enable_adk_gateway":true,"api_key":"cfg_secret"}`)
+	data := []byte(`{"workspace":".","listen_addr":":19091","api_key":"cfg_secret"}`)
 	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

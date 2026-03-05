@@ -11,9 +11,6 @@ func TestDefaultLogLevel(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Fatalf("unexpected default log level: %s", cfg.LogLevel)
 	}
-	if cfg.EnableADKGateway {
-		t.Fatalf("expected enable_adk_gateway default false")
-	}
 }
 
 func TestLoadLogLevel(t *testing.T) {
@@ -46,7 +43,7 @@ func TestLoadInvalidLogLevel(t *testing.T) {
 	}
 }
 
-func TestLoadEnableADKGateway(t *testing.T) {
+func TestLoadIgnoresRemovedEnableADKGatewayField(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "cfg.json")
 	data := []byte("{\"workspace\":\".\",\"enable_adk_gateway\":true}")
@@ -58,7 +55,7 @@ func TestLoadEnableADKGateway(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if !cfg.EnableADKGateway {
-		t.Fatalf("expected enable_adk_gateway=true")
+	if cfg.Workspace != "." {
+		t.Fatalf("unexpected workspace: %s", cfg.Workspace)
 	}
 }

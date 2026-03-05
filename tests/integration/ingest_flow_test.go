@@ -20,15 +20,9 @@ import (
 
 func newTestApp(t *testing.T, startLoops bool, queueCap int) *api.App {
 	t.Helper()
-	return newTestAppWithADK(t, startLoops, queueCap, false)
-}
-
-func newTestAppWithADK(t *testing.T, startLoops bool, queueCap int, enableADK bool) *api.App {
-	t.Helper()
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
 	cfg.EventQueueCapacity = queueCap
-	cfg.EnableADKGateway = enableADK
 	cfg.IngestEnqueueTimeout = config.Duration{Duration: 60 * time.Millisecond}
 	app, err := api.NewApp(cfg)
 	if err != nil {
@@ -259,102 +253,6 @@ func TestNoReplySuppressed(t *testing.T) {
 	}
 	if rec.RunMode != model.RunModeNoReply {
 		t.Fatalf("expected NO_REPLY, got %s", rec.RunMode)
-	}
-}
-
-func TestIngestLifecycleAndCommitOrderADKEnabled(t *testing.T) {
-	app := newTestAppWithADK(t, true, 16, true)
-	req := model.IngestRequest{
-		Source: "cli",
-		Conversation: model.Conversation{
-			ConversationID: "conv_a_adk",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
-		},
-		IdempotencyKey: "cli:conv_a_adk:1",
-		Timestamp:      time.Now().UTC().Format(time.RFC3339),
-		Payload:        model.EventPayload{Type: "message", Text: "hello adk"},
-	}
-	resp, code := postIngest(t, app, req)
-	if code != 202 {
-		t.Fatalf("expected 202, got %d", code)
-	}
-	rec := waitEvent(t, app, resp.EventID, 2*time.Second)
-	if rec.Status != model.EventStatusCommitted {
-		t.Fatalf("expected committed, got %s", rec.Status)
-	}
-	if rec.DeliveryStatus != model.DeliveryStatusSent {
-		t.Fatalf("expected sent, got %s", rec.DeliveryStatus)
-	}
-	if rec.RunID == "" || rec.CommitID == "" {
-		t.Fatalf("run_id/commit_id should not be empty")
-	}
-
-	order := app.StoreLoop.OrderRecord()
-	if len(order) < 3 {
-		t.Fatalf("unexpected order record: %#v", order)
-	}
-	if order[0] != "append_batch" || order[1] != "write_run" || order[2] != "update_sessions" {
-		t.Fatalf("invalid commit order: %#v", order)
-	}
-}
-
-func TestNoReplySuppressedADKEnabled(t *testing.T) {
-	app := newTestAppWithADK(t, true, 16, true)
-	req := model.IngestRequest{
-		Source:         "cli",
-		Conversation:   model.Conversation{ConversationID: "conv_nr_adk", ChannelType: "dm", ParticipantID: "u1"},
-		IdempotencyKey: "cli:conv_nr_adk:1",
-		Timestamp:      time.Now().UTC().Format(time.RFC3339),
-		Payload:        model.EventPayload{Type: "memory_flush", Text: ""},
-	}
-	resp, code := postIngest(t, app, req)
-	if code != 202 {
-		t.Fatalf("expected 202, got %d", code)
-	}
-	rec := waitEvent(t, app, resp.EventID, 2*time.Second)
-	if rec.DeliveryStatus != model.DeliveryStatusSuppressed {
-		t.Fatalf("expected suppressed, got %s", rec.DeliveryStatus)
-	}
-	if rec.RunMode != model.RunModeNoReply {
-		t.Fatalf("expected NO_REPLY, got %s", rec.RunMode)
-	}
-}
-
-func TestDuplicateAndConflictADKEnabled(t *testing.T) {
-	app := newTestAppWithADK(t, true, 16, true)
-	now := time.Now().UTC().Format(time.RFC3339)
-	base := model.IngestRequest{
-		Source: "cli",
-		Conversation: model.Conversation{
-			ConversationID: "conv_b_adk",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
-		},
-		IdempotencyKey: "cli:conv_b_adk:1",
-		Timestamp:      now,
-		Payload:        model.EventPayload{Type: "message", Text: "hello"},
-	}
-	firstResp, code := postIngest(t, app, base)
-	if code != 202 {
-		t.Fatalf("expected 202, got %d", code)
-	}
-	dupResp, code := postIngest(t, app, base)
-	if code != 200 {
-		t.Fatalf("expected 200 duplicate, got %d", code)
-	}
-	if dupResp.Status != "duplicate_acked" {
-		t.Fatalf("expected duplicate_acked, got %s", dupResp.Status)
-	}
-	if dupResp.EventID != firstResp.EventID {
-		t.Fatalf("expected duplicate to reuse event id %s, got %s", firstResp.EventID, dupResp.EventID)
-	}
-
-	conflict := base
-	conflict.Payload.Text = "changed"
-	body, code := postIngestRaw(t, app, conflict)
-	if code != 409 {
-		t.Fatalf("expected 409, got %d, body=%s", code, string(body))
 	}
 }
 

@@ -118,34 +118,32 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 		logging.String("event_id", eventID),
 		logging.String("session_id", sessionID),
 	)
-	if s.cfg.EnableADKGateway {
-		if s.adkRouter == nil {
-			logger.Error("gateway.ingest.failed",
-				logging.String("status", "failed"),
-				logging.String("error_code", model.ErrorCodeInternal),
-				logging.String("reason", "adk router not configured"),
-				logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-			)
-			_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
-			return model.IngestResponse{}, 0, &APIError{
-				StatusCode: http.StatusInternalServerError,
-				Code:       model.ErrorCodeInternal,
-				Message:    "adk gateway enabled but router is not configured",
-			}
+	if s.adkRouter == nil {
+		logger.Error("gateway.ingest.failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.String("reason", "adk router not configured"),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
+		_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
+		return model.IngestResponse{}, 0, &APIError{
+			StatusCode: http.StatusInternalServerError,
+			Code:       model.ErrorCodeInternal,
+			Message:    "adk router is not configured",
 		}
-		if err := s.adkRouter.RouteIngest(ctx, req, sessionKey, sessionID); err != nil {
-			logger.Error("gateway.ingest.failed",
-				logging.String("status", "failed"),
-				logging.String("error_code", model.ErrorCodeInternal),
-				logging.Error(err),
-				logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-			)
-			_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
-			return model.IngestResponse{}, 0, &APIError{
-				StatusCode: http.StatusInternalServerError,
-				Code:       model.ErrorCodeInternal,
-				Message:    fmt.Sprintf("adk gateway route failed: %v", err),
-			}
+	}
+	if err := s.adkRouter.RouteIngest(ctx, req, sessionKey, sessionID); err != nil {
+		logger.Error("gateway.ingest.failed",
+			logging.String("status", "failed"),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Error(err),
+			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
+		_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
+		return model.IngestResponse{}, 0, &APIError{
+			StatusCode: http.StatusInternalServerError,
+			Code:       model.ErrorCodeInternal,
+			Message:    fmt.Sprintf("adk gateway route failed: %v", err),
 		}
 	}
 

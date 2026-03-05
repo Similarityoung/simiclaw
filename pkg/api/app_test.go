@@ -11,30 +11,29 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func TestNewAppADKGatewayDisabledByDefault(t *testing.T) {
+func TestNewAppInitializesADKRuntimeByDefault(t *testing.T) {
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
-
-	app, err := NewApp(cfg)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	if app.ADKRuntime != nil {
-		t.Fatalf("expected ADK runtime to be nil when feature flag is off")
-	}
-}
-
-func TestIngestRoutesToADKSessionWhenEnabled(t *testing.T) {
-	cfg := config.Default()
-	cfg.Workspace = t.TempDir()
-	cfg.EnableADKGateway = true
 
 	app, err := NewApp(cfg)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
 	if app.ADKRuntime == nil {
-		t.Fatalf("expected ADK runtime to be initialized when feature flag is on")
+		t.Fatalf("expected ADK runtime to be initialized")
+	}
+}
+
+func TestIngestRoutesToADKSession(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace = t.TempDir()
+
+	app, err := NewApp(cfg)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	if app.ADKRuntime == nil {
+		t.Fatalf("expected ADK runtime to be initialized")
 	}
 
 	now := time.Now().UTC()
