@@ -23,7 +23,7 @@ lint:
 
 # 运行所有单元测试并输出测试覆盖率
 test-unit:
-	@if go tool covdata >/dev/null 2>&1; then \
+	@if go tool | grep -qx 'covdata'; then \
 		go test ./cmd/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover; \
 		go tool cover -func=/tmp/simiclaw-unit.cover | tail -n 1; \
 	else \

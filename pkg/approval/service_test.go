@@ -1,9 +1,11 @@
 package approval
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/store"
 )
@@ -101,5 +103,88 @@ func TestDecideExpiredBecomesConflict(t *testing.T) {
 	}
 	if updated.Status != model.ApprovalStatusExpired {
 		t.Fatalf("expected status expired, got %s", updated.Status)
+	}
+}
+
+func TestApproveRetryCanRepublishDecisionEvent(t *testing.T) {
+	workspace := t.TempDir()
+	if err := store.InitWorkspace(workspace); err != nil {
+		t.Fatalf("init workspace: %v", err)
+	}
+	eventBus := bus.NewMessageBus(4)
+	svc, err := NewService(workspace, eventBus)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	now := time.Now().UTC()
+	rec, err := svc.Create(model.CreateApprovalRequest{
+		RunID:           "run_3",
+		SessionKey:      "sk:3",
+		ActiveSessionID: "s_3",
+		ConversationID:  "conv_3",
+		ExpiresAt:       now.Add(10 * time.Minute).Format(time.RFC3339),
+		Summary:         "retry publish",
+		Risk:            "high",
+		Actions:         []model.Action{{ActionID: "act_3", Type: "Patch", Risk: "high", RequiresApproval: true, Payload: map[string]any{"target_path": "workflows/a.yaml"}}},
+	}, now)
+	if err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+
+	_, changed, conflict, notFound, err := svc.Decide(rec.ApprovalID, true, model.ApprovalDecisionRequest{
+		Actor: model.ApprovalActor{Type: "user", ID: "u3"},
+		Note:  "approve",
+	}, now)
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if !changed || conflict || notFound {
+		t.Fatalf("unexpected first approve state: changed=%t conflict=%t notFound=%t", changed, conflict, notFound)
+	}
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.PublishDecisionEventOnce(cancelCtx, rec.ApprovalID, now.Add(time.Second)); err == nil {
+		t.Fatalf("expected publish failure from canceled context")
+	}
+	stored, ok, err := svc.Get(rec.ApprovalID)
+	if err != nil || !ok {
+		t.Fatalf("get approval failed: ok=%t err=%v", ok, err)
+	}
+	if stored.DecisionEventPublishedAt != nil {
+		t.Fatalf("decision event should not be marked published on failure")
+	}
+
+	_, changed, conflict, notFound, err = svc.Decide(rec.ApprovalID, true, model.ApprovalDecisionRequest{
+		Actor: model.ApprovalActor{Type: "user", ID: "u3"},
+		Note:  "retry approve",
+	}, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("approve retry: %v", err)
+	}
+	if !changed || conflict || notFound {
+		t.Fatalf("retry approve should request republish: changed=%t conflict=%t notFound=%t", changed, conflict, notFound)
+	}
+
+	updated, err := svc.PublishDecisionEventOnce(context.Background(), rec.ApprovalID, now.Add(3*time.Second))
+	if err != nil {
+		t.Fatalf("publish retry: %v", err)
+	}
+	if updated.DecisionEventPublishedAt == nil {
+		t.Fatalf("decision event should be marked published")
+	}
+	if eventBus.InboundDepth() != 1 {
+		t.Fatalf("expected one decision event queued, got %d", eventBus.InboundDepth())
+	}
+
+	again, err := svc.PublishDecisionEventOnce(context.Background(), rec.ApprovalID, now.Add(4*time.Second))
+	if err != nil {
+		t.Fatalf("publish duplicate: %v", err)
+	}
+	if again.DecisionEventPublishedAt == nil {
+		t.Fatalf("published marker should remain set")
+	}
+	if eventBus.InboundDepth() != 1 {
+		t.Fatalf("duplicate publish should not enqueue new event, got %d", eventBus.InboundDepth())
 	}
 }

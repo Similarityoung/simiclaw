@@ -241,7 +241,8 @@ func (a *App) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if changed {
-		if err := a.Approvals.PublishDecisionEvent(r.Context(), rec, now); err != nil {
+		publishedRec, err := a.Approvals.PublishDecisionEventOnce(r.Context(), rec.ApprovalID, now)
+		if err != nil {
 			writeAPIError(w, &gateway.APIError{
 				StatusCode: http.StatusInternalServerError,
 				Code:       model.ErrorCodeInternal,
@@ -249,6 +250,7 @@ func (a *App) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		rec = publishedRec
 	}
 	writeJSON(w, http.StatusOK, model.ApprovalDecisionResponse{
 		ApprovalID: rec.ApprovalID,

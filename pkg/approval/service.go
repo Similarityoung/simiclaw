@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/bus"
@@ -12,11 +13,14 @@ import (
 
 const defaultAutoApprovalTTL = 24 * time.Hour
 
+var defaultApprovalEventScopes = []string{"skill_patch", "workflow_patch"}
+
 type Service struct {
 	workspace string
 	repo      *Repo
 	patcher   *PatchExecutor
 	bus       *bus.MessageBus
+	publishMu sync.Mutex
 }
 
 func NewService(workspace string, eventBus *bus.MessageBus) (*Service, error) {
@@ -61,6 +65,7 @@ func (s *Service) Create(req model.CreateApprovalRequest, now time.Time) (model.
 		SessionID:      req.ActiveSessionID,
 		RunID:          req.RunID,
 		ConversationID: req.ConversationID,
+		Scopes:         normalizeScopes(req.Scopes),
 		Summary:        strings.TrimSpace(req.Summary),
 		Actions:        req.Actions,
 		CreatedAt:      now,
@@ -81,7 +86,7 @@ func (s *Service) Create(req model.CreateApprovalRequest, now time.Time) (model.
 	return rec, nil
 }
 
-func (s *Service) CreateAuto(runID, sessionKey, sessionID, conversationID string, actions []model.Action, summary string, now time.Time) (model.ApprovalRecord, error) {
+func (s *Service) CreateAuto(runID, sessionKey, sessionID, conversationID string, scopes []string, actions []model.Action, summary string, now time.Time) (model.ApprovalRecord, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -90,6 +95,7 @@ func (s *Service) CreateAuto(runID, sessionKey, sessionID, conversationID string
 		SessionKey:      sessionKey,
 		ActiveSessionID: sessionID,
 		ConversationID:  conversationID,
+		Scopes:          normalizeScopes(scopes),
 		ExpiresAt:       now.Add(defaultAutoApprovalTTL).UTC().Format(time.RFC3339),
 		Summary:         strings.TrimSpace(summary),
 		Risk:            string(model.ApprovalRiskHigh),
@@ -130,6 +136,9 @@ func (s *Service) Decide(approvalID string, approve bool, req model.ApprovalDeci
 		return rec, false, true, false, nil
 	}
 	if rec.Status == target {
+		if s.shouldPublishDecisionEvent(rec) {
+			return rec, true, false, false, nil
+		}
 		return rec, false, false, false, nil
 	}
 	if rec.Status != model.ApprovalStatusPending {
@@ -153,6 +162,52 @@ func (s *Service) Decide(approvalID string, approve bool, req model.ApprovalDeci
 }
 
 func (s *Service) PublishDecisionEvent(ctx context.Context, rec model.ApprovalRecord, now time.Time) error {
+	if s.bus == nil {
+		return nil
+	}
+	return s.publishDecisionEvent(ctx, rec, now)
+}
+
+func (s *Service) PublishDecisionEventOnce(ctx context.Context, approvalID string, now time.Time) (model.ApprovalRecord, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
+
+	rec, ok, err := s.repo.Get(approvalID)
+	if err != nil {
+		return model.ApprovalRecord{}, err
+	}
+	if !ok {
+		return model.ApprovalRecord{}, fmt.Errorf("approval not found")
+	}
+	if !s.shouldPublishDecisionEvent(rec) {
+		return rec, nil
+	}
+	if err := s.publishDecisionEvent(ctx, rec, now); err != nil {
+		return model.ApprovalRecord{}, err
+	}
+	publishedAt := now.UTC()
+	rec.DecisionEventPublishedAt = &publishedAt
+	rec.UpdatedAt = now
+	if err := s.repo.Save(rec); err != nil {
+		return model.ApprovalRecord{}, err
+	}
+	return rec, nil
+}
+
+func (s *Service) shouldPublishDecisionEvent(rec model.ApprovalRecord) bool {
+	if s.bus == nil {
+		return false
+	}
+	if rec.DecisionEventPublishedAt != nil {
+		return false
+	}
+	return rec.Status == model.ApprovalStatusApproved || rec.Status == model.ApprovalStatusRejected
+}
+
+func (s *Service) publishDecisionEvent(ctx context.Context, rec model.ApprovalRecord, now time.Time) error {
 	if s.bus == nil {
 		return nil
 	}
@@ -185,6 +240,7 @@ func (s *Service) PublishDecisionEvent(ctx context.Context, rec model.ApprovalRe
 		EventID:        fmt.Sprintf("evt_%d", now.UnixNano()),
 		Source:         "approval",
 		TenantID:       "local",
+		Scopes:         normalizeScopes(rec.Scopes),
 		Conversation:   model.Conversation{ConversationID: rec.ConversationID, ChannelType: "dm"},
 		SessionKey:     rec.SessionKey,
 		IdempotencyKey: fmt.Sprintf("approval:%s:%s", rec.ApprovalID, rec.Status),
@@ -288,4 +344,24 @@ func parseRisk(raw string) model.ApprovalRisk {
 	default:
 		return model.ApprovalRiskHigh
 	}
+}
+
+func normalizeScopes(scopes []string) []string {
+	uniq := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		s := strings.TrimSpace(scope)
+		if s == "" {
+			continue
+		}
+		if _, exists := uniq[s]; exists {
+			continue
+		}
+		uniq[s] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	return append([]string(nil), defaultApprovalEventScopes...)
 }

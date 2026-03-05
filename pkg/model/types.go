@@ -240,20 +240,22 @@ type ApprovalActionResult struct {
 }
 
 type ApprovalRecord struct {
-	ApprovalID     string                 `json:"approval_id"`
-	Status         ApprovalStatus         `json:"status"`
-	Risk           ApprovalRisk           `json:"risk"`
-	SessionKey     string                 `json:"session_key"`
-	SessionID      string                 `json:"session_id"`
-	RunID          string                 `json:"run_id"`
-	ConversationID string                 `json:"conversation_id"`
-	Summary        string                 `json:"summary"`
-	Actions        []Action               `json:"actions"`
-	CreatedAt      time.Time              `json:"created_at"`
-	ExpiresAt      time.Time              `json:"expires_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	Decision       *ApprovalDecision      `json:"decision,omitempty"`
-	Results        []ApprovalActionResult `json:"results,omitempty"`
+	ApprovalID               string                 `json:"approval_id"`
+	Status                   ApprovalStatus         `json:"status"`
+	Risk                     ApprovalRisk           `json:"risk"`
+	SessionKey               string                 `json:"session_key"`
+	SessionID                string                 `json:"session_id"`
+	RunID                    string                 `json:"run_id"`
+	ConversationID           string                 `json:"conversation_id"`
+	Scopes                   []string               `json:"scopes,omitempty"`
+	Summary                  string                 `json:"summary"`
+	Actions                  []Action               `json:"actions"`
+	CreatedAt                time.Time              `json:"created_at"`
+	ExpiresAt                time.Time              `json:"expires_at"`
+	UpdatedAt                time.Time              `json:"updated_at"`
+	Decision                 *ApprovalDecision      `json:"decision,omitempty"`
+	DecisionEventPublishedAt *time.Time             `json:"decision_event_published_at,omitempty"`
+	Results                  []ApprovalActionResult `json:"results,omitempty"`
 }
 
 type CreateApprovalRequest struct {
@@ -261,6 +263,7 @@ type CreateApprovalRequest struct {
 	SessionKey      string   `json:"session_key"`
 	ActiveSessionID string   `json:"active_session_id"`
 	ConversationID  string   `json:"conversation_id"`
+	Scopes          []string `json:"scopes,omitempty"`
 	ExpiresAt       string   `json:"expires_at"`
 	Summary         string   `json:"summary"`
 	Risk            string   `json:"risk"`
@@ -296,6 +299,17 @@ type PatchPayload struct {
 	Diff                string `json:"diff"`
 	ExpectedBaseHash    string `json:"expected_base_hash"`
 	PatchIdempotencyKey string `json:"patch_idempotency_key"`
+}
+
+type PatchApplyResult struct {
+	OK             bool   `json:"ok"`
+	Message        string `json:"message"`
+	TargetPath     string `json:"target_path,omitempty"`
+	ExpectedHash   string `json:"expected_hash,omitempty"`
+	CurrentHash    string `json:"current_hash,omitempty"`
+	AppliedHash    string `json:"applied_hash,omitempty"`
+	RolledBack     bool   `json:"rolled_back,omitempty"`
+	FromIdempotent bool   `json:"from_idempotent,omitempty"`
 }
 
 type ContextManifest struct {

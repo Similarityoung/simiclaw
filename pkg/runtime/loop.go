@@ -102,6 +102,7 @@ func (l *EventLoop) handle(evt model.InternalEvent) {
 					evt.SessionKey,
 					evt.ActiveSessionID,
 					evt.Conversation.ConversationID,
+					evt.Scopes,
 					highRisk,
 					"检测到高风险动作，等待审批",
 					now,

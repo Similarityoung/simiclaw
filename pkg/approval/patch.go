@@ -17,36 +17,25 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
-type PatchApplyResult struct {
-	OK             bool   `json:"ok"`
-	Message        string `json:"message"`
-	TargetPath     string `json:"target_path,omitempty"`
-	ExpectedHash   string `json:"expected_hash,omitempty"`
-	CurrentHash    string `json:"current_hash,omitempty"`
-	AppliedHash    string `json:"applied_hash,omitempty"`
-	RolledBack     bool   `json:"rolled_back,omitempty"`
-	FromIdempotent bool   `json:"from_idempotent,omitempty"`
-}
-
 type actionLedgerRow struct {
-	ActionIdempotencyKey string           `json:"action_idempotency_key"`
-	Kind                 string           `json:"kind"`
-	RecordedAt           time.Time        `json:"recorded_at"`
-	Result               PatchApplyResult `json:"result"`
+	ActionIdempotencyKey string                 `json:"action_idempotency_key"`
+	Kind                 string                 `json:"kind"`
+	RecordedAt           time.Time              `json:"recorded_at"`
+	Result               model.PatchApplyResult `json:"result"`
 }
 
 type PatchExecutor struct {
 	workspace   string
 	ledgerPath  string
 	mu          sync.Mutex
-	ledgerCache map[string]PatchApplyResult
+	ledgerCache map[string]model.PatchApplyResult
 }
 
 func NewPatchExecutor(workspace string) (*PatchExecutor, error) {
 	exec := &PatchExecutor{
 		workspace:   workspace,
 		ledgerPath:  filepath.Join(workspace, "runtime", "idempotency", "action_keys.jsonl"),
-		ledgerCache: map[string]PatchApplyResult{},
+		ledgerCache: map[string]model.PatchApplyResult{},
 	}
 	rows, err := store.ReadJSONLines[actionLedgerRow](exec.ledgerPath)
 	if err != nil {
@@ -61,7 +50,7 @@ func NewPatchExecutor(workspace string) (*PatchExecutor, error) {
 	return exec, nil
 }
 
-func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (PatchApplyResult, error) {
+func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (model.PatchApplyResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -72,7 +61,7 @@ func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (PatchA
 		}
 	}
 
-	res := PatchApplyResult{
+	res := model.PatchApplyResult{
 		OK:         false,
 		TargetPath: payload.TargetPath,
 	}
@@ -93,7 +82,7 @@ func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (PatchA
 			res.Message = "target file not found"
 			return e.persistIfNeeded(payload.PatchIdempotencyKey, res, now)
 		}
-		return PatchApplyResult{}, err
+		return model.PatchApplyResult{}, err
 	}
 
 	currentHash := hashRawBytes(original)
@@ -115,11 +104,11 @@ func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (PatchA
 	}
 
 	if err := store.AtomicWriteFile(absPath, patched, 0o644); err != nil {
-		return PatchApplyResult{}, err
+		return model.PatchApplyResult{}, err
 	}
 	if err := guardPatchedContent(relPath, patched); err != nil {
 		if rollbackErr := store.AtomicWriteFile(absPath, original, 0o644); rollbackErr != nil {
-			return PatchApplyResult{}, fmt.Errorf("patch guard failed: %v; rollback failed: %v", err, rollbackErr)
+			return model.PatchApplyResult{}, fmt.Errorf("patch guard failed: %v; rollback failed: %v", err, rollbackErr)
 		}
 		res.RolledBack = true
 		res.Message = fmt.Sprintf("patch guard failed and rolled back: %v", err)
@@ -132,7 +121,7 @@ func (e *PatchExecutor) Apply(payload model.PatchPayload, now time.Time) (PatchA
 	return e.persistIfNeeded(payload.PatchIdempotencyKey, res, now)
 }
 
-func (e *PatchExecutor) persistIfNeeded(key string, res PatchApplyResult, now time.Time) (PatchApplyResult, error) {
+func (e *PatchExecutor) persistIfNeeded(key string, res model.PatchApplyResult, now time.Time) (model.PatchApplyResult, error) {
 	if key == "" {
 		return res, nil
 	}
@@ -149,13 +138,13 @@ func (e *PatchExecutor) persistIfNeeded(key string, res PatchApplyResult, now ti
 		Result:               res,
 	}
 	if err := store.AppendJSONL(e.ledgerPath, row); err != nil {
-		return PatchApplyResult{}, err
+		return model.PatchApplyResult{}, err
 	}
 	e.ledgerCache[key] = res
 	return res, nil
 }
 
-func (e *PatchExecutor) lookupLedger(key string) (PatchApplyResult, bool) {
+func (e *PatchExecutor) lookupLedger(key string) (model.PatchApplyResult, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	res, ok := e.ledgerCache[key]
@@ -208,11 +197,13 @@ func applyUnifiedDiffSingle(original []byte, diff string) ([]byte, error) {
 	oldPos := 1
 	i := hunkStart
 	for i < len(diffLines) {
-		line := diffLines[i]
-		if line == "" {
+		for i < len(diffLines) && diffLines[i] == "" {
 			i++
-			continue
 		}
+		if i >= len(diffLines) {
+			break
+		}
+		line := diffLines[i]
 		if !strings.HasPrefix(line, "@@ ") {
 			return nil, fmt.Errorf("unexpected line before hunk: %q", line)
 		}
@@ -224,6 +215,14 @@ func applyUnifiedDiffSingle(original []byte, diff string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid old start: %v", err)
 		}
+		oldCount, err := parseHunkCount(m[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid old count: %v", err)
+		}
+		newCount, err := parseHunkCount(m[4])
+		if err != nil {
+			return nil, fmt.Errorf("invalid new count: %v", err)
+		}
 		for oldPos < oldStart {
 			if oldPos > len(origLines) {
 				return nil, fmt.Errorf("hunk start out of range")
@@ -232,16 +231,26 @@ func applyUnifiedDiffSingle(original []byte, diff string) ([]byte, error) {
 			oldPos++
 		}
 		i++
-		for i < len(diffLines) {
+		oldSeen := 0
+		newSeen := 0
+		for (oldSeen < oldCount || newSeen < newCount) && i < len(diffLines) {
 			hunkLine := diffLines[i]
 			if strings.HasPrefix(hunkLine, "@@ ") {
-				break
+				return nil, fmt.Errorf("hunk truncated before reaching expected count")
 			}
 			if strings.HasPrefix(hunkLine, `\ No newline at end of file`) {
 				i++
 				continue
 			}
 			if hunkLine == "" {
+				// Some generators may emit raw blank context lines without a leading space.
+				if oldPos > len(origLines) || origLines[oldPos-1] != "" {
+					return nil, fmt.Errorf("blank context mismatch at line %d", oldPos)
+				}
+				out = append(out, "")
+				oldPos++
+				oldSeen++
+				newSeen++
 				i++
 				continue
 			}
@@ -254,17 +263,24 @@ func applyUnifiedDiffSingle(original []byte, diff string) ([]byte, error) {
 				}
 				out = append(out, text)
 				oldPos++
+				oldSeen++
+				newSeen++
 			case '-':
 				if oldPos > len(origLines) || origLines[oldPos-1] != text {
 					return nil, fmt.Errorf("delete mismatch at line %d", oldPos)
 				}
 				oldPos++
+				oldSeen++
 			case '+':
 				out = append(out, text)
+				newSeen++
 			default:
 				return nil, fmt.Errorf("unsupported hunk op: %q", string(op))
 			}
 			i++
+		}
+		if oldSeen != oldCount || newSeen != newCount {
+			return nil, fmt.Errorf("hunk count mismatch old=%d/%d new=%d/%d", oldSeen, oldCount, newSeen, newCount)
 		}
 	}
 	for oldPos <= len(origLines) {
@@ -276,6 +292,17 @@ func applyUnifiedDiffSingle(original []byte, diff string) ([]byte, error) {
 		joined += "\n"
 	}
 	return []byte(joined), nil
+}
+
+func parseHunkCount(raw string) (int, error) {
+	if raw == "" {
+		return 1, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func splitLines(raw string) ([]string, bool) {
