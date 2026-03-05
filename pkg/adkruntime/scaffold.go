@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/similarityyoung/simiclaw/pkg/tools"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/memory"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
+	adktool "google.golang.org/adk/tool"
 )
 
 type Config struct {
@@ -30,7 +32,7 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	rootAgent := cfg.RootAgent
 	if rootAgent == nil {
 		var err error
-		rootAgent, err = NewPrimaryLlmAgent(PrimaryLlmAgentConfig{Model: cfg.LLM})
+		rootAgent, err = NewPrimaryLlmAgent(PrimaryLlmAgentConfig{Model: cfg.LLM, Workspace: cfg.Workspace})
 		if err != nil {
 			return nil, fmt.Errorf("initialize root agent: %w", err)
 		}
@@ -69,11 +71,32 @@ type PrimaryLlmAgentConfig struct {
 	Model       model.LLM
 	Name        string
 	Description string
+	Workspace   string
 }
 
 func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 	if cfg.Model == nil {
 		return nil, errors.New("llm model is required")
+	}
+
+	fileReadTool, err := tools.NewFileReadTool(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent tool file_read: %w", err)
+	}
+
+	fileWriteTool, err := tools.NewFileWriteTool(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent tool file_write: %w", err)
+	}
+
+	fileEditTool, err := tools.NewFileEditTool(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent tool file_edit: %w", err)
+	}
+
+	bashTool, err := tools.NewBashTool(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize primary llm agent tool bash: %w", err)
 	}
 
 	name := cfg.Name
@@ -91,6 +114,7 @@ func NewPrimaryLlmAgent(cfg PrimaryLlmAgentConfig) (agent.Agent, error) {
 		Description: description,
 		Model:       cfg.Model,
 		Instruction: PrimaryLlmAgentInstruction,
+		Tools:       []adktool.Tool{fileReadTool, fileWriteTool, fileEditTool, bashTool},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize primary llm agent: %w", err)

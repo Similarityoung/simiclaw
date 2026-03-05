@@ -68,3 +68,19 @@ func TestNewRuntimeBuildsPrimaryAgentWhenRootAgentMissing(t *testing.T) {
 		t.Fatalf("expected default root agent name %q, got %q", DefaultPrimaryLlmAgentName, rt.Config().RootAgent.Name())
 	}
 }
+
+func TestNewRuntimeReturnsErrorWhenPrimaryToolsFailToInitialize(t *testing.T) {
+	_, err := NewRuntime(Config{
+		AppName: "simiclaw-adk",
+		LLM:     stubLLM{},
+	})
+	if err == nil {
+		t.Fatalf("expected runtime initialization to fail when workspace is missing")
+	}
+	if !strings.Contains(err.Error(), "initialize root agent") {
+		t.Fatalf("expected root agent initialization error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "initialize primary llm agent tool file_read") {
+		t.Fatalf("expected tool initialization error, got: %v", err)
+	}
+}

@@ -20,7 +20,7 @@ func (stubLLM) GenerateContent(context.Context, *model.LLMRequest, bool) iter.Se
 }
 
 func TestNewPrimaryLlmAgentUsesDefaultIdentity(t *testing.T) {
-	agt, err := NewPrimaryLlmAgent(PrimaryLlmAgentConfig{Model: stubLLM{}})
+	agt, err := NewPrimaryLlmAgent(PrimaryLlmAgentConfig{Model: stubLLM{}, Workspace: t.TempDir()})
 	if err != nil {
 		t.Fatalf("expected primary llm agent creation to succeed, got error: %v", err)
 	}
@@ -40,5 +40,18 @@ func TestNewPrimaryLlmAgentReturnsErrorWhenModelMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "llm model is required") {
 		t.Fatalf("expected llm model validation error, got: %v", err)
+	}
+}
+
+func TestNewPrimaryLlmAgentReturnsErrorWhenWorkspaceMissing(t *testing.T) {
+	_, err := NewPrimaryLlmAgent(PrimaryLlmAgentConfig{Model: stubLLM{}})
+	if err == nil {
+		t.Fatalf("expected error when workspace is missing")
+	}
+	if !strings.Contains(err.Error(), "initialize primary llm agent tool file_read") {
+		t.Fatalf("expected file_read tool initialization error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid_argument: workspace is required") {
+		t.Fatalf("expected workspace validation error, got: %v", err)
 	}
 }
