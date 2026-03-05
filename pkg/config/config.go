@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -158,6 +159,7 @@ func Load(path string) (Config, error) {
 	if cfg.RateLimitSessionBurst <= 0 {
 		cfg.RateLimitSessionBurst = defaultRateLimitSessionBurst
 	}
+	applyEnvOverrides(&cfg)
 	return cfg, nil
 }
 
@@ -168,5 +170,58 @@ func validateLogLevel(raw string) error {
 		return nil
 	default:
 		return fmt.Errorf("invalid log_level %q: must be one of debug|info|warn|error", raw)
+	}
+}
+
+// LoadDotEnv 解析 .env 文件并将 KEY=VALUE 注入环境变量。
+// 若文件不存在则静默跳过（.env 为可选）；已有的环境变量不会被覆盖。
+func LoadDotEnv(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("config: open .env %q: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		// 去掉可选的引号包裹（单引号或双引号）
+		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+			v = v[1 : len(v)-1]
+		}
+		if k == "" {
+			continue
+		}
+		// 真实环境变量优先级高于 .env 文件
+		if os.Getenv(k) == "" {
+			_ = os.Setenv(k, v)
+		}
+	}
+	return scanner.Err()
+}
+
+// applyEnvOverrides 将环境变量中的 LLM 配置覆盖到 cfg。
+// 优先级：环境变量 > JSON 配置文件 > 默认值。
+func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("LLM_API_KEY"); v != "" {
+		cfg.LLMAPIKey = v
+	}
+	if v := os.Getenv("LLM_BASE_URL"); v != "" {
+		cfg.LLMBaseURL = v
+	}
+	if v := os.Getenv("LLM_MODEL"); v != "" {
+		cfg.LLMModel = v
 	}
 }

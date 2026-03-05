@@ -23,6 +23,11 @@ func Run(args []string) error {
 		return err
 	}
 
+	// 先加载 .env（可选），让环境变量覆盖优先于 JSON 配置
+	if err := config.LoadDotEnv(".env"); err != nil {
+		return err
+	}
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		if *configPath != "" {
