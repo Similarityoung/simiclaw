@@ -5,14 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/agent"
-	"github.com/similarityyoung/simiclaw/pkg/approval"
-	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
-	"github.com/similarityyoung/simiclaw/pkg/idempotency"
-	"github.com/similarityyoung/simiclaw/pkg/llm"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
+	"github.com/similarityyoung/simiclaw/pkg/provider"
 	"github.com/similarityyoung/simiclaw/pkg/runner"
 	"github.com/similarityyoung/simiclaw/pkg/runtime"
 	"github.com/similarityyoung/simiclaw/pkg/store"
@@ -20,82 +16,50 @@ import (
 )
 
 type App struct {
-	Cfg         config.Config
-	Bus         *bus.MessageBus
-	Gateway     *gateway.Service
-	Events      *runtime.EventRepo
-	Runs        *runtime.RunRepo
-	Sessions    *store.SessionStore
-	Idempotency *idempotency.Store
-	StoreLoop   *store.StoreLoop
-	EventLoop   *runtime.EventLoop
-	Approvals   *approval.Service
-	Handler     http.Handler
+	Cfg        config.Config
+	DB         *store.DB
+	Gateway    *gateway.Service
+	EventLoop  *runtime.EventLoop
+	Supervisor *runtime.Supervisor
+	Handler    http.Handler
 }
 
-// NewApp 初始化工作区和核心组件，并组装可运行的应用实例。
 func NewApp(cfg config.Config) (*App, error) {
-	if err := store.InitWorkspace(cfg.Workspace); err != nil {
-		return nil, err
-	}
-
-	idStore, err := idempotency.New(cfg.Workspace)
-	if err != nil {
-		return nil, err
-	}
-	eventRepo, err := runtime.NewEventRepo(cfg.Workspace)
-	if err != nil {
-		return nil, err
-	}
-	runRepo := runtime.NewRunRepo(cfg.Workspace)
-	sessions, err := store.NewSessionStore(cfg.Workspace)
-	if err != nil {
-		return nil, err
-	}
-
-	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
-	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
-	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
-	approvalSvc, err := approval.NewService(cfg.Workspace, eventBus)
+	db, err := store.Open(cfg.Workspace, cfg.DBBusyTimeout.Duration)
 	if err != nil {
 		return nil, err
 	}
 	registry := tools.NewRegistry()
 	tools.RegisterBuiltins(registry)
-	run := newRunner(cfg, registry)
-	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, approvalSvc, cfg.MaxToolRounds)
-	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo)
-
+	providers, err := provider.NewFactory(cfg.LLM)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
+	eventLoop := runtime.NewEventLoop(db, run, cfg.EventQueueCapacity, cfg.MaxToolRounds)
+	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, outbound.StdoutSender{})
+	g := gateway.NewService(cfg, db, eventLoop)
 	app := &App{
-		Cfg:         cfg,
-		Bus:         eventBus,
-		Gateway:     g,
-		Events:      eventRepo,
-		Runs:        runRepo,
-		Sessions:    sessions,
-		Idempotency: idStore,
-		StoreLoop:   storeLoop,
-		EventLoop:   eventLoop,
-		Approvals:   approvalSvc,
+		Cfg:        cfg,
+		DB:         db,
+		Gateway:    g,
+		EventLoop:  eventLoop,
+		Supervisor: supervisor,
 	}
 	app.Handler = app.routes()
 	return app, nil
 }
 
-// Start 启动存储循环和事件循环，开始处理系统内消息。
 func (a *App) Start() {
-	a.StoreLoop.Start()
-	a.EventLoop.Start()
+	a.Supervisor.Start()
 }
 
-// Stop 按顺序关闭总线与后台循环，尽量完成剩余任务后退出。
 func (a *App) Stop() {
-	a.Bus.Close()
-	a.EventLoop.StopAfterDrain()
-	a.StoreLoop.Stop()
+	a.Supervisor.Stop()
+	_ = a.DB.Close()
 }
 
-// RunHTTPServer 启动 HTTP 服务并在上下文取消时执行优雅关闭。
 func (a *App) RunHTTPServer(ctx context.Context) error {
 	a.Start()
 	defer a.Stop()
@@ -108,23 +72,4 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
-}
-
-// newRunner constructs the appropriate Runner based on config.
-// 仅当 LLMAPIKey 非空时使用 AgentRunner（真实 LLM）；否则回退到 ProcessRunner（内置规则引擎）。
-func newRunner(cfg config.Config, registry *tools.Registry) runner.Runner {
-	if cfg.LLMAPIKey != "" {
-		llmClient := llm.New(llm.Config{
-			BaseURL: cfg.LLMBaseURL,
-			APIKey:  cfg.LLMAPIKey,
-			Model:   cfg.LLMModel,
-			Timeout: cfg.LLMTimeout.Duration,
-		})
-		return agent.New(agent.Config{
-			Workspace: cfg.Workspace,
-			LLM:       llmClient,
-			Registry:  registry,
-		})
-	}
-	return runner.NewProcessRunner(cfg.Workspace, registry)
 }

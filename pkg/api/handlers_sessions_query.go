@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
@@ -11,20 +10,8 @@ import (
 
 type sessionCursor struct {
 	V              int    `json:"v"`
-	LastUpdatedAt  string `json:"last_updated_at"`
+	LastActivityAt string `json:"last_activity_at"`
 	LastSessionKey string `json:"last_session_key"`
-}
-
-type sessionListItem struct {
-	SessionKey      string    `json:"session_key"`
-	ActiveSessionID string    `json:"active_session_id"`
-	ConversationID  string    `json:"conversation_id,omitempty"`
-	ChannelType     string    `json:"channel_type,omitempty"`
-	ParticipantID   string    `json:"participant_id,omitempty"`
-	DMScope         string    `json:"dm_scope,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	LastCommitID    string    `json:"last_commit_id,omitempty"`
-	LastRunID       string    `json:"last_run_id,omitempty"`
 }
 
 func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
@@ -33,17 +20,15 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apiErr)
 		return
 	}
-
 	var cur sessionCursor
 	if apiErr := decodeCursor(r.URL.Query().Get("cursor"), &cur); apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
 	}
-	var hasCursor bool
 	var curTime time.Time
-	if cur.LastUpdatedAt != "" || cur.LastSessionKey != "" {
-		hasCursor = true
-		t, err := time.Parse(time.RFC3339Nano, cur.LastUpdatedAt)
+	hasCursor := cur.LastActivityAt != "" || cur.LastSessionKey != ""
+	if hasCursor {
+		t, err := time.Parse(time.RFC3339Nano, cur.LastActivityAt)
 		if err != nil {
 			writeAPIError(w, &gateway.APIError{
 				StatusCode: http.StatusBadRequest,
@@ -55,63 +40,42 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-
-	sessionKeyFilter := r.URL.Query().Get("session_key")
-	conversationID := r.URL.Query().Get("conversation_id")
-	snap := a.Sessions.Snapshot().Sessions
-
-	items := make([]sessionListItem, 0, len(snap))
-	for sessionKey, row := range snap {
-		if sessionKeyFilter != "" && sessionKey != sessionKeyFilter {
-			continue
-		}
-		if conversationID != "" && row.ConversationID != conversationID {
-			continue
-		}
-		items = append(items, sessionListItem{
-			SessionKey:      sessionKey,
-			ActiveSessionID: row.ActiveSessionID,
-			ConversationID:  row.ConversationID,
-			ChannelType:     row.ChannelType,
-			ParticipantID:   row.ParticipantID,
-			DMScope:         row.DMScope,
-			UpdatedAt:       row.UpdatedAt,
-			LastCommitID:    row.LastCommitID,
-			LastRunID:       row.LastRunID,
-		})
+	sessions, err := a.DB.ListSessions(r.Context())
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
 	}
-
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
-			return items[i].SessionKey < items[j].SessionKey
+	sessionKey := r.URL.Query().Get("session_key")
+	conversationID := r.URL.Query().Get("conversation_id")
+	items := make([]model.SessionRecord, 0, limit+1)
+	for _, rec := range sessions {
+		if sessionKey != "" && rec.SessionKey != sessionKey {
+			continue
 		}
-		return items[i].UpdatedAt.After(items[j].UpdatedAt)
-	})
-
-	filtered := make([]sessionListItem, 0, limit+1)
-	for _, item := range items {
+		if conversationID != "" && rec.ConversationID != conversationID {
+			continue
+		}
 		if hasCursor {
-			if item.UpdatedAt.After(curTime) {
+			if rec.LastActivityAt.After(curTime) {
 				continue
 			}
-			if item.UpdatedAt.Equal(curTime) && item.SessionKey <= cur.LastSessionKey {
+			if rec.LastActivityAt.Equal(curTime) && rec.SessionKey >= cur.LastSessionKey {
 				continue
 			}
 		}
-		filtered = append(filtered, item)
-		if len(filtered) == limit+1 {
+		items = append(items, rec)
+		if len(items) == limit+1 {
 			break
 		}
 	}
-
-	resp := map[string]any{"items": filtered}
-	if len(filtered) > limit {
-		trimmed := filtered[:limit]
+	resp := map[string]any{"items": items}
+	if len(items) > limit {
+		trimmed := items[:limit]
 		last := trimmed[len(trimmed)-1]
 		resp["items"] = trimmed
 		resp["next_cursor"] = encodeCursor(sessionCursor{
 			V:              1,
-			LastUpdatedAt:  last.UpdatedAt.Format(time.RFC3339Nano),
+			LastActivityAt: last.LastActivityAt.Format(time.RFC3339Nano),
 			LastSessionKey: last.SessionKey,
 		})
 	}
@@ -120,7 +84,11 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	sessionKey := r.PathValue("session_key")
-	row, ok := a.Sessions.Get(sessionKey)
+	rec, ok, err := a.DB.GetSession(r.Context(), sessionKey)
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
+	}
 	if !ok {
 		writeAPIError(w, &gateway.APIError{
 			StatusCode: http.StatusNotFound,
@@ -129,16 +97,5 @@ func (a *App) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	writeJSON(w, http.StatusOK, sessionListItem{
-		SessionKey:      sessionKey,
-		ActiveSessionID: row.ActiveSessionID,
-		ConversationID:  row.ConversationID,
-		ChannelType:     row.ChannelType,
-		ParticipantID:   row.ParticipantID,
-		DMScope:         row.DMScope,
-		UpdatedAt:       row.UpdatedAt,
-		LastCommitID:    row.LastCommitID,
-		LastRunID:       row.LastRunID,
-	})
+	writeJSON(w, http.StatusOK, rec)
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
@@ -11,18 +10,18 @@ import (
 
 type eventCursor struct {
 	V             int    `json:"v"`
-	LastUpdatedAt string `json:"last_updated_at"`
+	LastCreatedAt string `json:"last_created_at"`
 	LastEventID   string `json:"last_event_id"`
 }
 
 type eventListItem struct {
-	EventID        string               `json:"event_id"`
-	Status         model.EventStatus    `json:"status"`
-	DeliveryStatus model.DeliveryStatus `json:"delivery_status"`
-	SessionKey     string               `json:"session_key"`
-	SessionID      string               `json:"session_id"`
-	RunID          string               `json:"run_id,omitempty"`
-	UpdatedAt      time.Time            `json:"updated_at"`
+	EventID      string             `json:"event_id"`
+	Status       model.EventStatus  `json:"status"`
+	OutboxStatus model.OutboxStatus `json:"outbox_status,omitempty"`
+	SessionKey   string             `json:"session_key"`
+	SessionID    string             `json:"session_id"`
+	RunID        string             `json:"run_id,omitempty"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
@@ -37,11 +36,10 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apiErr)
 		return
 	}
-	var hasCursor bool
-	var curTime time.Time
-	if cur.LastUpdatedAt != "" || cur.LastEventID != "" {
-		hasCursor = true
-		t, err := time.Parse(time.RFC3339Nano, cur.LastUpdatedAt)
+	var cursorTime time.Time
+	hasCursor := cur.LastCreatedAt != "" || cur.LastEventID != ""
+	if hasCursor {
+		t, err := time.Parse(time.RFC3339Nano, cur.LastCreatedAt)
 		if err != nil {
 			writeAPIError(w, &gateway.APIError{
 				StatusCode: http.StatusBadRequest,
@@ -51,56 +49,41 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		curTime = t
+		cursorTime = t
 	}
 
-	conversationID := r.URL.Query().Get("conversation_id")
+	events, err := a.DB.ListEvents(r.Context())
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
+	}
 	sessionKey := r.URL.Query().Get("session_key")
-	statusFilter := model.EventStatus(r.URL.Query().Get("status"))
-	deliveryFilter := model.DeliveryStatus(r.URL.Query().Get("delivery_status"))
+	status := model.EventStatus(r.URL.Query().Get("status"))
 
-	events := a.Events.List()
-	sort.Slice(events, func(i, j int) bool {
-		if events[i].UpdatedAt.Equal(events[j].UpdatedAt) {
-			return events[i].EventID > events[j].EventID
-		}
-		return events[i].UpdatedAt.After(events[j].UpdatedAt)
-	})
-
-	sessions := a.Sessions.Snapshot().Sessions
 	items := make([]eventListItem, 0, limit+1)
 	for _, rec := range events {
 		if sessionKey != "" && rec.SessionKey != sessionKey {
 			continue
 		}
-		if statusFilter != "" && rec.Status != statusFilter {
+		if status != "" && rec.Status != status {
 			continue
-		}
-		if deliveryFilter != "" && rec.DeliveryStatus != deliveryFilter {
-			continue
-		}
-		if conversationID != "" {
-			row, ok := sessions[rec.SessionKey]
-			if !ok || row.ConversationID != conversationID {
-				continue
-			}
 		}
 		if hasCursor {
-			if rec.UpdatedAt.After(curTime) {
+			if rec.CreatedAt.After(cursorTime) {
 				continue
 			}
-			if rec.UpdatedAt.Equal(curTime) && rec.EventID >= cur.LastEventID {
+			if rec.CreatedAt.Equal(cursorTime) && rec.EventID >= cur.LastEventID {
 				continue
 			}
 		}
 		items = append(items, eventListItem{
-			EventID:        rec.EventID,
-			Status:         rec.Status,
-			DeliveryStatus: rec.DeliveryStatus,
-			SessionKey:     rec.SessionKey,
-			SessionID:      rec.SessionID,
-			RunID:          rec.RunID,
-			UpdatedAt:      rec.UpdatedAt,
+			EventID:      rec.EventID,
+			Status:       rec.Status,
+			OutboxStatus: rec.OutboxStatus,
+			SessionKey:   rec.SessionKey,
+			SessionID:    rec.SessionID,
+			RunID:        rec.RunID,
+			UpdatedAt:    rec.UpdatedAt,
 		})
 		if len(items) == limit+1 {
 			break
@@ -114,7 +97,7 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		resp["items"] = trimmed
 		resp["next_cursor"] = encodeCursor(eventCursor{
 			V:             1,
-			LastUpdatedAt: last.UpdatedAt.Format(time.RFC3339Nano),
+			LastCreatedAt: last.UpdatedAt.Format(time.RFC3339Nano),
 			LastEventID:   last.EventID,
 		})
 	}
@@ -132,8 +115,11 @@ func (a *App) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	row, ok := a.Idempotency.LookupInbound(idempotencyKey)
+	row, ok, err := a.DB.LookupInbound(r.Context(), idempotencyKey)
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
+	}
 	if !ok {
 		writeAPIError(w, &gateway.APIError{
 			StatusCode: http.StatusNotFound,
@@ -142,7 +128,6 @@ func (a *App) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"event_id":     row.EventID,
 		"payload_hash": row.PayloadHash,

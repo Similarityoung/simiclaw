@@ -152,7 +152,7 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 			return err
 		}
 
-		if rec.DeliveryStatus == model.DeliveryStatusFailed && rec.Error != nil {
+		if rec.OutboxStatus == model.OutboxStatusDead && rec.Error != nil {
 			if _, err := fmt.Fprintf(out, "error> %s: %s\n", rec.Error.Code, rec.Error.Message); err != nil {
 				return err
 			}

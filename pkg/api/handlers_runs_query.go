@@ -1,9 +1,7 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,14 +17,14 @@ type runCursor struct {
 }
 
 type runSummary struct {
-	RunID      string        `json:"run_id"`
-	EventID    string        `json:"event_id"`
-	SessionKey string        `json:"session_key"`
-	SessionID  string        `json:"session_id"`
-	RunMode    model.RunMode `json:"run_mode"`
-	Status     string        `json:"status"`
-	StartedAt  time.Time     `json:"started_at"`
-	EndedAt    time.Time     `json:"ended_at"`
+	RunID      string          `json:"run_id"`
+	EventID    string          `json:"event_id"`
+	SessionKey string          `json:"session_key"`
+	SessionID  string          `json:"session_id"`
+	RunMode    model.RunMode   `json:"run_mode"`
+	Status     model.RunStatus `json:"status"`
+	StartedAt  time.Time       `json:"started_at"`
+	EndedAt    time.Time       `json:"ended_at"`
 }
 
 func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
@@ -35,16 +33,14 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apiErr)
 		return
 	}
-
 	var cur runCursor
 	if apiErr := decodeCursor(r.URL.Query().Get("cursor"), &cur); apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
 	}
-	var hasCursor bool
 	var curTime time.Time
-	if cur.LastStartedAt != "" || cur.LastRunID != "" {
-		hasCursor = true
+	hasCursor := cur.LastStartedAt != "" || cur.LastRunID != ""
+	if hasCursor {
 		t, err := time.Parse(time.RFC3339Nano, cur.LastStartedAt)
 		if err != nil {
 			writeAPIError(w, &gateway.APIError{
@@ -57,42 +53,20 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-
-	traces, err := a.Runs.List()
+	runs, err := a.DB.ListRuns(r.Context())
 	if err != nil {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Code:       model.ErrorCodeInternal,
-			Message:    err.Error(),
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
-
-	sort.Slice(traces, func(i, j int) bool {
-		if traces[i].StartedAt.Equal(traces[j].StartedAt) {
-			return traces[i].RunID > traces[j].RunID
-		}
-		return traces[i].StartedAt.After(traces[j].StartedAt)
-	})
-
-	conversationID := r.URL.Query().Get("conversation_id")
 	sessionKey := r.URL.Query().Get("session_key")
 	sessionID := r.URL.Query().Get("session_id")
-	sessions := a.Sessions.Snapshot().Sessions
-
 	items := make([]runSummary, 0, limit+1)
-	for _, trace := range traces {
+	for _, trace := range runs {
 		if sessionKey != "" && trace.SessionKey != sessionKey {
 			continue
 		}
 		if sessionID != "" && trace.SessionID != sessionID {
 			continue
-		}
-		if conversationID != "" {
-			row, ok := sessions[trace.SessionKey]
-			if !ok || row.ConversationID != conversationID {
-				continue
-			}
 		}
 		if hasCursor {
 			if trace.StartedAt.After(curTime) {
@@ -102,13 +76,11 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-
 		items = append(items, toRunSummary(trace))
 		if len(items) == limit+1 {
 			break
 		}
 	}
-
 	resp := map[string]any{"items": items}
 	if len(items) > limit {
 		trimmed := items[:limit]
@@ -125,13 +97,9 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := a.Runs.Get(runID)
+	trace, ok, err := a.DB.GetRun(r.Context(), runID)
 	if err != nil {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Code:       model.ErrorCodeInternal,
-			Message:    err.Error(),
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 	if !ok {
@@ -147,13 +115,9 @@ func (a *App) handleGetRun(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := a.Runs.Get(runID)
+	trace, ok, err := a.DB.GetRun(r.Context(), runID)
 	if err != nil {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Code:       model.ErrorCodeInternal,
-			Message:    err.Error(),
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 	if !ok {
@@ -164,24 +128,16 @@ func (a *App) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	view := strings.TrimSpace(r.URL.Query().Get("view"))
 	if view == "" {
 		view = "full"
 	}
-	if view != "full" && view != "summary" {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusBadRequest,
-			Code:       model.ErrorCodeInvalidArgument,
-			Message:    "invalid view",
-			Details:    map[string]any{"field": "view"},
-		})
+	if view == "summary" {
+		writeJSON(w, http.StatusOK, toRunSummary(trace))
 		return
 	}
-	redact := false
 	if raw := strings.TrimSpace(r.URL.Query().Get("redact")); raw != "" {
-		v, err := strconv.ParseBool(raw)
-		if err != nil {
+		if _, err := strconv.ParseBool(raw); err != nil {
 			writeAPIError(w, &gateway.APIError{
 				StatusCode: http.StatusBadRequest,
 				Code:       model.ErrorCodeInvalidArgument,
@@ -190,75 +146,19 @@ func (a *App) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		redact = v
 	}
-
-	if view == "summary" {
-		writeJSON(w, http.StatusOK, toRunSummary(trace))
-		return
-	}
-	if !redact {
-		writeJSON(w, http.StatusOK, trace)
-		return
-	}
-	writeJSON(w, http.StatusOK, redactTrace(trace))
+	writeJSON(w, http.StatusOK, trace)
 }
 
 func toRunSummary(trace model.RunTrace) runSummary {
-	status := "succeeded"
-	if trace.Error != nil {
-		status = "failed"
-	}
 	return runSummary{
 		RunID:      trace.RunID,
 		EventID:    trace.EventID,
 		SessionKey: trace.SessionKey,
 		SessionID:  trace.SessionID,
 		RunMode:    trace.RunMode,
-		Status:     status,
+		Status:     trace.Status,
 		StartedAt:  trace.StartedAt,
 		EndedAt:    trace.FinishedAt,
-	}
-}
-
-func redactTrace(trace model.RunTrace) map[string]any {
-	b, _ := json.Marshal(trace)
-	var m map[string]any
-	_ = json.Unmarshal(b, &m)
-	return redactMap(m)
-}
-
-func redactMap(in map[string]any) map[string]any {
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		lk := strings.ToLower(k)
-		switch lk {
-		case "diff":
-			out[k] = "<redacted>"
-		case "content":
-			out[k] = "<redacted>"
-		case "native", "native_ref":
-			out[k] = "<redacted>"
-		case "args":
-			out[k] = "<redacted>"
-		default:
-			out[k] = redactValue(v)
-		}
-	}
-	return out
-}
-
-func redactValue(v any) any {
-	switch tv := v.(type) {
-	case map[string]any:
-		return redactMap(tv)
-	case []any:
-		out := make([]any, 0, len(tv))
-		for _, item := range tv {
-			out = append(out, redactValue(item))
-		}
-		return out
-	default:
-		return v
 	}
 }

@@ -25,7 +25,11 @@ func (a *App) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("event_id")
-	rec, ok := a.Events.Get(eventID)
+	rec, ok, err := a.DB.GetEvent(r.Context(), eventID)
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
+	}
 	if !ok {
 		writeAPIError(w, &gateway.APIError{StatusCode: 404, Code: model.ErrorCodeNotFound, Message: "event not found"})
 		return

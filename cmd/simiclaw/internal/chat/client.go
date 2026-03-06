@@ -104,7 +104,7 @@ func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.Event
 		if rec.Status == model.EventStatusFailed {
 			return rec, nil
 		}
-		if rec.Status == model.EventStatusCommitted && isTerminalDeliveryStatus(rec.DeliveryStatus) {
+		if isTerminalEvent(rec) {
 			return rec, nil
 		}
 
@@ -141,10 +141,19 @@ func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (model.EventR
 	return rec, nil
 }
 
-func isTerminalDeliveryStatus(status model.DeliveryStatus) bool {
-	return status == model.DeliveryStatusSent ||
-		status == model.DeliveryStatusSuppressed ||
-		status == model.DeliveryStatusFailed
+func isTerminalEvent(rec model.EventRecord) bool {
+	switch rec.Status {
+	case model.EventStatusSuppressed:
+		return true
+	case model.EventStatusProcessed:
+		return rec.OutboxStatus == "" ||
+			rec.OutboxStatus == model.OutboxStatusSent ||
+			rec.OutboxStatus == model.OutboxStatusDead
+	case model.EventStatusFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func decodeAPIError(resp *http.Response) error {
