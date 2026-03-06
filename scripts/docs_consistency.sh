@@ -8,47 +8,23 @@ if command -v rg >/dev/null 2>&1; then
   has_pattern() {
     rg -q -- "$1" "${@:2}"
   }
-  list_pattern() {
-    rg -n -- "$1" "${@:2}"
-  }
 else
   has_pattern() {
     grep -Eq -- "$1" "${@:2}"
   }
-  list_pattern() {
-    grep -En -- "$1" "${@:2}"
-  }
 fi
 
-docs=(
-  doc/requirements.md
-  doc/architecture.md
-  doc/interfaces.md
-  doc/cicd-testing.md
-  doc/roadmap.md
-)
+if ! has_pattern '^V1_ALPHA$' VERSION_STAGE; then
+  echo "VERSION_STAGE must be V1_ALPHA"
+  exit 1
+fi
 
-for f in "${docs[@]}"; do
-  if ! has_pattern "v0\\.4" "$f"; then
-    echo "missing v0.4 marker: $f"
-    exit 1
-  fi
-done
+if ! has_pattern 'v1\.0 alpha' README.md; then
+  echo "README missing v1.0 alpha marker"
+  exit 1
+fi
 
-banned=(
-  "postgres"
-  "mysql"
-  "数据库迁移"
-)
-for b in "${banned[@]}"; do
-  if has_pattern "$b" doc/*.md; then
-    echo "banned term detected: $b"
-    list_pattern "$b" doc/*.md
-    exit 1
-  fi
-done
-
-targets=(
+required_targets=(
   "make fmt"
   "make vet"
   "make lint"
@@ -56,25 +32,25 @@ targets=(
   "make test-unit-race-core"
   "make test-integration"
   "make test-e2e-smoke"
-  "make test-e2e"
-  "make test-fault-injection"
+  "make accept-v1-alpha"
   "make accept-current"
-  "make accept-m1"
-  "make accept-m2"
-  "make accept-m3"
-  "make accept-m4"
-  "make docs-consistency"
 )
 
-for t in "${targets[@]}"; do
-  if ! has_pattern "$t" doc/roadmap.md; then
-    echo "roadmap missing target: $t"
-    exit 1
-  fi
-  if ! has_pattern "$t" doc/cicd-testing.md; then
-    echo "cicd-testing missing target: $t"
+for target in "${required_targets[@]}"; do
+  if ! has_pattern "$target" README.md; then
+    echo "README missing target: $target"
     exit 1
   fi
 done
+
+if ! has_pattern '^accept-v1-alpha:' Makefile; then
+  echo "Makefile missing accept-v1-alpha target"
+  exit 1
+fi
+
+if has_pattern 'accept-m[1-4]' Makefile README.md; then
+  echo "legacy acceptance targets still referenced"
+  exit 1
+fi
 
 echo "docs consistency check passed"
