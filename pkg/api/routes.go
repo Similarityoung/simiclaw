@@ -18,10 +18,6 @@ func (a *App) routes() http.Handler {
 	mux.Handle("GET /v1/runs/{run_id}/trace", a.withAuth(http.HandlerFunc(a.handleGetRunTrace)))
 	mux.Handle("GET /v1/sessions", a.withAuth(http.HandlerFunc(a.handleListSessions)))
 	mux.Handle("GET /v1/sessions/{session_key}", a.withAuth(http.HandlerFunc(a.handleGetSession)))
-	mux.Handle("POST /v1/approvals", a.withAuth(http.HandlerFunc(a.handleCreateApproval)))
-	mux.Handle("GET /v1/approvals", a.withAuth(http.HandlerFunc(a.handleListApprovals)))
-	mux.Handle("GET /v1/approvals/{approval_id}", a.withAuth(http.HandlerFunc(a.handleGetApproval)))
-	mux.Handle("POST /v1/approvals/{approval_action...}", a.withAuth(http.HandlerFunc(a.handleApprovalAction)))
 
 	return mux
 }
