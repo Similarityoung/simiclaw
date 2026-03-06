@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	store "github.com/similarityyoung/simiclaw/pkg/persistence"
 	"github.com/similarityyoung/simiclaw/pkg/sessionkey"
 )
 
@@ -22,7 +22,7 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 		logging.String("conversation_id", req.Conversation.ConversationID),
 	)
 
-	ts, apiErr := validateRequest(req, now)
+	_, apiErr := validateRequest(req, now)
 	if apiErr != nil {
 		logger.Warn("gateway.ingest.failed",
 			logging.String("status", "failed"),
@@ -215,83 +215,70 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 		return model.IngestResponse{}, 0, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()}
 	}
 
-	event := model.InternalEvent{
-		EventID:         eventID,
-		Source:          req.Source,
-		TenantID:        s.cfg.TenantID,
-		Conversation:    req.Conversation,
-		SessionKey:      sessionKey,
-		IdempotencyKey:  req.IdempotencyKey,
-		Timestamp:       ts,
-		Payload:         req.Payload,
-		ActiveSessionID: sessionID,
-	}
-
-	enqueueCtx, cancel := context.WithTimeout(ctx, s.cfg.IngestEnqueueTimeout.Duration)
-	defer cancel()
-
-	publishErr := s.eventBus.PublishInbound(enqueueCtx, event)
-	if publishErr == nil {
-		resp := model.IngestResponse{
-			EventID:         eventID,
-			SessionKey:      sessionKey,
-			ActiveSessionID: sessionID,
-			ReceivedAt:      now.Format(time.RFC3339Nano),
-			PayloadHash:     payloadHash,
-			Status:          ingestStatusAccepted,
-			StatusURL:       fmt.Sprintf(ingestStatusURLTemplate, eventID),
-		}
-		logger.Info("gateway.ingest.accepted",
-			logging.String("status", ingestStatusAccepted),
-			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-		)
-		return resp, http.StatusAccepted, nil
-	}
-
-	publishAPIErr := &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: publishErr.Error()}
-	errorCode := model.ErrorCodeInternal
-	if errors.Is(publishErr, context.DeadlineExceeded) {
-		publishAPIErr = &APIError{StatusCode: http.StatusServiceUnavailable, Code: model.ErrorCodeQueueFull, Message: "event queue full", RetryAfter: retryAfterSeconds}
-		errorCode = model.ErrorCodeQueueFull
-	} else if errors.Is(publishErr, bus.ErrBusClosed) {
-		publishAPIErr = &APIError{StatusCode: http.StatusServiceUnavailable, Code: model.ErrorCodeQueueUnavailable, Message: "event queue unavailable", RetryAfter: retryAfterSeconds}
-		errorCode = model.ErrorCodeQueueUnavailable
-	} else if errors.Is(publishErr, context.Canceled) && ctx.Err() != nil {
-		publishAPIErr = &APIError{StatusCode: statusClientClosedReq, Code: model.ErrorCodeCanceled, Message: "request canceled"}
-		errorCode = model.ErrorCodeCanceled
-	}
-	_ = s.events.Update(eventID, func(r *model.EventRecord) {
-		r.Status = model.EventStatusFailed
-		r.Error = &model.ErrorBlock{Code: errorCode, Message: publishErr.Error()}
-	})
-	if rollbackErr := s.idempotency.DeleteInbound(req.IdempotencyKey); rollbackErr != nil {
+	runResult, err := s.adkRouter.RunIngest(ctx, req, sessionKey, sessionID)
+	if err != nil {
+		_ = s.events.Update(eventID, func(r *model.EventRecord) {
+			r.Status = model.EventStatusFailed
+			r.UpdatedAt = time.Now().UTC()
+			r.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
+		})
+		_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
 		logger.Error("gateway.ingest.failed",
 			logging.String("status", "failed"),
 			logging.String("error_code", model.ErrorCodeInternal),
-			logging.Error(publishErr),
-			logging.NamedError("rollback_error", rollbackErr),
+			logging.Error(err),
 			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
 		)
-		return model.IngestResponse{}, 0, &APIError{
-			StatusCode: http.StatusInternalServerError,
-			Code:       model.ErrorCodeInternal,
-			Message:    fmt.Sprintf("publish failed: %v; rollback idempotency failed: %v", publishErr, rollbackErr),
+		return model.IngestResponse{}, 0, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: fmt.Sprintf("adk execution failed: %v", err)}
+	}
+	if s.storeLoop == nil {
+		_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
+		return model.IngestResponse{}, 0, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "store loop is not configured"}
+	}
+	commitID, err := s.storeLoop.Commit(ctx, store.CommitRequest{
+		SessionKey: sessionKey,
+		SessionID:  sessionID,
+		Entries:    runResult.Entries,
+		RunTrace:   runResult.Trace,
+		Now:        time.Now().UTC(),
+	})
+	if err != nil {
+		_ = s.events.Update(eventID, func(r *model.EventRecord) {
+			r.Status = model.EventStatusFailed
+			r.UpdatedAt = time.Now().UTC()
+			r.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
+		})
+		_ = s.idempotency.DeleteInbound(req.IdempotencyKey)
+		return model.IngestResponse{}, 0, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()}
+	}
+	_ = s.events.Update(eventID, func(r *model.EventRecord) {
+		r.Status = model.EventStatusCommitted
+		r.RunID = runResult.RunID
+		r.RunMode = runResult.RunMode
+		r.CommitID = commitID
+		r.UpdatedAt = time.Now().UTC()
+		r.AssistantReply = runResult.OutboundBody
+		r.Error = nil
+		if runResult.SuppressOutput {
+			r.DeliveryStatus = model.DeliveryStatusSuppressed
+			r.DeliveryDetail = model.DeliveryDetailNotApplicable
+		} else {
+			r.DeliveryStatus = model.DeliveryStatusSent
+			r.DeliveryDetail = model.DeliveryDetailDirect
 		}
+	})
+	resp := model.IngestResponse{
+		EventID:         eventID,
+		SessionKey:      sessionKey,
+		ActiveSessionID: sessionID,
+		ReceivedAt:      now.Format(time.RFC3339Nano),
+		PayloadHash:     payloadHash,
+		Status:          ingestStatusAccepted,
+		StatusURL:       fmt.Sprintf(ingestStatusURLTemplate, eventID),
 	}
-	if errorCode == model.ErrorCodeInternal {
-		logger.Error("gateway.ingest.failed",
-			logging.String("status", "failed"),
-			logging.String("error_code", errorCode),
-			logging.Error(publishErr),
-			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-		)
-	} else {
-		logger.Warn("gateway.ingest.failed",
-			logging.String("status", "failed"),
-			logging.String("error_code", errorCode),
-			logging.Error(publishErr),
-			logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-		)
-	}
-	return model.IngestResponse{}, 0, publishAPIErr
+	logger.Info("gateway.ingest.accepted",
+		logging.String("status", ingestStatusAccepted),
+		logging.Int64("latency_ms", time.Since(start).Milliseconds()),
+	)
+	return resp, http.StatusAccepted, nil
 }

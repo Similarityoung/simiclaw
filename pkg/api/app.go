@@ -3,28 +3,25 @@ package api
 import (
 	"context"
 	"fmt"
-	"iter"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	adkagent "google.golang.org/adk/agent"
+	"google.golang.org/adk/agent"
+	adkmodel "google.golang.org/adk/model"
 	adksession "google.golang.org/adk/session"
+	"google.golang.org/genai"
 
 	"github.com/similarityyoung/simiclaw/pkg/adkruntime"
-	"github.com/similarityyoung/simiclaw/pkg/agent"
 	"github.com/similarityyoung/simiclaw/pkg/approval"
 	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	runner "github.com/similarityyoung/simiclaw/pkg/engine"
 	runtime "github.com/similarityyoung/simiclaw/pkg/eventing"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
-	"github.com/similarityyoung/simiclaw/pkg/llm"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/outbound"
 	store "github.com/similarityyoung/simiclaw/pkg/persistence"
-	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
 type App struct {
@@ -37,7 +34,6 @@ type App struct {
 	Sessions    *store.SessionStore
 	Idempotency *idempotency.Store
 	StoreLoop   *store.StoreLoop
-	EventLoop   *runtime.EventLoop
 	Approvals   *approval.Service
 	Handler     http.Handler
 }
@@ -64,7 +60,6 @@ func NewApp(cfg config.Config) (*App, error) {
 
 	eventBus := bus.NewMessageBus(cfg.EventQueueCapacity)
 	storeLoop := store.NewStoreLoop(cfg.Workspace, sessions)
-	outHub := outbound.NewHub(cfg.Workspace, outbound.StdoutSender{}, idStore)
 	adkRuntime, err := newGatewayADKRuntime(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("initialize gateway adk runtime: %w", err)
@@ -74,11 +69,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	registry := tools.NewRegistry()
-	tools.RegisterBuiltins(registry)
-	run := newRunner(cfg, registry)
-	eventLoop := runtime.NewEventLoop(eventBus, eventRepo, run, storeLoop, outHub, approvalSvc, cfg.MaxToolRounds)
-	g := gateway.NewService(cfg, eventBus, idStore, sessions, eventRepo, adkRouter)
+	g := gateway.NewService(cfg, idStore, sessions, eventRepo, storeLoop, adkRouter)
 
 	app := &App{
 		Cfg:         cfg,
@@ -90,9 +81,9 @@ func NewApp(cfg config.Config) (*App, error) {
 		Sessions:    sessions,
 		Idempotency: idStore,
 		StoreLoop:   storeLoop,
-		EventLoop:   eventLoop,
 		Approvals:   approvalSvc,
 	}
+	app.StoreLoop.Start()
 	app.Handler = app.routes()
 	return app, nil
 }
@@ -131,6 +122,102 @@ func (r gatewayADKSessionRouter) RouteIngest(ctx context.Context, req model.Inge
 	return nil
 }
 
+func (r gatewayADKSessionRouter) RunIngest(ctx context.Context, req model.IngestRequest, sessionKey, sessionID string) (gateway.ADKRunResult, error) {
+	result := gateway.ADKRunResult{}
+	now := time.Now().UTC()
+	runID := nextADKID("run", now)
+	result.RunID = runID
+	if isNoReplyPayload(req.Payload.Type) {
+		result.RunMode = model.RunModeNoReply
+		result.SuppressOutput = true
+		content := strings.TrimSpace(req.Payload.Text)
+		if content == "" {
+			content = req.Payload.Type
+		}
+		result.Entries = []model.SessionEntry{{
+			Type:    "system",
+			EntryID: nextADKID("e_sys", now),
+			RunID:   runID,
+			Content: content,
+		}}
+		result.Trace = model.RunTrace{
+			RunID:      runID,
+			SessionKey: sessionKey,
+			SessionID:  sessionID,
+			RunMode:    result.RunMode,
+			Actions:    []model.Action{},
+			StartedAt:  now,
+			FinishedAt: time.Now().UTC(),
+		}
+		return result, nil
+	}
+	result.RunMode = model.RunModeNormal
+	userID := adkRouteUserID(req, sessionKey)
+	msg := genai.NewContentFromText(strings.TrimSpace(req.Payload.Text), genai.RoleUser)
+	entries := []model.SessionEntry{{
+		Type:    "user",
+		EntryID: nextADKID("e_user", now),
+		RunID:   runID,
+		Content: strings.TrimSpace(req.Payload.Text),
+	}}
+	var assistantText strings.Builder
+	for evt, err := range r.runtime.Runner().Run(ctx, userID, sessionID, msg, agent.RunConfig{StreamingMode: agent.StreamingModeNone}) {
+		if err != nil {
+			return gateway.ADKRunResult{}, err
+		}
+		if evt == nil || evt.Content == nil || evt.Author == "user" {
+			continue
+		}
+		if !evt.IsFinalResponse() {
+			continue
+		}
+		for _, part := range evt.Content.Parts {
+			if part != nil && strings.TrimSpace(part.Text) != "" {
+				if assistantText.Len() > 0 {
+					assistantText.WriteByte('\n')
+				}
+				assistantText.WriteString(strings.TrimSpace(part.Text))
+			}
+		}
+	}
+	if assistantText.Len() > 0 {
+		result.OutboundBody = assistantText.String()
+		entries = append(entries, model.SessionEntry{
+			Type:    "assistant",
+			EntryID: nextADKID("e_asst", time.Now().UTC()),
+			RunID:   runID,
+			Content: result.OutboundBody,
+		})
+	}
+	result.Entries = entries
+	result.Trace = model.RunTrace{
+		RunID:      runID,
+		SessionKey: sessionKey,
+		SessionID:  sessionID,
+		RunMode:    result.RunMode,
+		Actions:    []model.Action{},
+		StartedAt:  now,
+		FinishedAt: time.Now().UTC(),
+	}
+	return result, nil
+}
+
+var adkIDSeq atomic.Uint64
+
+func nextADKID(prefix string, now time.Time) string {
+	n := adkIDSeq.Add(1)
+	return fmt.Sprintf("%s_%d_%04d", prefix, now.UnixNano(), n)
+}
+
+func isNoReplyPayload(payloadType string) bool {
+	switch strings.TrimSpace(payloadType) {
+	case "memory_flush", "compaction", "cron_fire":
+		return true
+	default:
+		return false
+	}
+}
+
 func adkRouteUserID(req model.IngestRequest, sessionKey string) string {
 	if v := strings.TrimSpace(req.Conversation.ParticipantID); v != "" {
 		return v
@@ -142,33 +229,21 @@ func adkRouteUserID(req model.IngestRequest, sessionKey string) string {
 }
 
 func newGatewayADKRuntime(cfg config.Config) (*adkruntime.Runtime, error) {
-	rootAgent, err := adkagent.New(adkagent.Config{
-		Name:        "simiclaw_gateway_adk_bridge",
-		Description: "Gateway ADK bridge agent for side-by-side session routing",
-		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-			return func(yield func(*adksession.Event, error) bool) {}
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create adk bridge root agent: %w", err)
-	}
+	var llm adkmodel.LLM = adkruntime.LocalEchoModel{}
 	return adkruntime.NewRuntime(adkruntime.Config{
 		Workspace: cfg.Workspace,
 		AppName:   defaultGatewayADKAppName,
-		RootAgent: rootAgent,
+		LLM:       llm,
 	})
 }
 
 // Start 启动存储循环和事件循环，开始处理系统内消息。
 func (a *App) Start() {
-	a.StoreLoop.Start()
-	a.EventLoop.Start()
 }
 
 // Stop 按顺序关闭总线与后台循环，尽量完成剩余任务后退出。
 func (a *App) Stop() {
 	a.Bus.Close()
-	a.EventLoop.StopAfterDrain()
 	a.StoreLoop.Stop()
 }
 
@@ -185,23 +260,4 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
-}
-
-// newRunner constructs the appropriate Runner based on config.
-// 仅当 LLMAPIKey 非空时使用 AgentRunner（真实 LLM）；否则回退到 ProcessRunner（内置规则引擎）。
-func newRunner(cfg config.Config, registry *tools.Registry) runner.Runner {
-	if cfg.LLMAPIKey != "" {
-		llmClient := llm.New(llm.Config{
-			BaseURL: cfg.LLMBaseURL,
-			APIKey:  cfg.LLMAPIKey,
-			Model:   cfg.LLMModel,
-			Timeout: cfg.LLMTimeout.Duration,
-		})
-		return agent.New(agent.Config{
-			Workspace: cfg.Workspace,
-			LLM:       llmClient,
-			Registry:  registry,
-		})
-	}
-	return runner.NewProcessRunner(cfg.Workspace, registry)
 }

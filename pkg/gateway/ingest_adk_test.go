@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/bus"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	runtime "github.com/similarityyoung/simiclaw/pkg/eventing"
 	"github.com/similarityyoung/simiclaw/pkg/idempotency"
@@ -17,7 +16,9 @@ import (
 
 type adkRouterStub struct {
 	err            error
+	runErr         error
 	calls          int
+	runCalls       int
 	lastReq        model.IngestRequest
 	lastSessionKey string
 	lastSessionID  string
@@ -31,9 +32,32 @@ func (s *adkRouterStub) RouteIngest(_ context.Context, req model.IngestRequest, 
 	return s.err
 }
 
+func (s *adkRouterStub) RunIngest(_ context.Context, req model.IngestRequest, sessionKey, sessionID string) (ADKRunResult, error) {
+	s.runCalls++
+	s.lastReq = req
+	s.lastSessionKey = sessionKey
+	s.lastSessionID = sessionID
+	if s.runErr != nil {
+		return ADKRunResult{}, s.runErr
+	}
+	now := time.Now().UTC()
+	runID := "run_test_1"
+	trace := model.RunTrace{
+		RunID:      runID,
+		SessionKey: sessionKey,
+		SessionID:  sessionID,
+		RunMode:    model.RunModeNormal,
+		Actions:    []model.Action{},
+		StartedAt:  now,
+		FinishedAt: now,
+	}
+	entries := []model.SessionEntry{{Type: "user", EntryID: "e_u", RunID: runID, Content: req.Payload.Text}, {Type: "assistant", EntryID: "e_a", RunID: runID, Content: "stub reply"}}
+	return ADKRunResult{RunID: runID, RunMode: model.RunModeNormal, Entries: entries, Trace: trace, OutboundBody: "stub reply"}, nil
+}
+
 func TestIngestRoutesToADKWithResolvedSession(t *testing.T) {
 	router := &adkRouterStub{}
-	svc, eventBus, idem, events := newGatewayServiceForIngestADKTests(t, router)
+	svc, idem, events := newGatewayServiceForIngestADKTests(t, router)
 	req := testIngestRequest("conv_adk_ok", "u1", "cli:conv_adk_ok:1", "hello adk")
 
 	resp, code, apiErr := svc.Ingest(context.Background(), req)
@@ -45,6 +69,9 @@ func TestIngestRoutesToADKWithResolvedSession(t *testing.T) {
 	}
 	if router.calls != 1 {
 		t.Fatalf("expected router call once, got %d", router.calls)
+	}
+	if router.runCalls != 1 {
+		t.Fatalf("expected run call once, got %d", router.runCalls)
 	}
 	if router.lastReq.IdempotencyKey != req.IdempotencyKey {
 		t.Fatalf("expected router to receive idempotency key %q, got %q", req.IdempotencyKey, router.lastReq.IdempotencyKey)
@@ -68,24 +95,17 @@ func TestIngestRoutesToADKWithResolvedSession(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected event %q to be persisted", resp.EventID)
 	}
-	if rec.Status != model.EventStatusAccepted {
-		t.Fatalf("expected event status accepted, got %s", rec.Status)
+	if rec.Status != model.EventStatusCommitted {
+		t.Fatalf("expected event status committed, got %s", rec.Status)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	evt, ok := eventBus.ConsumeInbound(ctx)
-	if !ok {
-		t.Fatalf("expected published inbound event")
-	}
-	if evt.ActiveSessionID != resp.ActiveSessionID || evt.SessionKey != resp.SessionKey {
-		t.Fatalf("expected published event to carry resolved session mapping")
+	if rec.AssistantReply != "stub reply" {
+		t.Fatalf("expected assistant reply from run result, got %q", rec.AssistantReply)
 	}
 }
 
 func TestIngestReturnsInternalWhenADKRouterFailsAndRollsBackIdempotency(t *testing.T) {
 	router := &adkRouterStub{err: errors.New("route failed")}
-	svc, _, idem, _ := newGatewayServiceForIngestADKTests(t, router)
+	svc, idem, _ := newGatewayServiceForIngestADKTests(t, router)
 	req := testIngestRequest("conv_adk_fail", "u1", "cli:conv_adk_fail:1", "hello")
 
 	_, _, apiErr := svc.Ingest(context.Background(), req)
@@ -107,7 +127,7 @@ func TestIngestReturnsInternalWhenADKRouterFailsAndRollsBackIdempotency(t *testi
 }
 
 func TestIngestReturnsInternalWhenADKRouterNotConfigured(t *testing.T) {
-	svc, _, idem, _ := newGatewayServiceForIngestADKTests(t, nil)
+	svc, idem, _ := newGatewayServiceForIngestADKTests(t, nil)
 	req := testIngestRequest("conv_adk_missing", "u1", "cli:conv_adk_missing:1", "hello")
 
 	_, _, apiErr := svc.Ingest(context.Background(), req)
@@ -125,7 +145,7 @@ func TestIngestReturnsInternalWhenADKRouterNotConfigured(t *testing.T) {
 	}
 }
 
-func newGatewayServiceForIngestADKTests(t *testing.T, router adkSessionRouter) (*Service, *bus.MessageBus, *idempotency.Store, *runtime.EventRepo) {
+func newGatewayServiceForIngestADKTests(t *testing.T, router adkSessionRouter) (*Service, *idempotency.Store, *runtime.EventRepo) {
 	t.Helper()
 
 	workspace := t.TempDir()
@@ -136,7 +156,6 @@ func newGatewayServiceForIngestADKTests(t *testing.T, router adkSessionRouter) (
 	cfg := config.Default()
 	cfg.Workspace = workspace
 
-	eventBus := bus.NewMessageBus(8)
 	idem, err := idempotency.New(workspace)
 	if err != nil {
 		t.Fatalf("new idempotency store: %v", err)
@@ -149,8 +168,11 @@ func newGatewayServiceForIngestADKTests(t *testing.T, router adkSessionRouter) (
 	if err != nil {
 		t.Fatalf("new event repo: %v", err)
 	}
+	storeLoop := store.NewStoreLoop(workspace, sessions)
+	storeLoop.Start()
+	t.Cleanup(storeLoop.Stop)
 
-	return NewService(cfg, eventBus, idem, sessions, events, router), eventBus, idem, events
+	return NewService(cfg, idem, sessions, events, storeLoop, router), idem, events
 }
 
 func testIngestRequest(conversationID, participantID, idempotencyKey, text string) model.IngestRequest {

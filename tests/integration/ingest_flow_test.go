@@ -30,8 +30,8 @@ func newTestApp(t *testing.T, startLoops bool, queueCap int) *api.App {
 	}
 	if startLoops {
 		app.Start()
-		t.Cleanup(app.Stop)
 	}
+	t.Cleanup(app.Stop)
 	return app
 }
 
@@ -177,8 +177,8 @@ func TestQueueFull(t *testing.T) {
 	second := first
 	second.IdempotencyKey = "cli:conv_q:2"
 	body, code := postIngestRaw(t, app, second)
-	if code != 503 {
-		t.Fatalf("expected 503, got %d, body=%s", code, string(body))
+	if code != 202 {
+		t.Fatalf("expected 202 with direct ADK execution, got %d, body=%s", code, string(body))
 	}
 }
 
@@ -206,23 +206,19 @@ func TestQueueFullRetryWithSameIdempotencyKey(t *testing.T) {
 		Payload:        model.EventPayload{Type: "message", Text: "two"},
 	}
 	body, code := postIngestRaw(t, app, second)
-	if code != 503 {
-		t.Fatalf("second expected 503, got %d, body=%s", code, string(body))
+	if code != 202 {
+		t.Fatalf("second expected 202 with direct ADK execution, got %d, body=%s", code, string(body))
 	}
-
-	app.Start()
-	t.Cleanup(app.Stop)
 
 	_ = waitEvent(t, app, firstResp.EventID, 2*time.Second)
 
 	second.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	secondResp, code := postIngest(t, app, second)
-	if code != 202 {
-		t.Fatalf("retry expected 202, got %d", code)
+	if code != 200 {
+		t.Fatalf("retry expected duplicate 200, got %d", code)
 	}
-	rec := waitEvent(t, app, secondResp.EventID, 2*time.Second)
-	if rec.Status != model.EventStatusCommitted {
-		t.Fatalf("expected committed after retry, got %s", rec.Status)
+	if secondResp.Status != "duplicate_acked" {
+		t.Fatalf("expected duplicate_acked after retry, got %s", secondResp.Status)
 	}
 }
 
