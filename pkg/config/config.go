@@ -11,17 +11,14 @@ import (
 	"time"
 )
 
-// Duration wraps time.Duration with human-readable JSON (e.g. "200ms", "5s").
 type Duration struct {
 	time.Duration
 }
 
-// MarshalJSON 将 Duration 序列化为可读的时长字符串。
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Duration.String())
 }
 
-// UnmarshalJSON 支持从字符串或数字反序列化 Duration。
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
@@ -42,25 +39,56 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type Config struct {
-	Workspace             string   `json:"workspace"`
-	ListenAddr            string   `json:"listen_addr"`
-	LogLevel              string   `json:"log_level"`
-	APIKey                string   `json:"api_key"`
-	TenantID              string   `json:"tenant_id"`
-	EventQueueCapacity    int      `json:"event_queue_capacity"`
-	IngestEnqueueTimeout  Duration `json:"ingest_enqueue_timeout"`
-	RateLimitTenantRPS    float64  `json:"rate_limit_tenant_rps"`
-	RateLimitTenantBurst  float64  `json:"rate_limit_tenant_burst"`
-	RateLimitSessionRPS   float64  `json:"rate_limit_session_rps"`
-	RateLimitSessionBurst float64  `json:"rate_limit_session_burst"`
-	MaxToolRounds         int      `json:"max_tool_rounds"`
+type LLMConfig struct {
+	DefaultModel string                       `json:"default_model"`
+	Providers    map[string]LLMProviderConfig `json:"providers"`
+}
 
-	// LLM 配置：接入 OpenAI 兼容 API（GPT-4、DeepSeek、Ollama 等）
-	LLMBaseURL string   `json:"llm_base_url,omitempty"`
-	LLMAPIKey  string   `json:"llm_api_key,omitempty"`
-	LLMModel   string   `json:"llm_model,omitempty"`
-	LLMTimeout Duration `json:"llm_timeout,omitempty"`
+type LLMProviderConfig struct {
+	Type                 string   `json:"type"`
+	BaseURL              string   `json:"base_url,omitempty"`
+	APIKey               string   `json:"api_key,omitempty"`
+	Timeout              Duration `json:"timeout,omitempty"`
+	FakeResponseText     string   `json:"fake_response_text,omitempty"`
+	FakeToolName         string   `json:"fake_tool_name,omitempty"`
+	FakeToolArgsJSON     string   `json:"fake_tool_args_json,omitempty"`
+	FakeFinishReason     string   `json:"fake_finish_reason,omitempty"`
+	FakeRawFinishReason  string   `json:"fake_raw_finish_reason,omitempty"`
+	FakePromptTokens     int      `json:"fake_prompt_tokens,omitempty"`
+	FakeCompletionTokens int      `json:"fake_completion_tokens,omitempty"`
+	FakeRequestID        string   `json:"fake_request_id,omitempty"`
+}
+
+type CronJobConfig struct {
+	Name           string   `json:"name"`
+	ConversationID string   `json:"conversation_id"`
+	ChannelType    string   `json:"channel_type"`
+	ParticipantID  string   `json:"participant_id,omitempty"`
+	PayloadType    string   `json:"payload_type"`
+	PayloadText    string   `json:"payload_text,omitempty"`
+	Interval       Duration `json:"interval"`
+}
+
+type Config struct {
+	Workspace             string          `json:"workspace"`
+	ListenAddr            string          `json:"listen_addr"`
+	LogLevel              string          `json:"log_level"`
+	APIKey                string          `json:"api_key"`
+	TenantID              string          `json:"tenant_id"`
+	EventQueueCapacity    int             `json:"event_queue_capacity"`
+	IngestEnqueueTimeout  Duration        `json:"ingest_enqueue_timeout"`
+	RateLimitTenantRPS    float64         `json:"rate_limit_tenant_rps"`
+	RateLimitTenantBurst  float64         `json:"rate_limit_tenant_burst"`
+	RateLimitSessionRPS   float64         `json:"rate_limit_session_rps"`
+	RateLimitSessionBurst float64         `json:"rate_limit_session_burst"`
+	MaxToolRounds         int             `json:"max_tool_rounds"`
+	DBBusyTimeout         Duration        `json:"db_busy_timeout"`
+	LLMBaseURL            string          `json:"llm_base_url,omitempty"`
+	LLMAPIKey             string          `json:"llm_api_key,omitempty"`
+	LLMModel              string          `json:"llm_model,omitempty"`
+	LLMTimeout            Duration        `json:"llm_timeout,omitempty"`
+	LLM                   LLMConfig       `json:"llm"`
+	CronJobs              []CronJobConfig `json:"cron_jobs,omitempty"`
 }
 
 const (
@@ -75,12 +103,11 @@ const (
 	defaultRateLimitSessionRPS   = 5
 	defaultRateLimitSessionBurst = 10
 	defaultMaxToolRounds         = 4
-	defaultLLMBaseURL            = "https://api.openai.com/v1"
-	defaultLLMModel              = "gpt-4o"
-	defaultLLMTimeout            = 60 * time.Second
+	defaultDBBusyTimeout         = 5 * time.Second
+	defaultProviderTimeout       = 60 * time.Second
+	defaultFakeModel             = "fake/default"
 )
 
-// Default 返回服务配置的默认值。
 func Default() Config {
 	return Config{
 		Workspace:             defaultWorkspace,
@@ -94,18 +121,32 @@ func Default() Config {
 		RateLimitSessionRPS:   defaultRateLimitSessionRPS,
 		RateLimitSessionBurst: defaultRateLimitSessionBurst,
 		MaxToolRounds:         defaultMaxToolRounds,
-		LLMBaseURL:            defaultLLMBaseURL,
-		LLMModel:              defaultLLMModel,
-		LLMTimeout:            Duration{defaultLLMTimeout},
+		DBBusyTimeout:         Duration{defaultDBBusyTimeout},
+		LLMTimeout:            Duration{defaultProviderTimeout},
+		LLMModel:              defaultFakeModel,
+		LLM: LLMConfig{
+			DefaultModel: defaultFakeModel,
+			Providers: map[string]LLMProviderConfig{
+				"fake": {
+					Type:                 "fake",
+					Timeout:              Duration{defaultProviderTimeout},
+					FakeResponseText:     "已收到: {{last_user_message}}",
+					FakeFinishReason:     "stop",
+					FakeRawFinishReason:  "stop",
+					FakePromptTokens:     8,
+					FakeCompletionTokens: 8,
+					FakeRequestID:        "fake-request-1",
+				},
+			},
+		},
 	}
 }
 
-// Load 从 JSON 文件加载配置，并补齐缺省值与基础校验。
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path == "" {
 		applyEnvOverrides(&cfg)
-		return cfg, nil
+		return validate(cfg)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -114,8 +155,14 @@ func Load(path string) (Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return cfg, err
 	}
+	applyDefaults(&cfg)
+	applyEnvOverrides(&cfg)
+	return validate(cfg)
+}
+
+func applyDefaults(cfg *Config) {
 	if cfg.Workspace == "" {
-		return cfg, errors.New("workspace is required")
+		cfg.Workspace = defaultWorkspace
 	}
 	cfg.Workspace = filepath.Clean(cfg.Workspace)
 	if cfg.ListenAddr == "" {
@@ -123,9 +170,6 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultLogLevel
-	}
-	if err := validateLogLevel(cfg.LogLevel); err != nil {
-		return cfg, err
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = defaultTenantID
@@ -139,15 +183,6 @@ func Load(path string) (Config, error) {
 	if cfg.MaxToolRounds <= 0 {
 		cfg.MaxToolRounds = defaultMaxToolRounds
 	}
-	if cfg.LLMBaseURL == "" {
-		cfg.LLMBaseURL = defaultLLMBaseURL
-	}
-	if cfg.LLMModel == "" {
-		cfg.LLMModel = defaultLLMModel
-	}
-	if cfg.LLMTimeout.Duration <= 0 {
-		cfg.LLMTimeout = Duration{defaultLLMTimeout}
-	}
 	if cfg.RateLimitTenantRPS <= 0 {
 		cfg.RateLimitTenantRPS = defaultRateLimitTenantRPS
 	}
@@ -160,7 +195,94 @@ func Load(path string) (Config, error) {
 	if cfg.RateLimitSessionBurst <= 0 {
 		cfg.RateLimitSessionBurst = defaultRateLimitSessionBurst
 	}
-	applyEnvOverrides(&cfg)
+	if cfg.DBBusyTimeout.Duration <= 0 {
+		cfg.DBBusyTimeout = Duration{defaultDBBusyTimeout}
+	}
+	if cfg.LLMTimeout.Duration <= 0 {
+		cfg.LLMTimeout = Duration{defaultProviderTimeout}
+	}
+	if cfg.LLM.DefaultModel == "" {
+		cfg.LLM.DefaultModel = defaultFakeModel
+	}
+	if cfg.LLMModel == "" {
+		cfg.LLMModel = cfg.LLM.DefaultModel
+	}
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = map[string]LLMProviderConfig{}
+	}
+	for name, provider := range cfg.LLM.Providers {
+		if provider.Timeout.Duration <= 0 {
+			provider.Timeout = Duration{defaultProviderTimeout}
+		}
+		if provider.Type == "fake" {
+			if provider.FakeFinishReason == "" {
+				provider.FakeFinishReason = "stop"
+			}
+			if provider.FakeRawFinishReason == "" {
+				provider.FakeRawFinishReason = provider.FakeFinishReason
+			}
+			if provider.FakeRequestID == "" {
+				provider.FakeRequestID = "fake-request-1"
+			}
+			if provider.FakePromptTokens <= 0 {
+				provider.FakePromptTokens = 8
+			}
+			if provider.FakeCompletionTokens <= 0 {
+				provider.FakeCompletionTokens = 8
+			}
+		}
+		cfg.LLM.Providers[name] = provider
+	}
+	if cfg.LLMBaseURL == "" {
+		if provider, ok := cfg.LLM.Providers["openai"]; ok {
+			cfg.LLMBaseURL = provider.BaseURL
+		}
+	}
+	if cfg.LLMAPIKey == "" {
+		if provider, ok := cfg.LLM.Providers["openai"]; ok {
+			cfg.LLMAPIKey = provider.APIKey
+		}
+	}
+}
+
+func validate(cfg Config) (Config, error) {
+	applyDefaults(&cfg)
+	if err := validateLogLevel(cfg.LogLevel); err != nil {
+		return cfg, err
+	}
+	if cfg.DBBusyTimeout.Duration < time.Second {
+		return cfg, errors.New("db_busy_timeout must be at least 1s")
+	}
+	providerName, _, ok := strings.Cut(cfg.LLM.DefaultModel, "/")
+	if !ok || strings.TrimSpace(providerName) == "" {
+		return cfg, fmt.Errorf("llm.default_model %q must use provider/model format", cfg.LLM.DefaultModel)
+	}
+	providerCfg, ok := cfg.LLM.Providers[providerName]
+	if !ok {
+		return cfg, fmt.Errorf("llm.default_model %q references unknown provider %q", cfg.LLM.DefaultModel, providerName)
+	}
+	switch providerCfg.Type {
+	case "fake", "openai_compatible":
+	default:
+		return cfg, fmt.Errorf("llm.providers.%s.type %q is unsupported", providerName, providerCfg.Type)
+	}
+	for _, job := range cfg.CronJobs {
+		if strings.TrimSpace(job.Name) == "" {
+			return cfg, errors.New("cron_jobs.name is required")
+		}
+		if job.Interval.Duration <= 0 {
+			return cfg, fmt.Errorf("cron_jobs.%s.interval must be positive", job.Name)
+		}
+		if strings.TrimSpace(job.ConversationID) == "" {
+			return cfg, fmt.Errorf("cron_jobs.%s.conversation_id is required", job.Name)
+		}
+		if strings.TrimSpace(job.ChannelType) == "" {
+			return cfg, fmt.Errorf("cron_jobs.%s.channel_type is required", job.Name)
+		}
+		if strings.TrimSpace(job.PayloadType) == "" {
+			return cfg, fmt.Errorf("cron_jobs.%s.payload_type is required", job.Name)
+		}
+	}
 	return cfg, nil
 }
 
@@ -174,8 +296,6 @@ func validateLogLevel(raw string) error {
 	}
 }
 
-// LoadDotEnv 解析 .env 文件并将 KEY=VALUE 注入环境变量。
-// 若文件不存在则静默跳过（.env 为可选）；已有的环境变量不会被覆盖。
 func LoadDotEnv(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -198,14 +318,12 @@ func LoadDotEnv(path string) error {
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		// 去掉可选的引号包裹（单引号或双引号）
 		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
 			v = v[1 : len(v)-1]
 		}
 		if k == "" {
 			continue
 		}
-		// 真实环境变量优先级高于 .env 文件
 		if os.Getenv(k) == "" {
 			_ = os.Setenv(k, v)
 		}
@@ -213,16 +331,32 @@ func LoadDotEnv(path string) error {
 	return scanner.Err()
 }
 
-// applyEnvOverrides 将环境变量中的 LLM 配置覆盖到 cfg。
-// 优先级：环境变量 > JSON 配置文件 > 默认值。
 func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("LLM_API_KEY"); v != "" {
-		cfg.LLMAPIKey = v
+	if v := strings.TrimSpace(os.Getenv("SIMICLAW_LLM_DEFAULT_MODEL")); v != "" {
+		cfg.LLM.DefaultModel = v
 	}
-	if v := os.Getenv("LLM_BASE_URL"); v != "" {
-		cfg.LLMBaseURL = v
+	if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+		p := cfg.LLM.Providers["openai"]
+		p.Type = "openai_compatible"
+		p.APIKey = key
+		if p.Timeout.Duration <= 0 {
+			p.Timeout = Duration{defaultProviderTimeout}
+		}
+		cfg.LLM.Providers["openai"] = p
+		cfg.LLMAPIKey = key
 	}
-	if v := os.Getenv("LLM_MODEL"); v != "" {
-		cfg.LLMModel = v
+	if baseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); baseURL != "" {
+		p := cfg.LLM.Providers["openai"]
+		p.Type = "openai_compatible"
+		p.BaseURL = baseURL
+		if p.Timeout.Duration <= 0 {
+			p.Timeout = Duration{defaultProviderTimeout}
+		}
+		cfg.LLM.Providers["openai"] = p
+		cfg.LLMBaseURL = baseURL
+	}
+	if model := strings.TrimSpace(os.Getenv("LLM_MODEL")); model != "" {
+		cfg.LLMModel = model
+		cfg.LLM.DefaultModel = model
 	}
 }
