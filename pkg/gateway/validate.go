@@ -57,7 +57,7 @@ func validateRequest(req model.IngestRequest, now time.Time) (time.Time, *APIErr
 	if !strings.HasSuffix(req.Timestamp, "Z") {
 		return time.Time{}, &APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "timestamp must be UTC"}
 	}
-	ts, err := time.Parse(time.RFC3339, req.Timestamp)
+	ts, err := time.Parse(time.RFC3339Nano, req.Timestamp)
 	if err != nil {
 		return time.Time{}, &APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid timestamp"}
 	}
