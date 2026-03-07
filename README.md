@@ -6,6 +6,7 @@
 
 - CLI：`init | serve | chat | version`
 - HTTP：
+  - `POST /v1/chat:stream`
   - `POST /v1/events:ingest`
   - `GET /v1/events/{event_id}`
   - `GET /v1/events`
@@ -25,7 +26,7 @@
   - outbox retry worker
   - cron worker
 - LLM：
-  - 统一 `LLMProvider.Chat(ctx, ChatRequest)` 接口
+  - 统一 `LLMProvider.Chat(ctx, ChatRequest)` / `StreamChat(ctx, ChatRequest, StreamSink)` 接口
   - 默认 `fake/default`
   - OpenAI-compatible provider 使用 `github.com/openai/openai-go/v3`
 - `NO_REPLY`：`memory_flush | compaction | cron_fire`
@@ -84,6 +85,8 @@ go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ```bash
 go run ./cmd/simiclaw chat
 ```
+
+默认会优先使用 `POST /v1/chat:stream` 建立 SSE 流式对话；如果服务端不支持流式或协议版本不兼容，CLI 会自动回退到原有的 ingest + 轮询模式。可通过 `-stream=false` 强制关闭流式。
 
 ### 4. 手动 ingest
 
