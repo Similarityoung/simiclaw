@@ -41,7 +41,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
-	eventLoop := runtime.NewEventLoop(db, run, cfg.EventQueueCapacity, cfg.MaxToolRounds)
+	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
 	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, outbound.StdoutSender{})
 	gatewayService := gateway.NewService(cfg, db, eventLoop)
 	server := httpapi.New(cfg, db, gatewayService, supervisor, streamHub)

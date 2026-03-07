@@ -38,6 +38,47 @@ func newOpenAICompatibleProvider(name string, cfg config.LLMProviderConfig) (LLM
 }
 
 func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) {
+	params := buildChatCompletionParams(req, false)
+
+	resp, err := p.client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return ChatResult{}, err
+	}
+	if len(resp.Choices) == 0 {
+		return ChatResult{}, errors.New("openai-compatible provider returned no choices")
+	}
+	return chatResultFromCompletion(p.name, resp)
+}
+
+func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatRequest, sink StreamSink) (ChatResult, error) {
+	params := buildChatCompletionParams(req, true)
+	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
+	acc := openai.ChatCompletionAccumulator{}
+	toolAcc := newToolCallAccumulator()
+	for stream.Next() {
+		chunk := stream.Current()
+		if !acc.AddChunk(chunk) {
+			return ChatResult{}, errors.New("openai-compatible provider returned inconsistent streaming chunks")
+		}
+		toolAcc.AddChunk(chunk)
+		if sink != nil {
+			for _, choice := range chunk.Choices {
+				if choice.Index != 0 {
+					continue
+				}
+				if delta := choice.Delta.Content; delta != "" {
+					sink.OnTextDelta(delta)
+				}
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return ChatResult{}, err
+	}
+	return chatResultFromAccumulator(p.name, &acc, toolAcc)
+}
+
+func buildChatCompletionParams(req ChatRequest, includeUsage bool) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(req.Model),
 		Messages: buildChatMessages(req.Messages),
@@ -48,20 +89,21 @@ func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (C
 		}
 		params.Tools = buildToolParams(req.Tools)
 	}
+	if includeUsage {
+		params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		}
+	}
+	return params
+}
 
-	resp, err := p.client.Chat.Completions.New(ctx, params)
-	if err != nil {
-		return ChatResult{}, err
-	}
-	if len(resp.Choices) == 0 {
-		return ChatResult{}, errors.New("openai-compatible provider returned no choices")
-	}
+func chatResultFromCompletion(providerName string, resp *openai.ChatCompletion) (ChatResult, error) {
 	choice := resp.Choices[0]
 	result := ChatResult{
 		Text:              choice.Message.Content,
 		FinishReason:      choice.FinishReason,
 		RawFinishReason:   choice.FinishReason,
-		Provider:          p.name,
+		Provider:          providerName,
 		Model:             resp.Model,
 		ProviderRequestID: resp.ID,
 		Usage: Usage{

@@ -46,8 +46,14 @@ type ChatResult struct {
 	ProviderRequestID string           `json:"provider_request_id"`
 }
 
+type StreamSink interface {
+	OnReasoningDelta(delta string)
+	OnTextDelta(delta string)
+}
+
 type LLMProvider interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResult, error)
+	StreamChat(ctx context.Context, req ChatRequest, sink StreamSink) (ChatResult, error)
 }
 
 type Factory struct {
