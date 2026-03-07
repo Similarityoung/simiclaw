@@ -1,10 +1,11 @@
-package api
+package bootstrap
 
 import (
 	"context"
 	"net/http"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/httpapi"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
@@ -39,16 +40,16 @@ func NewApp(cfg config.Config) (*App, error) {
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
 	eventLoop := runtime.NewEventLoop(db, run, cfg.EventQueueCapacity, cfg.MaxToolRounds)
 	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, outbound.StdoutSender{})
-	g := gateway.NewService(cfg, db, eventLoop)
-	app := &App{
+	gatewayService := gateway.NewService(cfg, db, eventLoop)
+	server := httpapi.New(cfg, db, gatewayService, supervisor)
+	return &App{
 		Cfg:        cfg,
 		DB:         db,
-		Gateway:    g,
+		Gateway:    gatewayService,
 		EventLoop:  eventLoop,
 		Supervisor: supervisor,
-	}
-	app.Handler = app.routes()
-	return app, nil
+		Handler:    server.Handler(),
+	}, nil
 }
 
 func (a *App) Start() {

@@ -42,7 +42,7 @@ make accept-current
 ### Running a Single Test
 
 ```bash
-go test ./pkg/sessionkey/... -run TestComputeSessionKey_DM_ThreadIgnored -v
+go test ./internal/session/... -run TestComputeKeyDMThreadIgnored -v
 go test ./pkg/config/... -run TestLoad -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
 go test ./tests/e2e/... -run SmokeV1Alpha -v -count=1
@@ -81,7 +81,6 @@ Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, version
   internal/             CLI-internal packages (chat, gateway, initcmd, version, common)
 pkg/
-  api/                  App wiring (NewApp, Start, Stop)
   channels/             Channel adapters (CLI, Telegram normalization)
   config/               Config struct, defaults, env/file loading
   gateway/              HTTP ingest validation, rate limit, responses
@@ -92,9 +91,12 @@ pkg/
   provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
   runner/               Provider-driven runtime execution
   runtime/              EventLoop, workers, supervisor lifecycle
-  sessionkey/           Session key computation
   store/                SQLite bootstrapping, schema, queries, repo
   tools/                Tool registry and built-in tools
+internal/
+  bootstrap/            App wiring, dependency assembly, process lifecycle
+  httpapi/              HTTP routes, handlers, auth, pagination
+  session/              Session key computation
 tests/
   integration/          In-process integration tests
   e2e/                  End-to-end smoke tests

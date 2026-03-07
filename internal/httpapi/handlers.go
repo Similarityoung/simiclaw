@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"encoding/json"
@@ -8,14 +8,14 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (a *App) handleIngest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	var req model.IngestRequest
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 400, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
 		return
 	}
-	resp, status, apiErr := a.Gateway.Ingest(r.Context(), req)
+	resp, status, apiErr := s.gateway.Ingest(r.Context(), req)
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
@@ -23,9 +23,9 @@ func (a *App) handleIngest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, resp)
 }
 
-func (a *App) handleGetEvent(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("event_id")
-	rec, ok, err := a.DB.GetEvent(r.Context(), eventID)
+	rec, ok, err := s.db.GetEvent(r.Context(), eventID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return

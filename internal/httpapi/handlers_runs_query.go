@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"net/http"
@@ -27,7 +27,7 @@ type runSummary struct {
 	EndedAt    time.Time       `json:"ended_at"`
 }
 
-func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	limit, apiErr := parsePageLimit(r.URL.Query().Get("limit"))
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
@@ -53,7 +53,7 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	runs, err := a.DB.ListRuns(r.Context())
+	runs, err := s.db.ListRuns(r.Context())
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -95,9 +95,9 @@ func (a *App) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (a *App) handleGetRun(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := a.DB.GetRun(r.Context(), runID)
+	trace, ok, err := s.db.GetRun(r.Context(), runID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -113,9 +113,9 @@ func (a *App) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toRunSummary(trace))
 }
 
-func (a *App) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := a.DB.GetRun(r.Context(), runID)
+	trace, ok, err := s.db.GetRun(r.Context(), runID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return

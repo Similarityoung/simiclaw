@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/outbound"
-	"github.com/similarityyoung/simiclaw/pkg/sessionkey"
 	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
@@ -216,7 +216,7 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 	if err != nil || !ok {
 		return
 	}
-	sessionKey, err := sessionkey.ComputeSessionKey(job.Payload.TenantID, job.Payload.Conversation, "default")
+	sessionKey, err := session.ComputeKey(job.Payload.TenantID, job.Payload.Conversation, "default")
 	if err != nil {
 		_ = s.db.FailScheduledJob(s.ctx, job.JobID, err.Error(), now.Add(30*time.Second), now)
 		return

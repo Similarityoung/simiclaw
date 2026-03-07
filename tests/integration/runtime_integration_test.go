@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"github.com/similarityyoung/simiclaw/pkg/store"
@@ -79,14 +79,14 @@ func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
 	}
 }
 
-func newTestApp(t *testing.T) *api.App {
+func newTestApp(t *testing.T) *bootstrap.App {
 	t.Helper()
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
 	if err := store.InitWorkspace(cfg.Workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
 		t.Fatalf("init workspace: %v", err)
 	}
-	app, err := api.NewApp(cfg)
+	app, err := bootstrap.NewApp(cfg)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -95,7 +95,7 @@ func newTestApp(t *testing.T) *api.App {
 	return app
 }
 
-func ingest(t *testing.T, app *api.App, req model.IngestRequest, want int) model.IngestResponse {
+func ingest(t *testing.T, app *bootstrap.App, req model.IngestRequest, want int) model.IngestResponse {
 	t.Helper()
 	body, _ := json.Marshal(req)
 	respBody, code := doRequest(t, app, http.MethodPost, "/v1/events:ingest", body)
@@ -109,7 +109,7 @@ func ingest(t *testing.T, app *api.App, req model.IngestRequest, want int) model
 	return resp
 }
 
-func pollEvent(t *testing.T, app *api.App, eventID string) model.EventRecord {
+func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -133,7 +133,7 @@ func pollEvent(t *testing.T, app *api.App, eventID string) model.EventRecord {
 	return model.EventRecord{}
 }
 
-func getRunTrace(t *testing.T, app *api.App, runID string) model.RunTrace {
+func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace {
 	t.Helper()
 	body, code := doRequest(t, app, http.MethodGet, "/v1/runs/"+runID+"/trace", nil)
 	if code != http.StatusOK {
@@ -146,7 +146,7 @@ func getRunTrace(t *testing.T, app *api.App, runID string) model.RunTrace {
 	return trace
 }
 
-func getSession(t *testing.T, app *api.App, sessionKey string) model.SessionRecord {
+func getSession(t *testing.T, app *bootstrap.App, sessionKey string) model.SessionRecord {
 	t.Helper()
 	body, code := doRequest(t, app, http.MethodGet, "/v1/sessions/"+sessionKey, nil)
 	if code != http.StatusOK {
@@ -159,7 +159,7 @@ func getSession(t *testing.T, app *api.App, sessionKey string) model.SessionReco
 	return session
 }
 
-func doRequest(t *testing.T, app *api.App, method, path string, body []byte) ([]byte, int) {
+func doRequest(t *testing.T, app *bootstrap.App, method, path string, body []byte) ([]byte, int) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	if method == http.MethodPost {

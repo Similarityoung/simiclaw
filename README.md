@@ -34,6 +34,18 @@
   - `workspace/runtime/native/**`
   - `workspace/runtime/app.db`
 
+## 目录概览
+
+- `cmd/simiclaw/internal/*`：命令入口
+- `internal/bootstrap`：应用装配与生命周期
+- `internal/httpapi`：HTTP 路由、handler、鉴权与分页
+- `internal/session`：session key 归一化与计算
+- `pkg/gateway`：ingest 校验、限流与幂等边界
+- `pkg/runtime`：EventLoop、Supervisor、后台 workers
+- `pkg/store`：SQLite 启动、schema、读写与恢复
+- `pkg/runner`：执行编排
+- `pkg/provider`：LLM provider 抽象与实现
+
 ## 快速开始
 
 ### 1. 初始化 workspace

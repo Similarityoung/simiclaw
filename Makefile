@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CORE_PKGS := ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/... ./pkg/sessionkey/...
+CORE_PKGS := ./internal/session/... ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/...
 
 .PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1-alpha accept-current
 
@@ -20,11 +20,11 @@ lint:
 
 test-unit:
 	@if go tool | grep -qx 'covdata'; then \
-		go test ./cmd/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover; \
+		go test ./cmd/... ./internal/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover; \
 		go tool cover -func=/tmp/simiclaw-unit.cover | tail -n 1; \
 	else \
 		echo "covdata not available, running unit tests without coverage profile"; \
-		go test ./cmd/... ./pkg/...; \
+		go test ./cmd/... ./internal/... ./pkg/...; \
 	fi
 
 test-unit-race-core:

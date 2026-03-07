@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/sessionkey"
 	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
@@ -25,7 +25,7 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 		return model.IngestResponse{}, 0, apiErr
 	}
 
-	sessionKey, err := sessionkey.ComputeSessionKey(s.cfg.TenantID, req.Conversation, "default")
+	sessionKey, err := session.ComputeKey(s.cfg.TenantID, req.Conversation, "default")
 	if err != nil {
 		return model.IngestResponse{}, 0, &APIError{
 			StatusCode: http.StatusBadRequest,

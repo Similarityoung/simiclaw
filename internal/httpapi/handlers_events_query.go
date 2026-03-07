@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"net/http"
@@ -24,7 +24,7 @@ type eventListItem struct {
 	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
-func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	limit, apiErr := parsePageLimit(r.URL.Query().Get("limit"))
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
@@ -52,7 +52,7 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		cursorTime = t
 	}
 
-	events, err := a.DB.ListEvents(r.Context())
+	events, err := s.db.ListEvents(r.Context())
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -104,7 +104,7 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (a *App) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey := r.URL.Query().Get("idempotency_key")
 	if idempotencyKey == "" {
 		writeAPIError(w, &gateway.APIError{
@@ -115,7 +115,7 @@ func (a *App) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	row, ok, err := a.DB.LookupInbound(r.Context(), idempotencyKey)
+	row, ok, err := s.db.LookupInbound(r.Context(), idempotencyKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return

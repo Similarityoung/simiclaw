@@ -1,4 +1,4 @@
-package sessionkey
+package session
 
 import (
 	"crypto/sha256"
@@ -9,7 +9,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func ComputeSessionKey(tenantID string, conv model.Conversation, dmScope string) (string, error) {
+func ComputeKey(tenantID string, conv model.Conversation, dmScope string) (string, error) {
 	if tenantID == "" {
 		return "", errors.New("tenant_id is required")
 	}

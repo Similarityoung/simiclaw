@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"net/http"
@@ -14,7 +14,7 @@ type sessionCursor struct {
 	LastSessionKey string `json:"last_session_key"`
 }
 
-func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	limit, apiErr := parsePageLimit(r.URL.Query().Get("limit"))
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
@@ -40,7 +40,7 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	sessions, err := a.DB.ListSessions(r.Context())
+	sessions, err := s.db.ListSessions(r.Context())
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -82,9 +82,9 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (a *App) handleGetSession(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	sessionKey := r.PathValue("session_key")
-	rec, ok, err := a.DB.GetSession(r.Context(), sessionKey)
+	rec, ok, err := s.db.GetSession(r.Context(), sessionKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return

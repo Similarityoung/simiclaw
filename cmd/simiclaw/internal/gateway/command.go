@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
@@ -47,7 +47,7 @@ func Run(args []string) error {
 		return err
 	}
 
-	app, err := api.NewApp(cfg)
+	app, err := bootstrap.NewApp(cfg)
 	if err != nil {
 		return err
 	}
