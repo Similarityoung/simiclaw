@@ -42,3 +42,33 @@ func TestLoadInvalidLogLevel(t *testing.T) {
 		t.Fatal("expected invalid log_level error")
 	}
 }
+
+func TestLoadEnvOpenAIAliases(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("SIMICLAW_LLM_DEFAULT_MODEL", "")
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", "https://api.deepseek.com")
+	t.Setenv("LLM_MODEL", "openai/deepseek-chat")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load config from env: %v", err)
+	}
+	if cfg.LLM.DefaultModel != "openai/deepseek-chat" {
+		t.Fatalf("unexpected default model: %s", cfg.LLM.DefaultModel)
+	}
+	provider, ok := cfg.LLM.Providers["openai"]
+	if !ok {
+		t.Fatal("expected openai provider from env aliases")
+	}
+	if provider.Type != "openai_compatible" {
+		t.Fatalf("unexpected provider type: %s", provider.Type)
+	}
+	if provider.APIKey != "test-key" {
+		t.Fatalf("unexpected api key: %s", provider.APIKey)
+	}
+	if provider.BaseURL != "https://api.deepseek.com" {
+		t.Fatalf("unexpected base url: %s", provider.BaseURL)
+	}
+}

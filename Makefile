@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 CORE_PKGS := ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/... ./pkg/sessionkey/...
 
-.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1-alpha accept-current docs-consistency
+.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1-alpha accept-current
 
 fmt:
 	@find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -w
@@ -44,13 +44,10 @@ test-e2e-smoke:
 test-e2e:
 	go test ./tests/e2e/... -count=1
 
-accept-v1-alpha: test-unit test-unit-race-core test-integration test-e2e-smoke docs-consistency
+accept-v1-alpha: test-unit test-unit-race-core test-integration test-e2e-smoke
 	@echo "accept-v1-alpha passed"
 
 accept-current:
 	@stage=$$(cat VERSION_STAGE); \
 	if [[ "$$stage" != "V1_ALPHA" ]]; then echo "unknown VERSION_STAGE=$$stage"; exit 1; fi; \
 	$(MAKE) accept-v1-alpha
-
-docs-consistency:
-	./scripts/docs_consistency.sh

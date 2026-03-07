@@ -1,7 +1,7 @@
 # AGENTS.md — SimiClaw Codebase Guide
 
-Single-binary Go agent runtime: `Gateway → EventLoop → StoreLoop → Outbound`.  
-Module: `github.com/similarityyoung/simiclaw` | Go 1.25 | Current stage: see `VERSION_STAGE`
+Single-binary Go agent runtime built around a SQLite-first state machine.
+Module: `github.com/similarityyoung/simiclaw` | Go 1.25 | Current stage: `V1_ALPHA`
 
 ---
 
@@ -23,36 +23,29 @@ make test-unit
 # Race-detection tests on core packages only
 make test-unit-race-core
 
-# Integration tests (requires -tags=integration)
+# Integration tests
 make test-integration
 
-# E2E smoke tests (scope driven by VERSION_STAGE file)
+# E2E smoke tests
 make test-e2e-smoke
 
 # All E2E tests, no cache
 make test-e2e
 
-# Acceptance for current milestone
-make accept-current
+# Acceptance for v1 alpha
+make accept-v1-alpha
 
-# Doc consistency check
-make docs-consistency
+# Acceptance for current stage
+make accept-current
 ```
 
 ### Running a Single Test
 
 ```bash
-# Unit test — any package
 go test ./pkg/sessionkey/... -run TestComputeSessionKey_DM_ThreadIgnored -v
-
-# Unit test — specific file's package
 go test ./pkg/config/... -run TestLoad -v
-
-# Integration test (must pass build tag)
-go test ./tests/integration/... -tags=integration -run TestIngestLifecycleAndCommitOrder -v
-
-# E2E test
-go test ./tests/e2e/... -run SmokeM1 -v -count=1
+go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
+go test ./tests/e2e/... -run SmokeV1Alpha -v -count=1
 ```
 
 ### Build / Run
@@ -65,199 +58,90 @@ go run ./cmd/simiclaw init --workspace ./workspace
 go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 
 # Chat CLI
-go run ./cmd/simiclaw chat --workspace ./workspace
+go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
 ```
+
+### Real LLM Example
+
+```bash
+cat > .env <<'EOF'
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+LLM_MODEL=openai/deepseek-chat
+EOF
+```
+
+Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 
 ---
 
 ## Project Layout
 
-```
+```text
 cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, version
   internal/             CLI-internal packages (chat, gateway, initcmd, version, common)
 pkg/
-  model/                Shared types ONLY — no logic. All cross-package types live here.
-  config/               Config struct, Default(), Load() from JSON
-  logging/              Thin zap wrapper; use logging.L("module")
-  gateway/              HTTP handler + Service; ingest, validate, ratelimit, response
-  runtime/              EventLoop, EventRepo, RunRepo
-  store/                StoreLoop (single writer), SessionStore, workspace fs helpers
-  runner/               Runner interface + ProcessRunner
-  bus/                  In-process MessageBus
-  tools/                Tool registry, tool types, built-in tools (memory_search, memory_get)
-  memory/               Memory read (search, get) and write (daily, curated) helpers
-  idempotency/          In-memory + file idempotency store
-  sessionkey/           Session key computation (SHA-256 deterministic)
-  channels/             Channel adapters (Telegram, etc.)
-  outbound/             Outbound send hub
-  routing/              Session routing helpers
   api/                  App wiring (NewApp, Start, Stop)
+  channels/             Channel adapters (CLI, Telegram normalization)
+  config/               Config struct, defaults, env/file loading
+  gateway/              HTTP ingest validation, rate limit, responses
+  logging/              Thin zap wrapper
+  memory/               Workspace memory read/write helpers
+  model/                Shared cross-package types only
+  outbound/             Outbound sender interface
+  provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
+  runner/               Provider-driven runtime execution
+  runtime/              EventLoop, workers, supervisor lifecycle
+  sessionkey/           Session key computation
+  store/                SQLite bootstrapping, schema, queries, repo
+  tools/                Tool registry and built-in tools
 tests/
-  integration/          Build tag: integration. In-process httptest tests.
-  e2e/                  End-to-end smoke tests per milestone (SmokeM1, SmokeM2, ...).
+  integration/          In-process integration tests
+  e2e/                  End-to-end smoke tests
 ```
 
 ---
 
 ## Code Style
 
-### General
-
 - Standard `gofmt` formatting; run `make fmt` before committing.
-- No external test frameworks — use the standard `testing` package exclusively.
-- Only one non-stdlib dependency: `go.uber.org/zap`. Keep external deps minimal.
-
-### Imports
-
-Group and order strictly: stdlib → blank line → project packages (`github.com/similarityyoung/simiclaw/...`).
-
-```go
-import (
-    "context"
-    "errors"
-    "fmt"
-    "time"
-
-    "github.com/similarityyoung/simiclaw/pkg/logging"
-    "github.com/similarityyoung/simiclaw/pkg/model"
-)
-```
-
-Never dot-import or alias stdlib packages.
-
-### Naming
-
-| Symbol | Convention | Example |
-|---|---|---|
-| Exported type/func | PascalCase | `EventLoop`, `NewService` |
-| Unexported | camelCase | `tenantLimiter`, `handle` |
-| Constants (typed) | PascalCase | `EventStatusAccepted`, `RunModeNormal` |
-| Error code consts | `ErrorCode` prefix | `ErrorCodeInvalidArgument` |
-| JSON struct tags | `snake_case` + `omitempty` for optional | `json:"event_id"`, `json:"thread_id,omitempty"` |
-| Log message keys | dot-separated namespaced | `"gateway.ingest.accepted"` |
-| Log field keys | `snake_case` | `"event_id"`, `"latency_ms"` |
-
-### Types & Structs
-
-- All cross-package types belong in `pkg/model`. Never define shared types elsewhere.
-- Use typed string constants (`type EventStatus string`) for all finite-value string fields.
-- Time fields must be `time.Time` (not `string`) in structs; format as `time.RFC3339Nano` only when serializing to API responses.
-- Always use `time.Now().UTC()` — never local time.
-- `map[string]any` for flexible metadata/details fields; `map[string]string` for string-only maps.
-
-### Interfaces
-
-Keep interfaces minimal — one or two methods. Define interfaces where consumed, not where implemented.
-
-```go
-type Runner interface {
-    Run(ctx context.Context, event model.InternalEvent, maxToolRounds int) (RunOutput, error)
-}
-```
-
-### Constructors
-
-Always provide `NewXxx(...)` constructors returning `*Xxx`. Initialize all fields in the constructor; never rely on zero-value magic for dependencies.
-
-```go
-func NewService(cfg config.Config, eventBus *bus.MessageBus, ...) *Service {
-    return &Service{cfg: cfg, eventBus: eventBus, ...}
-}
-```
-
-### Error Handling
-
-- Return errors as the last return value: `(T, error)` or `(T, int, *APIError)` for HTTP handlers.
-- Static errors: `errors.New(...)`. Formatted: `fmt.Errorf("...: %v", err)`.
-- Error type checks: `errors.Is(err, target)` — never string comparison.
-- Explicitly discard unavoidable errors: `_ = f()` with a clear reason in context.
-- Never use empty `catch` / ignore blocks without `_ =` acknowledgement.
-- Service-layer HTTP methods return `*APIError` (with `StatusCode`, `Code`, `Message`, `Details`). Error codes come from `model.ErrorCode*` constants.
-
-```go
-// Correct: explicit discard
-_ = l.repo.Update(evt.EventID, func(rec *model.EventRecord) { ... })
-
-// Correct: error propagation
-if err := s.events.Put(rec); err != nil {
-    return model.IngestResponse{}, 0, &APIError{
-        StatusCode: http.StatusInternalServerError,
-        Code:       model.ErrorCodeInternal,
-        Message:    err.Error(),
-    }
-}
-```
-
-### Logging
-
-Use `logging.L("module")` to get a logger. Always attach context fields with `.With()` at the start of a handler.
-
-```go
-logger := logging.L("gateway").With(
-    logging.String("event_id", evt.EventID),
-    logging.String("tenant_id", s.cfg.TenantID),
-)
-```
-
-Standard log fields to include on every important log line:
-
-| Field | Type | When |
-|---|---|---|
-| `status` | string | Always |
-| `error_code` | string | On failure |
-| `latency_ms` | int64 | On terminal log (success or failure) |
-| `event_id` | string | Event handlers |
-| `session_key` / `session_id` | string | Session-scoped operations |
-
-Log levels: `Debug` (dev trace), `Info` (happy path), `Warn` (expected failure, rate limit, duplicate), `Error` (unexpected failure, data corruption).
-
-### Concurrency
-
-- Use `context.WithCancel` for lifecycle control; pass `ctx` as first arg everywhere.
-- `sync.WaitGroup` for goroutine tracking in loop structs.
-- `sync.Mutex` for shared mutable state.
-- `atomic.Uint64` for lock-free ID sequences.
-- All store writes go through `StoreLoop` (single writer) — never write session files directly.
-
-### Testing Patterns
-
-**Unit tests** — standard Go, no tags required:
-
-```go
-func TestComputeSessionKey_DMRequiresParticipant(t *testing.T) {
-    _, err := ComputeSessionKey("local", model.Conversation{...}, "default")
-    if err == nil {
-        t.Fatalf("expected error for missing participant_id")
-    }
-}
-```
-
-**Integration tests** — must have build tag and use `t.TempDir()`:
-
-```go
-//go:build integration
-
-func newTestApp(t *testing.T, startLoops bool, queueCap int) *api.App {
-    t.Helper()
-    cfg := config.Default()
-    cfg.Workspace = t.TempDir()
-    ...
-}
-```
-
-- Use `httptest.NewRequest` + `httptest.NewRecorder` for in-process HTTP testing.
-- Helper functions always call `t.Helper()` as the first line.
-- Assertion style: `t.Fatalf("expected X, got %s", actual)` — no third-party assertion libs.
-- Prefer table-driven tests for multiple cases.
+- Use the standard `testing` package only.
+- Keep imports ordered as stdlib first, then project packages.
+- Shared cross-package types belong in `pkg/model`.
+- Use `time.Now().UTC()` everywhere.
+- Use `map[string]any` for flexible payload/details fields.
+- Keep interfaces minimal and define them where consumed.
 
 ---
 
-## Architecture Invariants (Don't Break These)
+## Runtime Invariants
 
-1. **Single writer**: All session/run/event writes must go through `StoreLoop`. Never write `.jsonl` files from concurrent goroutines.
-2. **Commit order**: `AppendBatch (sessions/<id>.jsonl)` → `WriteRun (runs/<id>.json)` → `UpdateSessions (sessions.json)`. This is tested and must not change.
-3. **Idempotency before enqueue**: Idempotency check and registration happen in Gateway before the event is published to the bus.
-4. **NO_REPLY suppression**: Events with `payload.type` in `{memory_flush, compaction, cron_fire}` must set `RunModeNoReply` and suppress outbound delivery.
-5. **`pkg/model` is logic-free**: No functions with business logic in `pkg/model`. Types and constants only.
-6. **Workspace boundary**: All file paths must be validated to stay within `runtime/` subdirectories. Path traversal (`../`) is a security issue.
-7. **UTC everywhere**: All `time.Time` values must be `.UTC()`. No local time.
+1. SQLite is the only source of truth.
+2. All write transactions go through the single writer handle.
+3. Gateway must persist the event before enqueueing it.
+4. `POST /v1/events:ingest` requires an explicit `idempotency_key`.
+5. An event reaches `processing` only after a successful claim transaction.
+6. The EventLoop uses two-phase processing:
+   1. claim event + create `runs(started)`
+   2. execute LLM/tools outside the write transaction
+   3. commit messages/runs/sessions/events/outbox/jobs in one result transaction
+7. Real outbound sending must happen after outbox persistence commits.
+8. `sessions` is a derived cache, not the fact source.
+9. FTS is maintained only by SQLite triggers.
+10. `payload.type in {memory_flush, compaction, cron_fire}` must use `RunModeNoReply`.
+
+---
+
+## Workspace Layout
+
+Only these runtime paths should be created under a workspace:
+
+```text
+workspace/
+  memory/
+  runtime/
+    app.db
+    native/
+```
+
+Legacy file-runtime traces such as `sessions.json`, `runtime/approvals`, `runtime/outbound_spool`, and `workspace/evolution` must be rejected or removed during migration to alpha.

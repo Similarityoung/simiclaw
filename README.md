@@ -46,6 +46,16 @@ go run ./cmd/simiclaw init --workspace ./workspace
 
 ### 2. 启动服务
 
+若要接真实 OpenAI-compatible 模型，可先在仓库根目录放置 `.env`：
+
+```bash
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+LLM_MODEL=openai/deepseek-chat
+```
+
+兼容旧环境变量名 `LLM_API_KEY` / `LLM_BASE_URL`。若配置非法，`serve` 会直接启动失败，而不是静默退回 `fake/default`。
+
 ```bash
 go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ```

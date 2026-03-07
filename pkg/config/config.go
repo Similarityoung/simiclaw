@@ -83,10 +83,6 @@ type Config struct {
 	RateLimitSessionBurst float64         `json:"rate_limit_session_burst"`
 	MaxToolRounds         int             `json:"max_tool_rounds"`
 	DBBusyTimeout         Duration        `json:"db_busy_timeout"`
-	LLMBaseURL            string          `json:"llm_base_url,omitempty"`
-	LLMAPIKey             string          `json:"llm_api_key,omitempty"`
-	LLMModel              string          `json:"llm_model,omitempty"`
-	LLMTimeout            Duration        `json:"llm_timeout,omitempty"`
 	LLM                   LLMConfig       `json:"llm"`
 	CronJobs              []CronJobConfig `json:"cron_jobs,omitempty"`
 }
@@ -122,8 +118,6 @@ func Default() Config {
 		RateLimitSessionBurst: defaultRateLimitSessionBurst,
 		MaxToolRounds:         defaultMaxToolRounds,
 		DBBusyTimeout:         Duration{defaultDBBusyTimeout},
-		LLMTimeout:            Duration{defaultProviderTimeout},
-		LLMModel:              defaultFakeModel,
 		LLM: LLMConfig{
 			DefaultModel: defaultFakeModel,
 			Providers: map[string]LLMProviderConfig{
@@ -198,14 +192,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.DBBusyTimeout.Duration <= 0 {
 		cfg.DBBusyTimeout = Duration{defaultDBBusyTimeout}
 	}
-	if cfg.LLMTimeout.Duration <= 0 {
-		cfg.LLMTimeout = Duration{defaultProviderTimeout}
-	}
 	if cfg.LLM.DefaultModel == "" {
 		cfg.LLM.DefaultModel = defaultFakeModel
-	}
-	if cfg.LLMModel == "" {
-		cfg.LLMModel = cfg.LLM.DefaultModel
 	}
 	if cfg.LLM.Providers == nil {
 		cfg.LLM.Providers = map[string]LLMProviderConfig{}
@@ -232,16 +220,6 @@ func applyDefaults(cfg *Config) {
 			}
 		}
 		cfg.LLM.Providers[name] = provider
-	}
-	if cfg.LLMBaseURL == "" {
-		if provider, ok := cfg.LLM.Providers["openai"]; ok {
-			cfg.LLMBaseURL = provider.BaseURL
-		}
-	}
-	if cfg.LLMAPIKey == "" {
-		if provider, ok := cfg.LLM.Providers["openai"]; ok {
-			cfg.LLMAPIKey = provider.APIKey
-		}
 	}
 }
 
@@ -335,7 +313,7 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(os.Getenv("SIMICLAW_LLM_DEFAULT_MODEL")); v != "" {
 		cfg.LLM.DefaultModel = v
 	}
-	if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+	if key := firstEnv("OPENAI_API_KEY", "LLM_API_KEY"); key != "" {
 		p := cfg.LLM.Providers["openai"]
 		p.Type = "openai_compatible"
 		p.APIKey = key
@@ -343,9 +321,8 @@ func applyEnvOverrides(cfg *Config) {
 			p.Timeout = Duration{defaultProviderTimeout}
 		}
 		cfg.LLM.Providers["openai"] = p
-		cfg.LLMAPIKey = key
 	}
-	if baseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); baseURL != "" {
+	if baseURL := firstEnv("OPENAI_BASE_URL", "LLM_BASE_URL"); baseURL != "" {
 		p := cfg.LLM.Providers["openai"]
 		p.Type = "openai_compatible"
 		p.BaseURL = baseURL
@@ -353,10 +330,17 @@ func applyEnvOverrides(cfg *Config) {
 			p.Timeout = Duration{defaultProviderTimeout}
 		}
 		cfg.LLM.Providers["openai"] = p
-		cfg.LLMBaseURL = baseURL
 	}
 	if model := strings.TrimSpace(os.Getenv("LLM_MODEL")); model != "" {
-		cfg.LLMModel = model
 		cfg.LLM.DefaultModel = model
 	}
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

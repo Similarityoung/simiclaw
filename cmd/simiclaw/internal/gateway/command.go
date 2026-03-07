@@ -30,10 +30,7 @@ func Run(args []string) error {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		if *configPath != "" {
-			return err
-		}
-		cfg = config.Default()
+		return err
 	}
 
 	// 命令行参数覆盖配置文件中的对应项，优先级最高。
