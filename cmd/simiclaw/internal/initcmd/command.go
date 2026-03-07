@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
 func Run(args []string) error {

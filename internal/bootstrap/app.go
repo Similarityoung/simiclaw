@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
+	"github.com/similarityyoung/simiclaw/internal/outbound"
+	"github.com/similarityyoung/simiclaw/internal/provider"
+	"github.com/similarityyoung/simiclaw/internal/runner"
+	"github.com/similarityyoung/simiclaw/internal/runtime"
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	"github.com/similarityyoung/simiclaw/pkg/gateway"
-	"github.com/similarityyoung/simiclaw/pkg/outbound"
-	"github.com/similarityyoung/simiclaw/pkg/provider"
-	"github.com/similarityyoung/simiclaw/pkg/runner"
-	"github.com/similarityyoung/simiclaw/pkg/runtime"
-	"github.com/similarityyoung/simiclaw/pkg/store"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 

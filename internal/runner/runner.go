@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/memory"
+	"github.com/similarityyoung/simiclaw/internal/memory"
+	"github.com/similarityyoung/simiclaw/internal/provider"
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/provider"
-	"github.com/similarityyoung/simiclaw/pkg/store"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 

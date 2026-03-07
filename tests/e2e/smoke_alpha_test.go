@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
-	"github.com/similarityyoung/simiclaw/pkg/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
 func TestSmokeV1Alpha_InitServeChat(t *testing.T) {

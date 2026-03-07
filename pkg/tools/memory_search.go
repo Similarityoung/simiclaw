@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/similarityyoung/simiclaw/pkg/memory"
+	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 

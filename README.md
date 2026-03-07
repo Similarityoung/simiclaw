@@ -38,13 +38,20 @@
 
 - `cmd/simiclaw/internal/*`：命令入口
 - `internal/bootstrap`：应用装配与生命周期
+- `internal/channels`：CLI / Telegram 等接入适配
+- `internal/gateway`：ingest 校验、限流与幂等边界
 - `internal/httpapi`：HTTP 路由、handler、鉴权与分页
+- `internal/memory`：工作区记忆读写
+- `internal/outbound`：出站 sender
+- `internal/provider`：LLM provider 抽象与实现
+- `internal/runner`：执行编排
+- `internal/runtime`：EventLoop、Supervisor、后台 workers
 - `internal/session`：session key 归一化与计算
-- `pkg/gateway`：ingest 校验、限流与幂等边界
-- `pkg/runtime`：EventLoop、Supervisor、后台 workers
-- `pkg/store`：SQLite 启动、schema、读写与恢复
-- `pkg/runner`：执行编排
-- `pkg/provider`：LLM provider 抽象与实现
+- `internal/store`：SQLite 启动、schema、读写与恢复
+- `pkg/config`：配置模型
+- `pkg/logging`：日志封装
+- `pkg/model`：共享类型
+- `pkg/tools`：未来 tools / skills 扩展边界
 
 ## 快速开始
 

@@ -1,9 +1,9 @@
 package gateway
 
 import (
+	"github.com/similarityyoung/simiclaw/internal/runtime"
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	"github.com/similarityyoung/simiclaw/pkg/runtime"
-	"github.com/similarityyoung/simiclaw/pkg/store"
 )
 
 type Service struct {

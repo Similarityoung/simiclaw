@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 

@@ -81,22 +81,22 @@ Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, version
   internal/             CLI-internal packages (chat, gateway, initcmd, version, common)
 pkg/
-  channels/             Channel adapters (CLI, Telegram normalization)
   config/               Config struct, defaults, env/file loading
-  gateway/              HTTP ingest validation, rate limit, responses
   logging/              Thin zap wrapper
-  memory/               Workspace memory read/write helpers
   model/                Shared cross-package types only
+  tools/                Tools / skills extension surface
+internal/
+  bootstrap/            App wiring, dependency assembly, process lifecycle
+  channels/             CLI / Telegram adapters
+  gateway/              HTTP ingest validation, rate limit, responses
+  httpapi/              HTTP routes, handlers, auth, pagination
+  memory/               Workspace memory read/write helpers
   outbound/             Outbound sender interface
   provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
   runner/               Provider-driven runtime execution
   runtime/              EventLoop, workers, supervisor lifecycle
-  store/                SQLite bootstrapping, schema, queries, repo
-  tools/                Tool registry and built-in tools
-internal/
-  bootstrap/            App wiring, dependency assembly, process lifecycle
-  httpapi/              HTTP routes, handlers, auth, pagination
   session/              Session key computation
+  store/                SQLite bootstrapping, schema, queries, repo
 tests/
   integration/          In-process integration tests
   e2e/                  End-to-end smoke tests

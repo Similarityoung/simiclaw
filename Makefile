@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CORE_PKGS := ./internal/session/... ./pkg/gateway/... ./pkg/runtime/... ./pkg/store/...
+CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/session/... ./internal/store/...
 
 .PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1-alpha accept-current
 

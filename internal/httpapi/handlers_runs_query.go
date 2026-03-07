@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/gateway"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
