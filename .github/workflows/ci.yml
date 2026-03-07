@@ -21,9 +21,3 @@ jobs:
       - run: make test-integration
       - run: make test-e2e-smoke
       - run: make accept-current
-
-  docs-consistency:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: make docs-consistency

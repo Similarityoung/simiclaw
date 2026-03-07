@@ -1,111 +1,91 @@
-# SimiClaw (v0.4)
+# SimiClaw (v1.0 alpha)
 
-一个简化版、单机单进程的 OpenClaw 风格 Agent Runtime，使用 Go 实现，当前阶段为 `M4`。
+单机单进程 Go Agent Runtime，当前阶段为 `V1_ALPHA`。运行时采用 `SQLite-first` 架构，数据库固定为 `workspace/runtime/app.db`，`sessions` 仅作为派生缓存，SQLite 是唯一事实源。
 
-- 当前阶段：`M4`（见 `VERSION_STAGE`）
-- 架构核心：`Gateway + EventLoop + StoreLoop`
-- 持久化核心：`runtime/sessions.json + runtime/sessions/<session_id>.jsonl + runtime/runs + runtime/events + runtime/idempotency`
+## 当前能力
 
-## 当前能力（M4）
-
-- HTTP 入站：`POST /v1/events:ingest`
-- 事件查询：
+- CLI：`init | serve | chat | version`
+- HTTP：
+  - `POST /v1/events:ingest`
   - `GET /v1/events/{event_id}`
   - `GET /v1/events`
   - `GET /v1/events:lookup`
-- 运行查询：
   - `GET /v1/runs`
   - `GET /v1/runs/{run_id}`
-  - `GET /v1/runs/{run_id}/trace?view=&redact=`
-- 会话查询：
+  - `GET /v1/runs/{run_id}/trace`
   - `GET /v1/sessions`
   - `GET /v1/sessions/{session_key}`
-- 审批接口：
-  - `POST /v1/approvals`
-  - `POST /v1/approvals/{approval_id}:approve`
-  - `POST /v1/approvals/{approval_id}:reject`
-  - `GET /v1/approvals/{approval_id}`
-  - `GET /v1/approvals`
-- 健康检查：`GET /healthz`、`GET /readyz`
-- 入站幂等（`idempotency_key`）
-- 会话路由（`session_key`）与 `active_session_id` 解析
-- 单写者提交顺序保证：
-  1. 追加 `sessions/<session_id>.jsonl`
-  2. 写 `runs/<run_id>.json`
-  3. 更新 `sessions.json`
-- commit 成功后再出站发送
-- `NO_REPLY` 事件（如 `memory_flush`）抑制用户可见出站
-- 内置记忆工具：
-  - `memory_search`（scope/top_k 检索）
-  - `memory_get`（路径白名单 + 行范围 + 字符上限）
-- 记忆写入动作：
-  - daily：`workspace/memory/YYYY-MM-DD.md`
-  - curated：`workspace/MEMORY.md`
-- compaction 内务回合：
-  - `payload.type=compaction|memory_flush|cron_fire` 自动 NO_REPLY
-  - run trace 写入 `context_manifest/rag_hits/tool_executions`
-- 审批与演化：
-  - 高风险 `Patch` 动作自动进入 `pending approval`
-  - approve/reject 回流 `approval_granted/approval_rejected`
-  - Patch 支持 `expected_base_hash` 与 `patch_idempotency_key`
-  - Patch 失败自动回滚，目标文件保持稳定版本
-  - evolution 日报输出到 `workspace/evolution/YYYY-MM-DD.md`
-- 崩溃恢复：
-  - `sessions.json` 不可读/缺失时可由 `runtime/sessions/*.jsonl` 重建索引
-  - 尾部半截 batch（缺 commit marker）会在启动时丢弃未提交尾部
+  - `GET /healthz`
+  - `GET /readyz`
+- Worker：
+  - EventLoop
+  - heartbeat worker
+  - processing sweeper
+  - delayed job worker
+  - outbox retry worker
+  - cron worker
+- LLM：
+  - 统一 `LLMProvider.Chat(ctx, ChatRequest)` 接口
+  - 默认 `fake/default`
+  - OpenAI-compatible provider 使用 `github.com/openai/openai-go/v3`
+- `NO_REPLY`：`memory_flush | compaction | cron_fire`
+- 文件系统仅保留：
+  - `workspace/memory/**`
+  - `workspace/runtime/native/**`
+  - `workspace/runtime/app.db`
 
-更多细节见 [doc/m4-capabilities.md](./doc/m4-capabilities.md)。
+## 目录概览
+
+- `cmd/simiclaw/internal/*`：命令入口
+- `internal/bootstrap`：应用装配与生命周期
+- `internal/channels`：CLI / Telegram 等接入适配
+- `internal/gateway`：ingest 校验、限流与幂等边界
+- `internal/httpapi`：HTTP 路由、handler、鉴权与分页
+- `internal/memory`：工作区记忆读写
+- `internal/outbound`：出站 sender
+- `internal/provider`：LLM provider 抽象与实现
+- `internal/runner`：执行编排
+- `internal/runtime`：EventLoop、Supervisor、后台 workers
+- `internal/session`：session key 归一化与计算
+- `internal/store`：SQLite 启动、schema、读写与恢复
+- `pkg/config`：配置模型
+- `pkg/logging`：日志封装
+- `pkg/model`：共享类型
+- `pkg/tools`：未来 tools / skills 扩展边界
 
 ## 快速开始
 
-### 1. 环境要求
-
-- Go `1.25+`（见 `go.mod`）
-
-### 2. 初始化 workspace
+### 1. 初始化 workspace
 
 ```bash
 go run ./cmd/simiclaw init --workspace ./workspace
 ```
 
-会生成（若不存在）：
+若检测到旧文件式 runtime 痕迹，默认拒绝；只有显式传入 `--force-new-runtime` 才会清理 legacy 目录并创建新的 SQLite runtime。
 
-- `workspace/runtime/sessions.json`
-- `workspace/runtime/sessions/`
-- `workspace/runtime/runs/`
-- `workspace/runtime/events/events.json`
-- `workspace/runtime/idempotency/*.jsonl`
-- `workspace/runtime/cron/jobs.json`
+### 2. 启动服务
 
-### 3. 启动服务
+若要接真实 OpenAI-compatible 模型，可先在仓库根目录放置 `.env`：
+
+```bash
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+LLM_MODEL=openai/deepseek-chat
+```
+
+兼容旧环境变量名 `LLM_API_KEY` / `LLM_BASE_URL`。若配置非法，`serve` 会直接启动失败，而不是静默退回 `fake/default`。
 
 ```bash
 go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ```
 
-也可使用同义命令：
-
-```bash
-go run ./cmd/simiclaw gateway --workspace ./workspace --listen :8080
-```
-
-### 4. 使用 chat CLI（推荐）
-
-在另一个终端运行：
+### 3. 使用 chat CLI
 
 ```bash
 go run ./cmd/simiclaw chat
 ```
 
-可选参数（精简）：
-
-- `--base-url`：网关地址，默认 `http://127.0.0.1:8080`
-- `--conversation`：会话 ID，默认 `cli_default`
-- `--api-key`：当服务端配置了 `api_key` 时传入
-
-输入 `/quit` 或 `/exit` 退出。
-
-### 5. 手动调用 ingest（可选）
+### 4. 手动 ingest
 
 ```bash
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -128,49 +108,26 @@ curl -sS -X POST "http://127.0.0.1:8080/v1/events:ingest" \
   }"
 ```
 
-### 6. 查询事件状态
-
-将上一步响应里的 `event_id` 带入：
-
-```bash
-curl -sS "http://127.0.0.1:8080/v1/events/<event_id>"
-```
-
-常见结果：
-
-- `status=committed` + `delivery_status=sent`：主链路成功
-- `status=failed`：处理失败，可查看 `error`
-
-## 幂等与重试说明
-
-- 同一个 `idempotency_key` 重复请求：
-  - payload 一致：返回 duplicate（不会重复执行）
-  - payload 不一致：返回 `409 CONFLICT`
-- 当请求在“入队前”失败时，服务端会回滚该次幂等登记，可以使用同 key 重试
-
 ## 测试与验收
 
 ```bash
-make fmt                 # 格式化 Go 代码
-make vet                 # 运行 go vet 进行基础静态语法检查
-make lint                # 运行 linter (如 golangci-lint) 进行代码规范检查
-make test-unit           # 运行所有基础单元测试
-make test-unit-race-core # 运行带数据竞争检测 (-race) 的核心逻辑单元测试
-make test-integration    # 运行集成测试，验证各模块（如入站到存储）的交互
-make test-e2e-smoke      # 运行端到端 (E2E) 冒烟测试，验证核心链路可用性
-make accept-current      # 自动执行当前开发阶段的完整自动化验收流程
+make fmt
+make vet
+make lint
+make test-unit
+make test-unit-race-core
+make test-integration
+make test-e2e-smoke
+make accept-v1-alpha
+make accept-current
 ```
 
-`accept-current` 会根据 `VERSION_STAGE` 自动选择当前阶段验收入口。
+## 运行时约束
 
-## 项目文档
-
-- [doc/requirements.md](./doc/requirements.md)
-- [doc/architecture.md](./doc/architecture.md)
-- [doc/interfaces.md](./doc/interfaces.md)
-- [doc/roadmap.md](./doc/roadmap.md)
-- [doc/cicd-testing.md](./doc/cicd-testing.md)
-- [doc/m1-capabilities.md](./doc/m1-capabilities.md)
-- [doc/m2-capabilities.md](./doc/m2-capabilities.md)
-- [doc/m3-capabilities.md](./doc/m3-capabilities.md)
-- [doc/m4-capabilities.md](./doc/m4-capabilities.md)
+- `POST /v1/events:ingest` 必须显式提供 `idempotency_key`
+- Gateway 事务提交前，事件不得入队
+- 事件只有在领取事务成功后才能进入 `processing`
+- 同一 event 任一时刻最多一个活跃 run
+- 所有外部 I/O 都在写事务外执行
+- 真实发送必须晚于 outbox 持久化提交
+- FTS 只由 SQLite trigger 维护，应用层禁止双写

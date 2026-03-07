@@ -8,28 +8,45 @@ import (
 type EventStatus string
 
 const (
-	EventStatusAccepted  EventStatus = "accepted"
-	EventStatusRunning   EventStatus = "running"
-	EventStatusCommitted EventStatus = "committed"
-	EventStatusFailed    EventStatus = "failed"
+	EventStatusReceived   EventStatus = "received"
+	EventStatusQueued     EventStatus = "queued"
+	EventStatusProcessing EventStatus = "processing"
+	EventStatusProcessed  EventStatus = "processed"
+	EventStatusSuppressed EventStatus = "suppressed"
+	EventStatusFailed     EventStatus = "failed"
 )
 
-type DeliveryStatus string
+type RunStatus string
 
 const (
-	DeliveryStatusNotApplicable DeliveryStatus = "not_applicable"
-	DeliveryStatusPending       DeliveryStatus = "pending"
-	DeliveryStatusSent          DeliveryStatus = "sent"
-	DeliveryStatusSuppressed    DeliveryStatus = "suppressed"
-	DeliveryStatusFailed        DeliveryStatus = "failed"
+	RunStatusStarted   RunStatus = "started"
+	RunStatusCompleted RunStatus = "completed"
+	RunStatusFailed    RunStatus = "failed"
 )
 
-type DeliveryDetail string
+type OutboxStatus string
 
 const (
-	DeliveryDetailDirect        DeliveryDetail = "direct"
-	DeliveryDetailSpooled       DeliveryDetail = "spooled"
-	DeliveryDetailNotApplicable DeliveryDetail = "not_applicable"
+	OutboxStatusPending   OutboxStatus = "pending"
+	OutboxStatusSending   OutboxStatus = "sending"
+	OutboxStatusSent      OutboxStatus = "sent"
+	OutboxStatusRetryWait OutboxStatus = "retry_wait"
+	OutboxStatusDead      OutboxStatus = "dead"
+)
+
+type ScheduledJobKind string
+
+const (
+	ScheduledJobKindCron    ScheduledJobKind = "cron"
+	ScheduledJobKindDelayed ScheduledJobKind = "delayed"
+	ScheduledJobKindRetry   ScheduledJobKind = "retry"
+)
+
+type ScheduledJobStatus string
+
+const (
+	ScheduledJobStatusActive ScheduledJobStatus = "active"
+	ScheduledJobStatusPaused ScheduledJobStatus = "paused"
 )
 
 type RunMode string
@@ -60,10 +77,6 @@ type EventPayload struct {
 	Attachments []Attachment      `json:"attachments,omitempty"`
 	Native      json.RawMessage   `json:"native,omitempty"`
 	NativeRef   string            `json:"native_ref,omitempty"`
-	ApprovalID  string            `json:"approval_id,omitempty"`
-	Actor       *ApprovalActor    `json:"actor,omitempty"`
-	Note        string            `json:"note,omitempty"`
-	Actions     []string          `json:"actions,omitempty"`
 	Extra       map[string]string `json:"extra,omitempty"`
 }
 
@@ -111,223 +124,48 @@ type ErrorBlock struct {
 }
 
 type EventRecord struct {
-	EventID        string         `json:"event_id"`
-	Status         EventStatus    `json:"status"`
-	DeliveryStatus DeliveryStatus `json:"delivery_status"`
-	DeliveryDetail DeliveryDetail `json:"delivery_detail"`
-	OutboxID       string         `json:"outbox_id,omitempty"`
-	SessionKey     string         `json:"session_key"`
-	SessionID      string         `json:"session_id"`
-	RunID          string         `json:"run_id,omitempty"`
-	RunMode        RunMode        `json:"run_mode,omitempty"`
-	CommitID       string         `json:"commit_id,omitempty"`
-	AssistantReply string         `json:"assistant_reply,omitempty"`
-	ReceivedAt     time.Time      `json:"received_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	PayloadHash    string         `json:"payload_hash"`
-	Error          *ErrorBlock    `json:"error,omitempty"`
+	EventID           string       `json:"event_id"`
+	Status            EventStatus  `json:"status"`
+	OutboxStatus      OutboxStatus `json:"outbox_status,omitempty"`
+	SessionKey        string       `json:"session_key"`
+	SessionID         string       `json:"session_id"`
+	RunID             string       `json:"run_id,omitempty"`
+	RunMode           RunMode      `json:"run_mode,omitempty"`
+	AssistantReply    string       `json:"assistant_reply,omitempty"`
+	OutboxID          string       `json:"outbox_id,omitempty"`
+	ProcessingLease   string       `json:"processing_started_at,omitempty"`
+	ReceivedAt        time.Time    `json:"received_at"`
+	CreatedAt         time.Time    `json:"created_at"`
+	UpdatedAt         time.Time    `json:"updated_at"`
+	PayloadHash       string       `json:"payload_hash"`
+	Provider          string       `json:"provider,omitempty"`
+	Model             string       `json:"model,omitempty"`
+	ProviderRequestID string       `json:"provider_request_id,omitempty"`
+	Error             *ErrorBlock  `json:"error,omitempty"`
 }
 
-type SessionIndex struct {
-	FormatVersion string                     `json:"format_version"`
-	UpdatedAt     time.Time                  `json:"updated_at"`
-	Sessions      map[string]SessionIndexRow `json:"sessions"`
-}
-
-type SessionIndexRow struct {
-	ActiveSessionID string    `json:"active_session_id"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	ConversationID  string    `json:"conversation_id,omitempty"`
-	ChannelType     string    `json:"channel_type,omitempty"`
-	ParticipantID   string    `json:"participant_id,omitempty"`
-	DMScope         string    `json:"dm_scope,omitempty"`
-	LastCommitID    string    `json:"last_commit_id,omitempty"`
-	LastRunID       string    `json:"last_run_id,omitempty"`
-}
-
-type SessionHeader struct {
-	Type          string    `json:"type"`
-	SessionID     string    `json:"session_id"`
-	SessionKey    string    `json:"session_key"`
-	CreatedAt     time.Time `json:"created_at"`
-	FormatVersion string    `json:"format_version"`
-}
-
-type SessionEntry struct {
-	Type       string         `json:"type"`
-	EntryID    string         `json:"entry_id"`
-	RunID      string         `json:"run_id"`
-	Content    string         `json:"content,omitempty"`
-	ToolCalls  []ToolCall     `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	OK         bool           `json:"ok,omitempty"`
-	Result     string         `json:"result,omitempty"`
-	Commit     *CommitMarker  `json:"commit,omitempty"`
-	Meta       map[string]any `json:"meta,omitempty"`
+type SessionRecord struct {
+	SessionKey            string    `json:"session_key"`
+	ActiveSessionID       string    `json:"active_session_id"`
+	ConversationID        string    `json:"conversation_id,omitempty"`
+	ChannelType           string    `json:"channel_type,omitempty"`
+	ParticipantID         string    `json:"participant_id,omitempty"`
+	DMScope               string    `json:"dm_scope,omitempty"`
+	MessageCount          int       `json:"message_count"`
+	PromptTokensTotal     int       `json:"prompt_tokens_total"`
+	CompletionTokensTotal int       `json:"completion_tokens_total"`
+	TotalTokensTotal      int       `json:"total_tokens_total"`
+	LastModel             string    `json:"last_model,omitempty"`
+	LastRunID             string    `json:"last_run_id,omitempty"`
+	LastActivityAt        time.Time `json:"last_activity_at"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type ToolCall struct {
 	ToolCallID string         `json:"tool_call_id"`
 	Name       string         `json:"name"`
 	Args       map[string]any `json:"args,omitempty"`
-}
-
-type CommitMarker struct {
-	CommitID    string `json:"commit_id"`
-	RunID       string `json:"run_id"`
-	EntryCount  int    `json:"entry_count"`
-	LastEntryID string `json:"last_entry_id"`
-}
-
-type RunTrace struct {
-	RunID           string            `json:"run_id"`
-	EventID         string            `json:"event_id"`
-	SessionKey      string            `json:"session_key"`
-	SessionID       string            `json:"session_id"`
-	RunMode         RunMode           `json:"run_mode"`
-	ContextManifest *ContextManifest  `json:"context_manifest,omitempty"`
-	RAGHits         []RAGHit          `json:"rag_hits,omitempty"`
-	ToolExecutions  []ToolExecution   `json:"tool_executions,omitempty"`
-	Actions         []Action          `json:"actions"`
-	StartedAt       time.Time         `json:"started_at"`
-	FinishedAt      time.Time         `json:"finished_at"`
-	Error           *ErrorBlock       `json:"error,omitempty"`
-	Diagnostics     map[string]string `json:"diagnostics,omitempty"`
-}
-
-type Action struct {
-	ActionID             string         `json:"action_id"`
-	ActionIndex          int            `json:"action_index"`
-	ActionIdempotencyKey string         `json:"action_idempotency_key"`
-	Type                 string         `json:"type"`
-	Risk                 string         `json:"risk"`
-	RequiresApproval     bool           `json:"requires_approval"`
-	Payload              map[string]any `json:"payload"`
-}
-
-type ApprovalStatus string
-
-const (
-	ApprovalStatusPending  ApprovalStatus = "pending"
-	ApprovalStatusApproved ApprovalStatus = "approved"
-	ApprovalStatusRejected ApprovalStatus = "rejected"
-	ApprovalStatusExpired  ApprovalStatus = "expired"
-)
-
-type ApprovalRisk string
-
-const (
-	ApprovalRiskLow    ApprovalRisk = "low"
-	ApprovalRiskMedium ApprovalRisk = "medium"
-	ApprovalRiskHigh   ApprovalRisk = "high"
-)
-
-type ApprovalActor struct {
-	Type string `json:"type"`
-	ID   string `json:"id"`
-}
-
-type ApprovalDecision struct {
-	Actor     ApprovalActor `json:"actor"`
-	Note      string        `json:"note,omitempty"`
-	DecidedAt time.Time     `json:"decided_at"`
-}
-
-type ApprovalActionResult struct {
-	ActionID string `json:"action_id"`
-	OK       bool   `json:"ok"`
-	Message  string `json:"message"`
-}
-
-type ApprovalRecord struct {
-	ApprovalID               string                 `json:"approval_id"`
-	Status                   ApprovalStatus         `json:"status"`
-	Risk                     ApprovalRisk           `json:"risk"`
-	SessionKey               string                 `json:"session_key"`
-	SessionID                string                 `json:"session_id"`
-	RunID                    string                 `json:"run_id"`
-	ConversationID           string                 `json:"conversation_id"`
-	Scopes                   []string               `json:"scopes,omitempty"`
-	Summary                  string                 `json:"summary"`
-	Actions                  []Action               `json:"actions"`
-	CreatedAt                time.Time              `json:"created_at"`
-	ExpiresAt                time.Time              `json:"expires_at"`
-	UpdatedAt                time.Time              `json:"updated_at"`
-	Decision                 *ApprovalDecision      `json:"decision,omitempty"`
-	DecisionEventPublishedAt *time.Time             `json:"decision_event_published_at,omitempty"`
-	Results                  []ApprovalActionResult `json:"results,omitempty"`
-}
-
-type CreateApprovalRequest struct {
-	RunID           string   `json:"run_id"`
-	SessionKey      string   `json:"session_key"`
-	ActiveSessionID string   `json:"active_session_id"`
-	ConversationID  string   `json:"conversation_id"`
-	Scopes          []string `json:"scopes,omitempty"`
-	ExpiresAt       string   `json:"expires_at"`
-	Summary         string   `json:"summary"`
-	Risk            string   `json:"risk"`
-	Actions         []Action `json:"actions"`
-}
-
-type CreateApprovalResponse struct {
-	ApprovalID string         `json:"approval_id"`
-	Status     ApprovalStatus `json:"status"`
-	ApproveURL string         `json:"approve_url"`
-	RejectURL  string         `json:"reject_url"`
-}
-
-type ApprovalDecisionRequest struct {
-	Actor ApprovalActor `json:"actor"`
-	Note  string        `json:"note,omitempty"`
-}
-
-type ApprovalDecisionResponse struct {
-	ApprovalID string         `json:"approval_id"`
-	Status     ApprovalStatus `json:"status"`
-}
-
-type ApprovalListResponse struct {
-	Items      []ApprovalRecord `json:"items"`
-	NextCursor string           `json:"next_cursor,omitempty"`
-}
-
-type PatchPayload struct {
-	Target              string `json:"target"`
-	TargetPath          string `json:"target_path"`
-	PatchFormat         string `json:"patch_format"`
-	Diff                string `json:"diff"`
-	ExpectedBaseHash    string `json:"expected_base_hash"`
-	PatchIdempotencyKey string `json:"patch_idempotency_key"`
-}
-
-type PatchApplyResult struct {
-	OK             bool   `json:"ok"`
-	Message        string `json:"message"`
-	TargetPath     string `json:"target_path,omitempty"`
-	ExpectedHash   string `json:"expected_hash,omitempty"`
-	CurrentHash    string `json:"current_hash,omitempty"`
-	AppliedHash    string `json:"applied_hash,omitempty"`
-	RolledBack     bool   `json:"rolled_back,omitempty"`
-	FromIdempotent bool   `json:"from_idempotent,omitempty"`
-}
-
-type ContextManifest struct {
-	HistoryRange HistoryRange `json:"history_range"`
-}
-
-type HistoryRange struct {
-	Mode           string `json:"mode"`
-	CutoffCommitID string `json:"cutoff_commit_id,omitempty"`
-	TailLimit      int    `json:"tail_limit,omitempty"`
-}
-
-type RAGHit struct {
-	Path    string  `json:"path"`
-	Scope   string  `json:"scope"`
-	Lines   []int   `json:"lines"`
-	Score   float64 `json:"score"`
-	Preview string  `json:"preview"`
 }
 
 type ToolExecution struct {
@@ -339,32 +177,67 @@ type ToolExecution struct {
 	Error       *ErrorBlock    `json:"error,omitempty"`
 }
 
-type InboundLedgerRow struct {
-	IdempotencyKey  string    `json:"idempotency_key"`
-	EventID         string    `json:"event_id"`
-	PayloadHash     string    `json:"payload_hash"`
-	ReceivedAt      time.Time `json:"received_at"`
-	SessionKey      string    `json:"session_key"`
-	ActiveSessionID string    `json:"active_session_id"`
+type Action struct {
+	ActionID             string         `json:"action_id"`
+	ActionIndex          int            `json:"action_index"`
+	ActionIdempotencyKey string         `json:"action_idempotency_key"`
+	Type                 string         `json:"type"`
+	Risk                 string         `json:"risk"`
+	RequiresApproval     bool           `json:"requires_approval"`
+	Payload              map[string]any `json:"payload,omitempty"`
 }
 
-type OutboundLedgerRow struct {
-	OutboundIdempotencyKey string    `json:"outbound_idempotency_key"`
-	OutboxID               string    `json:"outbox_id"`
-	CreatedAt              time.Time `json:"created_at"`
+type HistoryRange struct {
+	Mode      string `json:"mode"`
+	TailLimit int    `json:"tail_limit,omitempty"`
+}
+
+type ContextManifest struct {
+	HistoryRange HistoryRange `json:"history_range"`
+}
+
+type RAGHit struct {
+	Path    string  `json:"path"`
+	Scope   string  `json:"scope"`
+	Lines   []int   `json:"lines"`
+	Score   float64 `json:"score"`
+	Preview string  `json:"preview"`
+}
+
+type RunTrace struct {
+	RunID             string            `json:"run_id"`
+	EventID           string            `json:"event_id"`
+	SessionKey        string            `json:"session_key"`
+	SessionID         string            `json:"session_id"`
+	RunMode           RunMode           `json:"run_mode"`
+	Status            RunStatus         `json:"status"`
+	ContextManifest   *ContextManifest  `json:"context_manifest,omitempty"`
+	RAGHits           []RAGHit          `json:"rag_hits,omitempty"`
+	ToolExecutions    []ToolExecution   `json:"tool_executions,omitempty"`
+	Actions           []Action          `json:"actions,omitempty"`
+	StartedAt         time.Time         `json:"started_at"`
+	FinishedAt        time.Time         `json:"finished_at"`
+	Provider          string            `json:"provider,omitempty"`
+	Model             string            `json:"model,omitempty"`
+	PromptTokens      int               `json:"prompt_tokens,omitempty"`
+	CompletionTokens  int               `json:"completion_tokens,omitempty"`
+	TotalTokens       int               `json:"total_tokens,omitempty"`
+	LatencyMS         int64             `json:"latency_ms,omitempty"`
+	FinishReason      string            `json:"finish_reason,omitempty"`
+	RawFinishReason   string            `json:"raw_finish_reason,omitempty"`
+	ProviderRequestID string            `json:"provider_request_id,omitempty"`
+	OutputText        string            `json:"output_text,omitempty"`
+	ToolCalls         []ToolCall        `json:"tool_calls,omitempty"`
+	Error             *ErrorBlock       `json:"error,omitempty"`
+	Diagnostics       map[string]string `json:"diagnostics,omitempty"`
 }
 
 type OutboxMessage struct {
-	OutboxID               string    `json:"outbox_id"`
-	OutboundIdempotencyKey string    `json:"outbound_idempotency_key"`
-	EventID                string    `json:"event_id"`
-	SessionKey             string    `json:"session_key"`
-	Body                   string    `json:"body"`
-	CreatedAt              time.Time `json:"created_at"`
-	Attempts               int       `json:"attempts"`
-	LastError              string    `json:"last_error,omitempty"`
-}
-
-type Sessions struct {
-	Items map[string][]SessionEntry `json:"items"`
+	OutboxID   string    `json:"outbox_id"`
+	EventID    string    `json:"event_id"`
+	SessionKey string    `json:"session_key"`
+	Body       string    `json:"body"`
+	CreatedAt  time.Time `json:"created_at"`
+	Attempts   int       `json:"attempts"`
+	LastError  string    `json:"last_error,omitempty"`
 }
