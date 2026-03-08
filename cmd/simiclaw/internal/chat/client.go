@@ -33,13 +33,13 @@ func (e *APIError) Error() string {
 }
 
 type HTTPClient struct {
-	baseURL        string
-	apiKey         string
-	httpClient     *http.Client
+	baseURL          string
+	apiKey           string
+	httpClient       *http.Client
 	streamHTTPClient *http.Client
-	requestTimeout time.Duration
-	pollInterval   time.Duration
-	pollTimeout    time.Duration
+	requestTimeout   time.Duration
+	pollInterval     time.Duration
+	pollTimeout      time.Duration
 }
 
 type StreamEventHandler interface {
@@ -73,13 +73,13 @@ var ErrStreamProtocolMismatch = errors.New("stream protocol mismatch")
 
 func NewHTTPClient(baseURL, apiKey string, requestTimeout, pollInterval, pollTimeout time.Duration) *HTTPClient {
 	return &HTTPClient{
-		baseURL:        strings.TrimRight(baseURL, "/"),
-		apiKey:         strings.TrimSpace(apiKey),
-		httpClient:     &http.Client{},
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		apiKey:           strings.TrimSpace(apiKey),
+		httpClient:       &http.Client{},
 		streamHTTPClient: newStreamHTTPClient(requestTimeout),
-		requestTimeout: requestTimeout,
-		pollInterval:   pollInterval,
-		pollTimeout:    pollTimeout,
+		requestTimeout:   requestTimeout,
+		pollInterval:     pollInterval,
+		pollTimeout:      pollTimeout,
 	}
 }
 

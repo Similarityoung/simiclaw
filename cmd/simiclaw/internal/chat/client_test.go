@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +66,133 @@ func TestHTTPClientSendStreamReportsUnsupportedWhenNotSSE(t *testing.T) {
 	}, noopStreamHandler{})
 	if !errors.Is(err, ErrStreamUnsupported) {
 		t.Fatalf("expected ErrStreamUnsupported, got %v", err)
+	}
+}
+
+func TestHTTPClientSendStreamTimesOutWaitingForHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "event: accepted\n")
+		accepted, _ := json.Marshal(model.ChatStreamEvent{
+			Type:                  model.ChatStreamEventAccepted,
+			EventID:               "evt_2",
+			Sequence:              1,
+			StreamProtocolVersion: model.ChatStreamProtocolVersion,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", accepted)
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, "", 50*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond)
+	start := time.Now()
+	_, err := client.SendStream(context.Background(), model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "c2", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:c2:1",
+		Timestamp:      "2026-03-07T00:00:00Z",
+		Payload:        model.EventPayload{Type: "message", Text: "hello"},
+	}, noopStreamHandler{})
+	if err == nil {
+		t.Fatal("expected timeout error while waiting for headers")
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Fatalf("expected header timeout quickly, took %s", elapsed)
+	}
+}
+
+func TestHTTPClientSendStreamTimesOutWaitingForAcceptedEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, "", 50*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond)
+	start := time.Now()
+	_, err := client.SendStream(context.Background(), model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "c3", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:c3:1",
+		Timestamp:      "2026-03-07T00:00:00Z",
+		Payload:        model.EventPayload{Type: "message", Text: "hello"},
+	}, noopStreamHandler{})
+	if err == nil {
+		t.Fatal("expected timeout error while waiting for accepted event")
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Fatalf("expected accepted-event timeout quickly, took %s", elapsed)
+	}
+}
+
+func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T) {
+	var pollCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat:stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			accepted, _ := json.Marshal(model.ChatStreamEvent{
+				Type:                  model.ChatStreamEventAccepted,
+				EventID:               "evt_3",
+				Sequence:              1,
+				StreamProtocolVersion: model.ChatStreamProtocolVersion,
+			})
+			fmt.Fprintf(w, "event: accepted\n")
+			fmt.Fprintf(w, "data: %s\n\n", accepted)
+			done, _ := json.Marshal(model.ChatStreamEvent{
+				Type:     model.ChatStreamEventDone,
+				EventID:  "evt_3",
+				Sequence: 2,
+				EventRecord: &model.EventRecord{
+					EventID:      "evt_3",
+					Status:       model.EventStatusProcessed,
+					OutboxStatus: model.OutboxStatusPending,
+				},
+			})
+			fmt.Fprintf(w, "event: done\n")
+			fmt.Fprintf(w, "data: %s\n\n", done)
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/events/evt_3":
+			attempt := pollCount.Add(1)
+			rec := model.EventRecord{
+				EventID:      "evt_3",
+				Status:       model.EventStatusProcessed,
+				OutboxStatus: model.OutboxStatusPending,
+			}
+			if attempt >= 2 {
+				rec.OutboxStatus = model.OutboxStatusSent
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(rec); err != nil {
+				t.Fatalf("encode event record: %v", err)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, "", 100*time.Millisecond, 10*time.Millisecond, 200*time.Millisecond)
+	rec, err := client.SendStream(context.Background(), model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "c4", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:c4:1",
+		Timestamp:      "2026-03-07T00:00:00Z",
+		Payload:        model.EventPayload{Type: "message", Text: "hello"},
+	}, noopStreamHandler{})
+	if err != nil {
+		t.Fatalf("SendStream returned error: %v", err)
+	}
+	if rec.OutboxStatus != model.OutboxStatusSent {
+		t.Fatalf("expected sent outbox status after polling, got %+v", rec)
+	}
+	if pollCount.Load() < 2 {
+		t.Fatalf("expected at least 2 polls, got %d", pollCount.Load())
 	}
 }
 

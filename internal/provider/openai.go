@@ -55,7 +55,7 @@ func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (C
 
 func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatRequest, sink StreamSink) (ChatResult, error) {
 	params := buildChatCompletionParams(req, true)
-	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
+	stream := p.client.Chat.Completions.NewStreaming(ctx, params, p.requestTimeoutOption()...)
 	acc := openai.ChatCompletionAccumulator{}
 	toolAcc := newToolCallAccumulator()
 	for stream.Next() {
