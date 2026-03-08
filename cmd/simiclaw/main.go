@@ -1,62 +1,50 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/chat"
+	"github.com/spf13/pflag"
+
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/initcmd"
-	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/root"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 const bootstrapLogLevelEnv = "SIMICLAW_LOG_LEVEL"
 
 func main() {
+	os.Exit(run(os.Args[1:], common.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
+}
+
+func run(args []string, streams common.IOStreams) int {
 	if err := common.SetupLogger(resolveBootstrapLogLevel()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		fmt.Fprintln(streams.ErrOut, err)
+		return 1
 	}
 	defer func() {
 		if err := common.SyncLogger(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger sync failed: %v\n", err)
+			fmt.Fprintf(streams.ErrOut, "logger sync failed: %v\n", err)
 		}
 	}()
 
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	err := root.Execute(args, streams)
+	if err == nil {
+		return 0
 	}
-
-	cmd := os.Args[1]
-	var err error
-	switch cmd {
-	case "init":
-		err = initcmd.Run(os.Args[2:])
-	case "serve", "gateway":
-		err = gateway.Run(os.Args[2:])
-	case "chat":
-		err = chat.Run(os.Args[2:])
-	case "version":
-		version.Run()
-		return
-	default:
-		usage()
-		os.Exit(2)
+	if errors.Is(err, pflag.ErrHelp) {
+		return 0
 	}
-
-	if err != nil {
-		logging.L("cmd").Error(cmd+" failed", logging.Error(err))
-		os.Exit(1)
+	fmt.Fprintln(streams.ErrOut, err)
+	if common.AsExitError(err, nil) {
+		return common.ExitCode(err)
 	}
-}
-
-func usage() {
-	fmt.Println("Usage: simiclaw <init|serve|gateway|chat|version> [flags]")
+	if strings.Contains(err.Error(), "unknown command") || strings.Contains(err.Error(), "unknown flag") || strings.Contains(err.Error(), "accepts ") {
+		return 2
+	}
+	return 1
 }
 
 func resolveBootstrapLogLevel() string {

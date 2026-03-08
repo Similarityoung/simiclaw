@@ -2,10 +2,9 @@ package httpapi
 
 import (
 	"encoding/json"
-	"net/http"
-
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	"net/http"
 )
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +23,10 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := r.PathValue("event_id")
+	s.handleGetEventByID(w, r, r.PathValue("event_id"))
+}
+
+func (s *Server) handleGetEventByID(w http.ResponseWriter, r *http.Request, eventID string) {
 	rec, ok, err := s.db.GetEvent(r.Context(), eventID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})

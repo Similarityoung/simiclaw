@@ -18,6 +18,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /v1/runs/{run_id}/trace", s.withAuth(http.HandlerFunc(s.handleGetRunTrace)))
 	mux.Handle("GET /v1/sessions", s.withAuth(http.HandlerFunc(s.handleListSessions)))
 	mux.Handle("GET /v1/sessions/{session_key}", s.withAuth(http.HandlerFunc(s.handleGetSession)))
+	mux.Handle("GET /v1/sessions/{session_key}/history", s.withAuth(http.HandlerFunc(s.handleGetSessionHistory)))
 
 	return mux
 }
