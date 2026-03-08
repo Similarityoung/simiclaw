@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/contextfile"
+	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -44,6 +47,12 @@ type SkillSummary struct {
 	Name        string
 	Description string
 	Path        string
+}
+
+type textEntry struct {
+	DisplayPath  string
+	ResolvedPath string
+	Content      string
 }
 
 func NewBuilder(workspace string) *Builder {
@@ -114,11 +123,11 @@ func (b *Builder) projectContextSection() string {
 	parts = append(parts, "## Project Context")
 	loaded := 0
 	for _, name := range bootstrapFiles {
-		content, ok := b.readWorkspaceText(name)
+		entry, ok := b.readContextText(name)
 		if !ok {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("### %s\n\n%s", name, content))
+		parts = append(parts, fmt.Sprintf("### %s\n\n%s", entry.DisplayPath, entry.Content))
 		loaded++
 	}
 	if loaded == 0 {
@@ -172,26 +181,52 @@ func (b *Builder) currentRunContextSection(ctx RunContext, now time.Time) string
 - session_id: %s
 - payload_type: %s`,
 		now.Format(time.RFC3339),
-		blankFallback(ctx.Conversation.ConversationID),
-		blankFallback(ctx.Conversation.ThreadID),
-		blankFallback(ctx.Conversation.ChannelType),
-		blankFallback(ctx.Conversation.ParticipantID),
-		blankFallback(ctx.SessionKey),
-		blankFallback(ctx.SessionID),
-		blankFallback(ctx.PayloadType)))
+		promptLiteral(ctx.Conversation.ConversationID),
+		promptLiteral(ctx.Conversation.ThreadID),
+		promptLiteral(ctx.Conversation.ChannelType),
+		promptLiteral(ctx.Conversation.ParticipantID),
+		promptLiteral(ctx.SessionKey),
+		promptLiteral(ctx.SessionID),
+		promptLiteral(ctx.PayloadType)))
 }
 
-func blankFallback(value string) string {
+func promptLiteral(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "-"
 	}
-	return value
+	return strconv.Quote(value)
 }
 
-func (b *Builder) readWorkspaceText(rel string) (string, bool) {
-	path := filepath.Join(b.workspace, filepath.FromSlash(rel))
-	data, err := os.ReadFile(path)
+func (b *Builder) readContextText(rel string) (textEntry, bool) {
+	normalizedRel, absPath, err := contextfile.ResolvePath(b.workspace, rel)
+	if err != nil {
+		return textEntry{}, false
+	}
+	content, ok := b.readFileText(absPath)
+	if !ok {
+		return textEntry{}, false
+	}
+	return textEntry{DisplayPath: normalizedRel, ResolvedPath: resolvedPath(absPath), Content: content}, true
+}
+
+func (b *Builder) readMemoryText(rel, channelType string) (textEntry, bool) {
+	normalizedRel, absPath, visibility, err := memory.ResolvePath(b.workspace, rel)
+	if err != nil {
+		return textEntry{}, false
+	}
+	if !memory.CanAccessVisibility(channelType, visibility) {
+		return textEntry{}, false
+	}
+	content, ok := b.readFileText(absPath)
+	if !ok {
+		return textEntry{}, false
+	}
+	return textEntry{DisplayPath: normalizedRel, ResolvedPath: resolvedPath(absPath), Content: content}, true
+}
+
+func (b *Builder) readFileText(absPath string) (string, bool) {
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return "", false
 	}
@@ -202,6 +237,18 @@ func (b *Builder) readWorkspaceText(rel string) (string, bool) {
 	return content, true
 }
 
+func resolvedPath(absPath string) string {
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		if resolvedAbs, err := filepath.Abs(resolved); err == nil {
+			return resolvedAbs
+		}
+	}
+	if normalizedAbs, err := filepath.Abs(absPath); err == nil {
+		return normalizedAbs
+	}
+	return absPath
+}
+
 func (b *Builder) loadSkillSummaries() []SkillSummary {
 	root := filepath.Join(b.workspace, "skills")
 	entries := make([]SkillSummary, 0, 8)
@@ -209,11 +256,15 @@ func (b *Builder) loadSkillSummaries() []SkillSummary {
 		if walkErr != nil || d.IsDir() || d.Name() != "SKILL.md" {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		relPath, err := filepath.Rel(b.workspace, path)
 		if err != nil {
 			return nil
 		}
-		skill, ok := parseSkillSummary(b.workspace, path, string(data))
+		entry, ok := b.readContextText(filepath.ToSlash(relPath))
+		if !ok {
+			return nil
+		}
+		skill, ok := parseSkillSummary(b.workspace, filepath.Join(b.workspace, filepath.FromSlash(entry.DisplayPath)), entry.Content)
 		if !ok {
 			log.Printf("prompt: skip invalid skill file %s", path)
 			return nil
@@ -364,27 +415,23 @@ func (b *Builder) staticSourcesChangedLocked(memoryMode string) bool {
 }
 
 func (b *Builder) curatedMemoryBlocks(channelType string) []string {
-	blocks := make([]string, 0, 2)
-	if content, path, ok := b.readInjectedCuratedMemory(); ok {
-		blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", path, content))
+	blocks := make([]string, 0, 3)
+	seen := map[string]bool{}
+	for _, rel := range []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"} {
+		entry, ok := b.readMemoryText(rel, channelType)
+		if !ok || seen[entry.ResolvedPath] {
+			continue
+		}
+		seen[entry.ResolvedPath] = true
+		blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", entry.DisplayPath, entry.Content))
 	}
 	if buildMemoryMode(channelType) == "public_private" {
-		if content, ok := b.readWorkspaceText(filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md"))); ok {
-			blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")), content))
+		entry, ok := b.readMemoryText(filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")), channelType)
+		if ok && !seen[entry.ResolvedPath] {
+			blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", entry.DisplayPath, entry.Content))
 		}
 	}
 	return blocks
-}
-
-func (b *Builder) readInjectedCuratedMemory() (string, string, bool) {
-	publicCanonical := filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md"))
-	if content, ok := b.readWorkspaceText(publicCanonical); ok {
-		return content, publicCanonical, true
-	}
-	if content, ok := b.readWorkspaceText("MEMORY.md"); ok {
-		return content, "MEMORY.md", true
-	}
-	return "", "", false
 }
 
 func (b *Builder) snapshotCuratedState(memoryMode string) map[string]time.Time {
