@@ -2,15 +2,25 @@ package prompt
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
+var bootstrapFiles = []string{"AGENTS.md", "IDENTITY.md", "USER.md"}
+
 type Builder struct {
 	workspace string
+
+	mu           sync.RWMutex
+	cachedStatic string
+	cachedAt     time.Time
+	existed      map[string]bool
+	staticBuilds int
 }
 
 type RunContext struct {
@@ -36,13 +46,37 @@ func (b *Builder) Build(input BuildInput) string {
 	}
 
 	parts := []string{
+		b.buildStaticPrefix(),
+		b.currentRunContextSection(input.Context, now),
+	}
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
+func (b *Builder) buildStaticPrefix() string {
+	b.mu.RLock()
+	if b.cachedStatic != "" && !b.bootstrapChangedLocked() {
+		cached := b.cachedStatic
+		b.mu.RUnlock()
+		return cached
+	}
+	b.mu.RUnlock()
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cachedStatic != "" && !b.bootstrapChangedLocked() {
+		return b.cachedStatic
+	}
+
+	parts := []string{
 		b.identitySection(),
 		b.projectContextSection(),
 		b.availableSkillsSection(),
 		b.memoryPolicySection(),
-		b.currentRunContextSection(input.Context, now),
 	}
-	return strings.Join(parts, "\n\n---\n\n")
+	b.cachedStatic = strings.Join(parts, "\n\n---\n\n")
+	b.cachedAt, b.existed = b.snapshotBootstrapState()
+	b.staticBuilds++
+	return b.cachedStatic
 }
 
 func (b *Builder) identitySection() string {
@@ -61,9 +95,21 @@ func (b *Builder) identitySection() string {
 }
 
 func (b *Builder) projectContextSection() string {
-	return strings.TrimSpace(`## Project Context
-
-当前轮次未注入额外的工作区 bootstrap 内容。`)
+	parts := make([]string, 0, len(bootstrapFiles)+1)
+	parts = append(parts, "## Project Context")
+	loaded := 0
+	for _, name := range bootstrapFiles {
+		content, ok := b.readBootstrapFile(name)
+		if !ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("### %s\n\n%s", name, content))
+		loaded++
+	}
+	if loaded == 0 {
+		parts = append(parts, "当前轮次未注入额外的工作区 bootstrap 内容。")
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (b *Builder) availableSkillsSection() string {
@@ -107,4 +153,49 @@ func blankFallback(value string) string {
 		return "-"
 	}
 	return value
+}
+
+func (b *Builder) readBootstrapFile(name string) (string, bool) {
+	path := filepath.Join(b.workspace, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "", false
+	}
+	return content, true
+}
+
+func (b *Builder) snapshotBootstrapState() (time.Time, map[string]bool) {
+	var maxMtime time.Time
+	existed := make(map[string]bool, len(bootstrapFiles))
+	for _, name := range bootstrapFiles {
+		path := filepath.Join(b.workspace, name)
+		info, err := os.Stat(path)
+		existed[path] = err == nil
+		if err == nil && info.ModTime().After(maxMtime) {
+			maxMtime = info.ModTime()
+		}
+	}
+	if maxMtime.IsZero() {
+		maxMtime = time.Unix(1, 0).UTC()
+	}
+	return maxMtime, existed
+}
+
+func (b *Builder) bootstrapChangedLocked() bool {
+	for _, name := range bootstrapFiles {
+		path := filepath.Join(b.workspace, name)
+		info, err := os.Stat(path)
+		existsNow := err == nil
+		if b.existed[path] != existsNow {
+			return true
+		}
+		if err == nil && info.ModTime().After(b.cachedAt) {
+			return true
+		}
+	}
+	return false
 }
