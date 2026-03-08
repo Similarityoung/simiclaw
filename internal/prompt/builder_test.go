@@ -192,6 +192,64 @@ func TestBuilderInvalidatesCacheOnSkillChange(t *testing.T) {
 	}
 }
 
+func TestBuilderInjectsCuratedMemoryByChannelType(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, "memory", "public", "MEMORY.md"), "public fact")
+	writeFile(t, filepath.Join(workspace, "memory", "private", "MEMORY.md"), "private fact")
+
+	b := NewBuilder(workspace)
+	dmPrompt := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), Conversation: model.Conversation{ChannelType: "dm"}}})
+	if !strings.Contains(dmPrompt, "public fact") || !strings.Contains(dmPrompt, "private fact") {
+		t.Fatalf("expected dm prompt to inject public and private curated memory, got: %s", dmPrompt)
+	}
+
+	groupPrompt := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 12, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+	if !strings.Contains(groupPrompt, "public fact") {
+		t.Fatalf("expected group prompt to inject public curated memory, got: %s", groupPrompt)
+	}
+	if strings.Contains(groupPrompt, "private fact") {
+		t.Fatalf("expected group prompt to exclude private curated memory, got: %s", groupPrompt)
+	}
+}
+
+func TestBuilderFallsBackWhenNoCuratedMemoryInjected(t *testing.T) {
+	workspace := t.TempDir()
+	b := NewBuilder(workspace)
+	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+	if !strings.Contains(got, "当前轮次未注入 curated memory。") {
+		t.Fatalf("expected no-curated-memory fallback, got: %s", got)
+	}
+}
+
+func TestBuilderInvalidatesCacheOnCuratedMemoryChange(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "memory", "public", "MEMORY.md")
+	writeFile(t, path, "public v1")
+
+	b := NewBuilder(workspace)
+	first := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+	second := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 12, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+	if b.staticBuilds != 1 {
+		t.Fatalf("expected cached static prefix before curated change, got=%d", b.staticBuilds)
+	}
+	if !strings.Contains(first, "public v1") || !strings.Contains(second, "public v1") {
+		t.Fatalf("expected public v1 before invalidation, first=%q second=%q", first, second)
+	}
+
+	writeFile(t, path, "public v2")
+	future := time.Date(2026, 3, 8, 9, 12, 0, 0, time.UTC)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes curated file: %v", err)
+	}
+	third := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 13, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+	if b.staticBuilds != 2 {
+		t.Fatalf("expected curated change to invalidate cache, got=%d", b.staticBuilds)
+	}
+	if !strings.Contains(third, "public v2") {
+		t.Fatalf("expected public v2 after invalidation, got: %s", third)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

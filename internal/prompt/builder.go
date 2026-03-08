@@ -20,9 +20,11 @@ type Builder struct {
 
 	mu                sync.RWMutex
 	cachedStatic      string
+	cachedMemoryMode  string
 	bootstrapAtCache  map[string]time.Time
 	skillFilesAtCache map[string]time.Time
 	skillDirsAtCache  map[string]time.Time
+	curatedAtCache    map[string]time.Time
 	staticBuilds      int
 }
 
@@ -55,15 +57,16 @@ func (b *Builder) Build(input BuildInput) string {
 	}
 
 	parts := []string{
-		b.buildStaticPrefix(),
+		b.buildStaticPrefix(input.Context.Conversation.ChannelType),
 		b.currentRunContextSection(input.Context, now),
 	}
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
-func (b *Builder) buildStaticPrefix() string {
+func (b *Builder) buildStaticPrefix(channelType string) string {
+	memoryMode := buildMemoryMode(channelType)
 	b.mu.RLock()
-	if b.cachedStatic != "" && !b.staticSourcesChangedLocked() {
+	if b.cachedStatic != "" && b.cachedMemoryMode == memoryMode && !b.staticSourcesChangedLocked(memoryMode) {
 		cached := b.cachedStatic
 		b.mu.RUnlock()
 		return cached
@@ -72,7 +75,7 @@ func (b *Builder) buildStaticPrefix() string {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.cachedStatic != "" && !b.staticSourcesChangedLocked() {
+	if b.cachedStatic != "" && b.cachedMemoryMode == memoryMode && !b.staticSourcesChangedLocked(memoryMode) {
 		return b.cachedStatic
 	}
 
@@ -80,11 +83,13 @@ func (b *Builder) buildStaticPrefix() string {
 		b.identitySection(),
 		b.projectContextSection(),
 		b.availableSkillsSection(),
-		b.memoryPolicySection(),
+		b.memoryPolicySection(channelType),
 	}
 	b.cachedStatic = strings.Join(parts, "\n\n---\n\n")
+	b.cachedMemoryMode = memoryMode
 	b.bootstrapAtCache = b.snapshotBootstrapState()
 	b.skillFilesAtCache, b.skillDirsAtCache = b.snapshotSkillState()
+	b.curatedAtCache = b.snapshotCuratedState(memoryMode)
 	b.staticBuilds++
 	return b.cachedStatic
 }
@@ -138,12 +143,21 @@ func (b *Builder) availableSkillsSection() string {
 	return strings.Join(parts, "\n\n")
 }
 
-func (b *Builder) memoryPolicySection() string {
-	return strings.TrimSpace(`## Memory Policy
+func (b *Builder) memoryPolicySection(channelType string) string {
+	parts := []string{strings.TrimSpace(`## Memory Policy
 
 - 记忆应通过显式 recall 获取，不要声称自己“天然记得”工作区事实。
 - 当问题可能依赖历史偏好、长期事实或日常记录时，优先使用 memory_search，再按需使用 memory_get。
-- 近似上下文仅供参考；若与显式指令冲突，以显式指令为准。`)
+- 当前 prompt 只注入 curated memory；daily memory 默认不直注入。
+- 近似上下文仅供参考；若与显式指令冲突，以显式指令为准。`)}
+	blocks := b.curatedMemoryBlocks(channelType)
+	if len(blocks) == 0 {
+		parts = append(parts, "### Injected Curated Memory\n\n当前轮次未注入 curated memory。")
+		return strings.Join(parts, "\n\n")
+	}
+	parts = append(parts, "### Injected Curated Memory")
+	parts = append(parts, blocks...)
+	return strings.Join(parts, "\n\n")
 }
 
 func (b *Builder) currentRunContextSection(ctx RunContext, now time.Time) string {
@@ -332,7 +346,7 @@ func (b *Builder) snapshotSkillState() (map[string]time.Time, map[string]time.Ti
 	return files, dirs
 }
 
-func (b *Builder) staticSourcesChangedLocked() bool {
+func (b *Builder) staticSourcesChangedLocked(memoryMode string) bool {
 	if !equalTimeMap(b.bootstrapAtCache, b.snapshotBootstrapState()) {
 		return true
 	}
@@ -343,7 +357,58 @@ func (b *Builder) staticSourcesChangedLocked() bool {
 	if !equalTimeMap(b.skillDirsAtCache, dirs) {
 		return true
 	}
+	if !equalTimeMap(b.curatedAtCache, b.snapshotCuratedState(memoryMode)) {
+		return true
+	}
 	return false
+}
+
+func (b *Builder) curatedMemoryBlocks(channelType string) []string {
+	blocks := make([]string, 0, 2)
+	if content, path, ok := b.readInjectedCuratedMemory(); ok {
+		blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", path, content))
+	}
+	if buildMemoryMode(channelType) == "public_private" {
+		if content, ok := b.readWorkspaceText(filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md"))); ok {
+			blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")), content))
+		}
+	}
+	return blocks
+}
+
+func (b *Builder) readInjectedCuratedMemory() (string, string, bool) {
+	publicCanonical := filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md"))
+	if content, ok := b.readWorkspaceText(publicCanonical); ok {
+		return content, publicCanonical, true
+	}
+	if content, ok := b.readWorkspaceText("MEMORY.md"); ok {
+		return content, "MEMORY.md", true
+	}
+	return "", "", false
+}
+
+func (b *Builder) snapshotCuratedState(memoryMode string) map[string]time.Time {
+	state := map[string]time.Time{}
+	candidates := []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"}
+	if memoryMode == "public_private" {
+		candidates = append(candidates, filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")))
+	}
+	for _, rel := range candidates {
+		path := filepath.Join(b.workspace, filepath.FromSlash(rel))
+		if info, err := os.Stat(path); err == nil {
+			state[path] = info.ModTime()
+			continue
+		}
+		state[path] = time.Time{}
+	}
+	return state
+}
+
+func buildMemoryMode(channelType string) string {
+	if strings.EqualFold(strings.TrimSpace(channelType), "dm") {
+		return "public_private"
+	}
+	return "public_only"
 }
 
 func equalTimeMap(left, right map[string]time.Time) bool {
