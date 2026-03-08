@@ -14,7 +14,7 @@ import (
 func RegisterContextGet(reg *Registry) {
 	schema := Schema{
 		Name:        "context_get",
-		Description: "读取工作区 bootstrap 文件或 skill 正文，支持指定行范围。",
+		Description: "读取工作区根目录上下文文件或 skill 正文，支持指定行范围。",
 		Parameters: ParameterSchema{
 			Type: "object",
 			Properties: map[string]ParameterSchema{

@@ -34,7 +34,7 @@ func (db *DB) RecentMessages(ctx context.Context, sessionID string, limit int) (
 		if err := rows.Scan(&msg.Role, &msg.Content, &msg.ToolCallID, &msg.ToolName, &metaJSON); err != nil {
 			return nil, err
 		}
-		_, msg.ToolCalls = decodeStoredMeta(metaJSON)
+		msg.Meta, msg.ToolCalls = decodeStoredMeta(metaJSON)
 		out = append(out, msg)
 	}
 	if err := rows.Err(); err != nil {

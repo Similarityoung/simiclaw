@@ -38,23 +38,40 @@
 
 ## Prompt / Skills / Memory
 
-当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前采用单一 `full` prompt 形态，固定包含以下 5 个 section：
+当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前采用分层 prompt，固定 section 顺序如下：
 
 - `Identity & Runtime Rules`
-- `Project Context`
-- `Available Skills`
+- `Tool Contract`
 - `Memory Policy`
+- `Workspace Instructions & Context`
+- `Available Skills`
+- `Heartbeat Policy`（仅 `cron_fire`）
 - `Current Run Context`
 
-### Bootstrap 文件
+### Workspace 提示文件
 
-工作区根目录下这 3 个文件会按顺序注入 `Project Context`：
+`init` 会在 workspace 根目录自动创建缺失的提示模板，但不会覆盖已有文件，也不会自动生成 `AGENTS.md`。
 
-- `AGENTS.md`
+普通交互按顺序注入以下根文件：
+
+- `SOUL.md`
 - `IDENTITY.md`
 - `USER.md`
+- `AGENTS.md`
+- `TOOLS.md`
+- `BOOTSTRAP.md`（存在即注入）
 
-这些文件都是**可选**的，runtime 只会读取，不会自动创建。
+`HEARTBEAT.md` 只会在 `payload.type=cron_fire` 时注入。
+
+其中：
+
+- `SOUL.md`：全局稳定人格与方法论
+- `IDENTITY.md`：agent 身份设定
+- `USER.md`：用户偏好、称呼、时区
+- `AGENTS.md`：当前项目范围内的局部工作约定
+- `TOOLS.md`：环境事实与工具可用性
+- `BOOTSTRAP.md`：短期 onboarding 文件；完成初始化后应手动删除
+- `HEARTBEAT.md`：后台巡检/整理 checklist，仅服务 `cron_fire`
 
 ### Skills
 
@@ -62,11 +79,15 @@
 - prompt 中只注入紧凑的 skill 索引（`name / description / path`），不会注入 skill 正文
 - 需要读取正文时，模型应使用 `context_get`
 
-`context_get` 目前只允许读取：
+`context_get` 目前只允许读取 workspace 根目录固定上下文文件或 skill 正文：
 
-- `AGENTS.md`
+- `SOUL.md`
 - `IDENTITY.md`
 - `USER.md`
+- `AGENTS.md`
+- `TOOLS.md`
+- `BOOTSTRAP.md`
+- `HEARTBEAT.md`
 - `skills/<name>/SKILL.md`
 
 ### Memory
@@ -123,6 +144,8 @@ canonical 路径如下：
 ```bash
 go run ./cmd/simiclaw init --workspace ./workspace
 ```
+
+默认会自动 scaffold 缺失的 `SOUL.md`、`IDENTITY.md`、`USER.md`、`TOOLS.md`、`BOOTSTRAP.md`、`HEARTBEAT.md`，但不会覆盖已有文件，也不会自动创建 `AGENTS.md`。
 
 若检测到旧文件式 runtime 痕迹，默认拒绝；只有显式传入 `--force-new-runtime` 才会清理 legacy 目录并创建新的 SQLite runtime。
 
@@ -195,6 +218,14 @@ make test-e2e-smoke
 make accept-v1-alpha
 make accept-current
 ```
+
+### `cron_fire` 行为
+
+- 对外仍属于 `NO_REPLY`，最终 event 状态为 `suppressed`
+- 内部会走 suppressed LLM + tool loop，而不是直接写 memory 后结束
+- tool 权限显式限制为 `memory_search`、`memory_get`、`context_get`
+- `cron_fire` 产生的入口消息、assistant 中间消息、tool 调用结果、最终 assistant 消息都会持久化为 hidden message
+- 普通 UI 的默认历史查询不会显示这些消息，普通聊天恢复上下文时也不会回灌这些 `cron_fire` 历史
 
 ## 运行时约束
 

@@ -200,6 +200,63 @@ func TestFinalizeRunRecentMessagesRestoresAssistantToolCalls(t *testing.T) {
 	}
 }
 
+func TestFinalizeRunRecentMessagesRestoresMeta(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:conv:cron:1",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "cron_fire", Text: "nightly tick"},
+	}, "sha256:test-cron", now)
+	if err != nil {
+		t.Fatalf("ingest event: %v", err)
+	}
+	if err := db.MarkEventQueued(ctx, result.EventID, now); err != nil {
+		t.Fatalf("mark queued: %v", err)
+	}
+	claimed, ok, err := db.ClaimEvent(ctx, result.EventID, "run_cron_1", now)
+	if err != nil || !ok {
+		t.Fatalf("claim event ok=%v err=%v", ok, err)
+	}
+	if err := db.FinalizeRun(ctx, RunFinalize{
+		RunID:       claimed.RunID,
+		EventID:     claimed.Event.EventID,
+		SessionKey:  claimed.Event.SessionKey,
+		SessionID:   claimed.Event.ActiveSessionID,
+		RunMode:     model.RunModeNoReply,
+		RunStatus:   model.RunStatusCompleted,
+		EventStatus: model.EventStatusSuppressed,
+		Messages: []StoredMessage{{
+			MessageID:  "msg_cron_user",
+			SessionKey: claimed.Event.SessionKey,
+			SessionID:  claimed.Event.ActiveSessionID,
+			RunID:      claimed.RunID,
+			Role:       "user",
+			Content:    "nightly tick",
+			Visible:    false,
+			Meta:       map[string]any{"payload_type": "cron_fire"},
+			CreatedAt:  now,
+		}},
+		Now: now,
+	}); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+
+	history, err := db.RecentMessages(ctx, claimed.Event.ActiveSessionID, 10)
+	if err != nil {
+		t.Fatalf("recent messages: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history message, got %+v", history)
+	}
+	if history[0].Meta["payload_type"] != "cron_fire" {
+		t.Fatalf("expected payload_type meta restored, got %+v", history[0])
+	}
+}
+
 func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)

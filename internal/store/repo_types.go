@@ -84,6 +84,7 @@ type HistoryMessage struct {
 	ToolCalls  []model.ToolCall
 	ToolCallID string
 	ToolName   string
+	Meta       map[string]any
 }
 
 type ClaimedOutbox struct {

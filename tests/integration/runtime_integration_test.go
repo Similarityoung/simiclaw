@@ -122,6 +122,111 @@ func TestNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	}
 }
 
+func TestCronFireSuppressedLLMHiddenAndNoLeakToVisibleHistory(t *testing.T) {
+	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+			FakeToolName:         "memory_search",
+			FakeToolArgsJSON:     `{"query":"alpha","visibility":"auto","kind":"any","top_k":1}`,
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-cron-test",
+		}
+	})
+	if err := os.MkdirAll(filepath.Join(app.Cfg.Workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir memory/public: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(app.Cfg.Workspace, "memory", "public", "MEMORY.md"), []byte("alpha memory\n"), 0o644); err != nil {
+		t.Fatalf("write public memory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(app.Cfg.Workspace, "HEARTBEAT.md"), []byte("- inspect existing memory\n"), 0o644); err != nil {
+		t.Fatalf("write HEARTBEAT.md: %v", err)
+	}
+
+	conversation := model.Conversation{ConversationID: "integration-cron", ChannelType: "dm", ParticipantID: "u1"}
+	cronReq := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-cron:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}
+	cronResp := ingest(t, app, cronReq, http.StatusAccepted)
+	cronEvent := pollEvent(t, app, cronResp.EventID)
+	if cronEvent.Status != model.EventStatusSuppressed {
+		t.Fatalf("expected suppressed cron event, got %+v", cronEvent)
+	}
+	if cronEvent.AssistantReply != "" || cronEvent.OutboxStatus != "" {
+		t.Fatalf("expected no assistant reply or outbox for cron event, got %+v", cronEvent)
+	}
+
+	trace := getRunTrace(t, app, cronEvent.RunID)
+	if trace.OutputText != "roles=system,user,assistant,tool last=nightly heartbeat" {
+		t.Fatalf("expected suppressed cron trace output to reflect tool loop, got %+v", trace)
+	}
+
+	visibleHistory := fetchSessionHistory(t, app, cronResp.SessionKey, true)
+	if len(visibleHistory.Items) != 0 {
+		t.Fatalf("expected default visible history to hide cron messages, got %+v", visibleHistory.Items)
+	}
+
+	allHistory := fetchSessionHistory(t, app, cronResp.SessionKey, false)
+	if len(allHistory.Items) < 4 {
+		t.Fatalf("expected hidden cron chain in full history, got %+v", allHistory.Items)
+	}
+	foundCronTool := false
+	for _, item := range allHistory.Items {
+		if item.Visible {
+			t.Fatalf("expected cron history items to stay hidden, got %+v", allHistory.Items)
+		}
+		if item.Meta["payload_type"] != "cron_fire" {
+			t.Fatalf("expected cron payload_type meta in history, got %+v", allHistory.Items)
+		}
+		if item.Role == "tool" && item.ToolName == "memory_search" {
+			foundCronTool = true
+		}
+	}
+	if !foundCronTool {
+		t.Fatalf("expected hidden cron tool result in history, got %+v", allHistory.Items)
+	}
+
+	normalReq := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-cron:2",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello after cron"},
+	}
+	normalResp := ingest(t, app, normalReq, http.StatusAccepted)
+	normalEvent := pollEvent(t, app, normalResp.EventID)
+	if normalEvent.Status != model.EventStatusProcessed {
+		t.Fatalf("expected processed follow-up event, got %+v", normalEvent)
+	}
+	if normalEvent.AssistantReply != "roles=system,user,assistant,tool last=hello after cron" {
+		t.Fatalf("expected follow-up reply without leaked cron history, got %+v", normalEvent)
+	}
+
+	visibleAfter := fetchSessionHistory(t, app, cronResp.SessionKey, true)
+	if len(visibleAfter.Items) != 3 {
+		t.Fatalf("expected only visible follow-up user/tool/assistant messages, got %+v", visibleAfter.Items)
+	}
+	roles := map[string]bool{}
+	for _, item := range visibleAfter.Items {
+		roles[item.Role] = true
+		if item.Meta["payload_type"] == "cron_fire" {
+			t.Fatalf("expected cron history to stay hidden from visible history, got %+v", visibleAfter.Items)
+		}
+	}
+	if !roles["user"] || !roles["assistant"] || !roles["tool"] {
+		t.Fatalf("expected follow-up visible history to contain user/tool/assistant only, got %+v", visibleAfter.Items)
+	}
+}
+
 func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
 	app := newTestApp(t)
 	body, code := doRequest(t, app, http.MethodGet, "/readyz", nil)
@@ -191,8 +296,16 @@ complete:
 
 func newTestApp(t *testing.T) *bootstrap.App {
 	t.Helper()
+	return newTestAppWithConfig(t, nil)
+}
+
+func newTestAppWithConfig(t *testing.T, mutate func(*config.Config)) *bootstrap.App {
+	t.Helper()
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
+	if mutate != nil {
+		mutate(&cfg)
+	}
 	if err := store.InitWorkspace(cfg.Workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
 		t.Fatalf("init workspace: %v", err)
 	}
@@ -254,6 +367,27 @@ func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace 
 		t.Fatalf("decode run trace: %v", err)
 	}
 	return trace
+}
+
+func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, visibleOnly bool) struct {
+	Items []model.MessageRecord `json:"items"`
+} {
+	t.Helper()
+	path := "/v1/sessions/" + sessionKey + "/history"
+	if !visibleOnly {
+		path += "?visible=false"
+	}
+	body, code := doRequest(t, app, http.MethodGet, path, nil)
+	if code != http.StatusOK {
+		t.Fatalf("history query expected 200, got %d body=%s", code, string(body))
+	}
+	var out struct {
+		Items []model.MessageRecord `json:"items"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	return out
 }
 
 func getSession(t *testing.T, app *bootstrap.App, sessionKey string) model.SessionRecord {
