@@ -72,6 +72,12 @@ type sessionOpenedMsg struct {
 	Err          error
 }
 
+type conversationCheckedMsg struct {
+	Conversation string
+	Available    bool
+	Err          error
+}
+
 type streamStartedMsg struct {
 	Updates <-chan tea.Msg
 	Cancel  context.CancelFunc
@@ -128,6 +134,11 @@ func newModel(streams common.IOStreams, cli *client.Client, opts Options) *model
 
 func (m *modelState) Init() tea.Cmd {
 	if m.opts.NewSession {
+		if m.conversation != "" {
+			m.loading = true
+			m.status = "检查 conversation_id 中…"
+			return checkConversationAvailableCmd(m.client, m.conversation)
+		}
 		m.syncViewport()
 		return nil
 	}
@@ -137,10 +148,9 @@ func (m *modelState) Init() tea.Cmd {
 		return openSessionCmd(m.client, m.sessionKey, m.opts.HistoryLimit)
 	}
 	if m.conversation != "" {
-		m.mode = modeChat
-		m.status = "使用指定 conversation，发送第一条消息后会创建远端 session"
-		m.syncViewport()
-		return nil
+		m.loading = true
+		m.status = "加载会话历史中…"
+		return openConversationCmd(m.client, m.conversation, m.opts.HistoryLimit)
 	}
 	m.selectorBusy = true
 	return loadSessionsCmd(m.client)
@@ -202,6 +212,32 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastError = ""
 		m.syncViewport()
 		return m, nil
+	case conversationCheckedMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.lastError = msg.Err.Error()
+			m.status = "检查 conversation_id 失败"
+			return m, nil
+		}
+		if !msg.Available {
+			m.mode = modeNaming
+			m.messages = nil
+			m.sessionKey = ""
+			m.sessionID = ""
+			m.nameInput.SetValue(msg.Conversation)
+			m.lastError = ""
+			m.status = fmt.Sprintf("conversation_id %s 已存在，请换一个", msg.Conversation)
+			return m, m.nameInput.Focus()
+		}
+		m.mode = modeChat
+		m.messages = nil
+		m.conversation = msg.Conversation
+		m.sessionKey = ""
+		m.sessionID = ""
+		m.lastError = ""
+		m.status = fmt.Sprintf("新会话 %s", msg.Conversation)
+		m.syncViewport()
+		return m, m.input.Focus()
 	case streamStartedMsg:
 		m.cancelActiveStream()
 		m.streamCh = msg.Updates
@@ -284,6 +320,9 @@ func (m *modelState) handleSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *modelState) handleNamingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.loading {
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -295,14 +334,10 @@ func (m *modelState) handleNamingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if conversation == "" {
 			conversation = defaultConversationID()
 		}
-		m.mode = modeChat
-		m.messages = nil
-		m.conversation = conversation
-		m.sessionKey = ""
-		m.sessionID = ""
-		m.status = fmt.Sprintf("新会话 %s", conversation)
-		m.syncViewport()
-		return m, m.input.Focus()
+		m.loading = true
+		m.lastError = ""
+		m.status = "检查 conversation_id 中…"
+		return m, checkConversationAvailableCmd(m.client, conversation)
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
@@ -615,6 +650,66 @@ func openSessionCmd(cli *client.Client, sessionKey string, historyLimit int) tea
 	}
 }
 
+func openConversationCmd(cli *client.Client, conversation string, historyLimit int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		session, err := findConversationSession(ctx, cli, conversation)
+		if err != nil {
+			return sessionOpenedMsg{Err: err}
+		}
+		if session == nil {
+			return sessionOpenedMsg{Conversation: conversation}
+		}
+		history, err := cli.GetSessionHistory(ctx, session.SessionKey, "", historyLimit, true)
+		if err != nil {
+			return sessionOpenedMsg{Err: err}
+		}
+		return sessionOpenedMsg{Session: session, Messages: history.Items}
+	}
+}
+
+func checkConversationAvailableCmd(cli *client.Client, conversation string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		session, err := findConversationSession(ctx, cli, conversation)
+		if err != nil {
+			return conversationCheckedMsg{Conversation: conversation, Err: err}
+		}
+		return conversationCheckedMsg{Conversation: conversation, Available: session == nil}
+	}
+}
+
+func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*model.SessionRecord, error) {
+	conversation = strings.TrimSpace(conversation)
+	if conversation == "" {
+		return nil, nil
+	}
+	cursor := ""
+	for {
+		page, err := cli.ListSessions(ctx, "", conversation, cursor, 200)
+		if err != nil {
+			return nil, err
+		}
+		for i := range page.Items {
+			item := page.Items[i]
+			if item.ConversationID != conversation {
+				continue
+			}
+			if item.ChannelType != "dm" || item.ParticipantID != fixedParticipantID {
+				continue
+			}
+			matched := item
+			return &matched, nil
+		}
+		if page.NextCursor == "" {
+			return nil, nil
+		}
+		cursor = page.NextCursor
+	}
+}
+
 func startSendCmd(cli *client.Client, req model.IngestRequest, noStream bool) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan tea.Msg, 64)
@@ -697,7 +792,8 @@ func isTerminalFrame(frame model.ChatStreamEvent) bool {
 }
 
 func defaultConversationID() string {
-	return "cli_" + time.Now().UTC().Format("20060102T150405Z")
+	now := time.Now().UTC()
+	return fmt.Sprintf("cli_%s_%09d", now.Format("20060102T150405Z"), now.Nanosecond())
 }
 
 func nonEmpty(v, fallback string) string {
