@@ -56,6 +56,7 @@ func RegisterMemoryGet(reg *Registry) {
 }
 
 func RegisterBuiltins(reg *Registry) {
+	RegisterContextGet(reg)
 	RegisterMemorySearch(reg)
 	RegisterMemoryGet(reg)
 }
