@@ -48,6 +48,9 @@ func run(opts Options, streams common.IOStreams) error {
 	if err := store.InitWorkspace(opts.Workspace, opts.ForceNewRuntime, config.Default().DBBusyTimeout.Duration); err != nil {
 		return err
 	}
+	if err := scaffoldWorkspaceFiles(opts.Workspace); err != nil {
+		return err
+	}
 	out := streams.Out
 	if out == nil {
 		out = os.Stdout

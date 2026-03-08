@@ -9,6 +9,16 @@ import (
 
 const DefaultMaxGetChars = 8000
 
+var allowedRootFiles = map[string]struct{}{
+	"AGENTS.md":    {},
+	"SOUL.md":      {},
+	"IDENTITY.md":  {},
+	"USER.md":      {},
+	"TOOLS.md":     {},
+	"BOOTSTRAP.md": {},
+	"HEARTBEAT.md": {},
+}
+
 func ResolvePath(workspace, rawPath string) (string, string, error) {
 	p := strings.TrimSpace(rawPath)
 	if p == "" {
@@ -119,8 +129,7 @@ func Get(workspace string, args GetArgs, maxChars int) (GetResult, error) {
 }
 
 func isAllowedPath(rel string) bool {
-	switch rel {
-	case "AGENTS.md", "IDENTITY.md", "USER.md":
+	if _, ok := allowedRootFiles[rel]; ok {
 		return true
 	}
 	if strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, "/SKILL.md") {
