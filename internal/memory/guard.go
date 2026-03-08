@@ -42,6 +42,14 @@ func classifyMemoryPath(rel string) (scope string, allowed bool) {
 	switch {
 	case rel == "MEMORY.md":
 		return "public", true
+	case rel == "memory/public/MEMORY.md":
+		return "public", true
+	case rel == "memory/private/MEMORY.md":
+		return "private", true
+	case strings.HasPrefix(rel, "memory/public/daily/") && strings.HasSuffix(rel, ".md"):
+		return "public", true
+	case strings.HasPrefix(rel, "memory/private/daily/") && strings.HasSuffix(rel, ".md"):
+		return "private", true
 	case strings.HasPrefix(rel, "memory/") && strings.HasSuffix(rel, ".md"):
 		if strings.HasPrefix(rel, "memory/public/") {
 			return "public", true

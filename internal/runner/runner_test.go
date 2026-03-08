@@ -2,8 +2,11 @@ package runner
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -101,9 +104,63 @@ func TestProviderRunnerRecoversToolPanicAndStreamsSanitizedToolEvents(t *testing
 	}
 }
 
+func TestProviderRunnerNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
+	r, workspace := newTestRunnerWithWorkspace(t, config.Default().LLM, nil)
+
+	dmEvent := model.InternalEvent{
+		EventID:         "evt_flush",
+		Conversation:    model.Conversation{ConversationID: "conv-dm", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "tenant:dm:u1",
+		ActiveSessionID: "ses_flush",
+		Payload:         model.EventPayload{Type: "memory_flush", Text: "flush note"},
+	}
+	if _, err := r.Run(context.Background(), dmEvent, 1, nil); err != nil {
+		t.Fatalf("Run memory_flush returned error: %v", err)
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	privateDaily := filepath.Join(workspace, "memory", "private", "daily", day+".md")
+	data, err := os.ReadFile(privateDaily)
+	if err != nil {
+		t.Fatalf("read private daily: %v", err)
+	}
+	if !strings.Contains(string(data), "flush note") {
+		t.Fatalf("expected flush note in private daily file, got %q", string(data))
+	}
+
+	groupEvent := model.InternalEvent{
+		EventID:         "evt_compaction",
+		Conversation:    model.Conversation{ConversationID: "conv-group", ChannelType: "group"},
+		SessionKey:      "tenant:group:1",
+		ActiveSessionID: "ses_compaction",
+		Payload:         model.EventPayload{Type: "compaction", Text: "group summary"},
+	}
+	if _, err := r.Run(context.Background(), groupEvent, 1, nil); err != nil {
+		t.Fatalf("Run compaction returned error: %v", err)
+	}
+	publicCurated := filepath.Join(workspace, "memory", "public", "MEMORY.md")
+	curated, err := os.ReadFile(publicCurated)
+	if err != nil {
+		t.Fatalf("read public curated: %v", err)
+	}
+	if !strings.Contains(string(curated), "group summary") {
+		t.Fatalf("expected group summary in public curated file, got %q", string(curated))
+	}
+}
+
 func newTestRunner(t *testing.T, llm config.LLMConfig, registry *tools.Registry) *ProviderRunner {
 	t.Helper()
 	workspace := t.TempDir()
+	return newTestRunnerAtWorkspace(t, workspace, llm, registry)
+}
+
+func newTestRunnerWithWorkspace(t *testing.T, llm config.LLMConfig, registry *tools.Registry) (*ProviderRunner, string) {
+	t.Helper()
+	workspace := t.TempDir()
+	return newTestRunnerAtWorkspace(t, workspace, llm, registry), workspace
+}
+
+func newTestRunnerAtWorkspace(t *testing.T, workspace string, llm config.LLMConfig, registry *tools.Registry) *ProviderRunner {
+	t.Helper()
 	if err := store.InitWorkspace(workspace, false, config.Default().DBBusyTimeout.Duration); err != nil {
 		t.Fatalf("InitWorkspace: %v", err)
 	}

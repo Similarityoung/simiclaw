@@ -233,29 +233,56 @@ func TestWriterDailyAndCurated(t *testing.T) {
 	w := NewWriter(workspace)
 	now := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
 
-	dailyPath, err := w.WriteDaily("test", "记住我喜欢 Go", now)
+	dailyPath, err := w.WriteDaily("test", "记住我喜欢 Go", now, VisibilityPrivate)
 	if err != nil {
 		t.Fatalf("write daily: %v", err)
 	}
-	if dailyPath != "memory/2026-03-05.md" {
+	if dailyPath != "memory/private/daily/2026-03-05.md" {
 		t.Fatalf("unexpected daily path: %s", dailyPath)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, filepath.FromSlash(dailyPath))); err != nil {
 		t.Fatalf("daily file should exist: %v", err)
 	}
 
-	curatedPath, err := w.WriteCurated("我喜欢 Go", now)
+	curatedPath, err := w.WriteCurated("我喜欢 Go", now, VisibilityPublic)
 	if err != nil {
 		t.Fatalf("write curated: %v", err)
 	}
-	if curatedPath != "MEMORY.md" {
+	if curatedPath != "memory/public/MEMORY.md" {
 		t.Fatalf("unexpected curated path: %s", curatedPath)
 	}
-	curatedData, err := os.ReadFile(filepath.Join(workspace, curatedPath))
+	curatedData, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(curatedPath)))
 	if err != nil {
 		t.Fatalf("read curated: %v", err)
 	}
 	if !strings.Contains(string(curatedData), "我喜欢 Go") {
 		t.Fatalf("curated content mismatch: %s", string(curatedData))
+	}
+}
+
+func TestGetAllowsLegacyRootCuratedPath(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("legacy\n"), 0o644); err != nil {
+		t.Fatalf("write legacy curated: %v", err)
+	}
+
+	res, err := Get(workspace, GetArgs{Path: "MEMORY.md", Lines: []int{1, 1}}, DefaultMaxGetChars)
+	if err != nil {
+		t.Fatalf("get legacy curated: %v", err)
+	}
+	if res.Path != "MEMORY.md" {
+		t.Fatalf("unexpected legacy path: %s", res.Path)
+	}
+	if !strings.Contains(res.Content, "legacy") {
+		t.Fatalf("unexpected legacy content: %q", res.Content)
+	}
+}
+
+func TestVisibilityForChannel(t *testing.T) {
+	if got := VisibilityForChannel("dm"); got != VisibilityPrivate {
+		t.Fatalf("dm should map to private visibility, got %q", got)
+	}
+	if got := VisibilityForChannel("group"); got != VisibilityPublic {
+		t.Fatalf("group should map to public visibility, got %q", got)
 	}
 }

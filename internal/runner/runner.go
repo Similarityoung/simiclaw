@@ -101,11 +101,12 @@ func (r *ProviderRunner) runNoReply(event model.InternalEvent, now time.Time, tr
 	if note == "" {
 		note = event.Payload.Type
 	}
+	visibility := memory.VisibilityForChannel(event.Conversation.ChannelType)
 	switch event.Payload.Type {
 	case "memory_flush", "cron_fire":
-		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now)
+		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now, visibility)
 	case "compaction":
-		_, _ = r.writer.WriteCurated(note, now)
+		_, _ = r.writer.WriteCurated(note, now, visibility)
 	}
 	trace.OutputText = note
 	trace.FinishedAt = time.Now().UTC()
