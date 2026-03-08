@@ -12,15 +12,45 @@ type Writer struct {
 	workspace string
 }
 
+const (
+	VisibilityPublic  = "public"
+	VisibilityPrivate = "private"
+)
+
 func NewWriter(workspace string) *Writer {
 	return &Writer{workspace: workspace}
 }
 
-func (w *Writer) WriteDaily(source, text string, now time.Time) (string, error) {
+func VisibilityForChannel(channelType string) string {
+	if strings.EqualFold(strings.TrimSpace(channelType), "dm") {
+		return VisibilityPrivate
+	}
+	return VisibilityPublic
+}
+
+func NormalizeVisibility(visibility string) string {
+	if strings.EqualFold(strings.TrimSpace(visibility), VisibilityPrivate) {
+		return VisibilityPrivate
+	}
+	return VisibilityPublic
+}
+
+func DailyPath(visibility string, now time.Time) string {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	rel := filepath.ToSlash(filepath.Join("memory", now.Format("2006-01-02")+".md"))
+	return filepath.ToSlash(filepath.Join("memory", NormalizeVisibility(visibility), "daily", now.Format("2006-01-02")+".md"))
+}
+
+func CuratedPath(visibility string) string {
+	return filepath.ToSlash(filepath.Join("memory", NormalizeVisibility(visibility), "MEMORY.md"))
+}
+
+func (w *Writer) WriteDaily(source, text string, now time.Time, visibility string) (string, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	rel := DailyPath(visibility, now)
 	abs := filepath.Join(w.workspace, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return "", err
@@ -40,11 +70,11 @@ func (w *Writer) WriteDaily(source, text string, now time.Time) (string, error) 
 	return rel, nil
 }
 
-func (w *Writer) WriteCurated(text string, now time.Time) (string, error) {
+func (w *Writer) WriteCurated(text string, now time.Time, visibility string) (string, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	rel := "MEMORY.md"
+	rel := CuratedPath(visibility)
 	abs := filepath.Join(w.workspace, rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return "", err

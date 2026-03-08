@@ -15,7 +15,7 @@ func (db *DB) RecentMessages(ctx context.Context, sessionID string, limit int) (
 	}
 	rows, err := db.reader.QueryContext(
 		ctx,
-		`SELECT role, content, tool_call_id, tool_name
+		`SELECT role, content, tool_call_id, tool_name, meta_json
 		 FROM messages
 		 WHERE session_id = ?
 		 ORDER BY created_at DESC, fts_rowid DESC
@@ -30,9 +30,11 @@ func (db *DB) RecentMessages(ctx context.Context, sessionID string, limit int) (
 	var out []HistoryMessage
 	for rows.Next() {
 		var msg HistoryMessage
-		if err := rows.Scan(&msg.Role, &msg.Content, &msg.ToolCallID, &msg.ToolName); err != nil {
+		var metaJSON string
+		if err := rows.Scan(&msg.Role, &msg.Content, &msg.ToolCallID, &msg.ToolName, &metaJSON); err != nil {
 			return nil, err
 		}
+		_, msg.ToolCalls = decodeStoredMeta(metaJSON)
 		out = append(out, msg)
 	}
 	if err := rows.Err(); err != nil {
@@ -143,9 +145,7 @@ func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, bef
 		if strings.TrimSpace(toolResultJSON) != "" && toolResultJSON != "null" && toolResultJSON != "{}" {
 			_ = json.Unmarshal([]byte(toolResultJSON), &rec.ToolResult)
 		}
-		if strings.TrimSpace(metaJSON) != "" && metaJSON != "null" && metaJSON != "{}" {
-			_ = json.Unmarshal([]byte(metaJSON), &rec.Meta)
-		}
+		rec.Meta, _ = decodeStoredMeta(metaJSON)
 		out = append(out, rec)
 	}
 	if err := rows.Err(); err != nil {

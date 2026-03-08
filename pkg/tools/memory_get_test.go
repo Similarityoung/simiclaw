@@ -113,9 +113,10 @@ func TestMemorySearchDisabledMatchesOutput(t *testing.T) {
 		Workspace:    workspace,
 		Conversation: model.Conversation{ChannelType: "group"},
 	}, "memory_search", map[string]any{
-		"query": "query-hit",
-		"scope": "auto",
-		"top_k": 1,
+		"query":      "query-hit",
+		"visibility": "auto",
+		"kind":       "any",
+		"top_k":      1,
 	})
 
 	if res.Error != nil {

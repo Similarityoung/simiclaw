@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/memory"
+	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -31,6 +32,7 @@ type OutputMessage struct {
 	Role       string
 	Content    string
 	Visible    bool
+	ToolCalls  []model.ToolCall
 	ToolCallID string
 	ToolName   string
 	ToolArgs   map[string]any
@@ -52,6 +54,7 @@ type ProviderRunner struct {
 	registry     *tools.Registry
 	providers    *provider.Factory
 	writer       *memory.Writer
+	prompts      *prompt.Builder
 	historyLimit int
 }
 
@@ -68,6 +71,7 @@ func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry,
 		registry:     registry,
 		providers:    providers,
 		writer:       memory.NewWriter(workspace),
+		prompts:      prompt.NewBuilder(workspace),
 		historyLimit: 20,
 	}
 }
@@ -98,11 +102,12 @@ func (r *ProviderRunner) runNoReply(event model.InternalEvent, now time.Time, tr
 	if note == "" {
 		note = event.Payload.Type
 	}
+	visibility := memory.VisibilityForChannel(event.Conversation.ChannelType)
 	switch event.Payload.Type {
 	case "memory_flush", "cron_fire":
-		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now)
+		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now, visibility)
 	case "compaction":
-		_, _ = r.writer.WriteCurated(note, now)
+		_, _ = r.writer.WriteCurated(note, now, visibility)
 	}
 	trace.OutputText = note
 	trace.FinishedAt = time.Now().UTC()
@@ -151,14 +156,16 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		Content: strings.TrimSpace(event.Payload.Text),
 		Visible: true,
 	}}
-	chatMessages := make([]provider.ChatMessage, 0, len(history)+1)
-	for _, msg := range history {
-		chatMessages = append(chatMessages, provider.ChatMessage{
-			Role:       msg.Role,
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
-		})
-	}
+	systemPrompt := r.prompts.Build(prompt.BuildInput{Context: prompt.RunContext{
+		Now:          now,
+		Conversation: event.Conversation,
+		SessionKey:   event.SessionKey,
+		SessionID:    event.ActiveSessionID,
+		PayloadType:  event.Payload.Type,
+	}})
+	chatMessages := make([]provider.ChatMessage, 0, len(history)+2)
+	chatMessages = append(chatMessages, provider.ChatMessage{Role: "system", Content: systemPrompt})
+	chatMessages = append(chatMessages, historyToChatMessages(history)...)
 	chatMessages = append(chatMessages, provider.ChatMessage{Role: "user", Content: strings.TrimSpace(event.Payload.Text)})
 
 	toolDefs := make([]provider.ToolDefinition, 0)
@@ -207,9 +214,17 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 			break
 		}
 
+		assistantToolMessage := OutputMessage{
+			Role:      "assistant",
+			Content:   strings.TrimSpace(last.Text),
+			Visible:   false,
+			ToolCalls: cloneToolCalls(last.ToolCalls),
+		}
+		messages = append(messages, assistantToolMessage)
 		chatMessages = append(chatMessages, provider.ChatMessage{
 			Role:      "assistant",
-			ToolCalls: last.ToolCalls,
+			Content:   strings.TrimSpace(last.Text),
+			ToolCalls: cloneToolCalls(last.ToolCalls),
 		})
 		for _, call := range last.ToolCalls {
 			displayArgs, argsTruncated := sanitizeDisplayMap(call.Args)
@@ -289,6 +304,69 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		AssistantReply: reply,
 		SuppressOutput: false,
 	}, nil
+}
+
+func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessage {
+	out := make([]provider.ChatMessage, 0, len(history))
+	pendingToolCalls := map[string]bool{}
+	for _, msg := range history {
+		switch msg.Role {
+		case "assistant":
+			if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
+			out = append(out, provider.ChatMessage{
+				Role:      msg.Role,
+				Content:   msg.Content,
+				ToolCalls: cloneToolCalls(msg.ToolCalls),
+			})
+			for _, call := range msg.ToolCalls {
+				if strings.TrimSpace(call.ToolCallID) == "" {
+					continue
+				}
+				pendingToolCalls[call.ToolCallID] = true
+			}
+		case "tool":
+			if strings.TrimSpace(msg.ToolCallID) == "" || !pendingToolCalls[msg.ToolCallID] {
+				continue
+			}
+			out = append(out, provider.ChatMessage{
+				Role:       msg.Role,
+				Content:    msg.Content,
+				ToolCallID: msg.ToolCallID,
+			})
+			delete(pendingToolCalls, msg.ToolCallID)
+		default:
+			out = append(out, provider.ChatMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID})
+		}
+	}
+	return out
+}
+
+func cloneToolCalls(in []model.ToolCall) []model.ToolCall {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.ToolCall, 0, len(in))
+	for _, call := range in {
+		cloned := call
+		if call.Args != nil {
+			cloned.Args = cloneMap(call.Args)
+		}
+		out = append(out, cloned)
+	}
+	return out
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func nextID(prefix string, now time.Time) string {

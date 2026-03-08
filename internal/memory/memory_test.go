@@ -10,22 +10,22 @@ import (
 	"unicode/utf8"
 )
 
-func TestSearchScopeAutoByChannelType(t *testing.T) {
+func TestSearchVisibilityAutoByChannelType(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "memory", "private"), 0o755); err != nil {
 		t.Fatalf("mkdir private: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public", "daily"), 0o755); err != nil {
 		t.Fatalf("mkdir public: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "memory", "private", "p.md"), []byte("我喜欢 Go\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "private", "MEMORY.md"), []byte("我喜欢 Go\n"), 0o644); err != nil {
 		t.Fatalf("write private: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "g.md"), []byte("团队喜欢 Rust\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "daily", "2026-03-05.md"), []byte("团队喜欢 Rust\n"), 0o644); err != nil {
 		t.Fatalf("write public: %v", err)
 	}
 
-	dmRes, err := Search(workspace, SearchArgs{Query: "喜欢", Scope: "auto", ChannelType: "dm", TopK: 10})
+	dmRes, err := Search(workspace, SearchArgs{Query: "喜欢", Visibility: "auto", Kind: "any", ChannelType: "dm", TopK: 10})
 	if err != nil {
 		t.Fatalf("search dm: %v", err)
 	}
@@ -33,12 +33,12 @@ func TestSearchScopeAutoByChannelType(t *testing.T) {
 		t.Fatalf("dm auto should include private+public hits, got=%d", len(dmRes.Hits))
 	}
 
-	groupRes, err := Search(workspace, SearchArgs{Query: "喜欢", Scope: "auto", ChannelType: "group", TopK: 10})
+	groupRes, err := Search(workspace, SearchArgs{Query: "喜欢", Visibility: "auto", Kind: "any", ChannelType: "group", TopK: 10})
 	if err != nil {
 		t.Fatalf("search group: %v", err)
 	}
 	for _, hit := range groupRes.Hits {
-		if hit.Scope != "public" {
+		if hit.Visibility != VisibilityPublic {
 			t.Fatalf("group auto should include only public hits, got hit=%+v", hit)
 		}
 	}
@@ -58,7 +58,8 @@ func TestSearchGroupIgnoresMemoryMDSymlinkToPrivate(t *testing.T) {
 
 	groupRes, err := Search(workspace, SearchArgs{
 		Query:       "secret",
-		Scope:       "auto",
+		Visibility:  "auto",
+		Kind:        "any",
 		ChannelType: "group",
 		TopK:        10,
 	})
@@ -71,7 +72,8 @@ func TestSearchGroupIgnoresMemoryMDSymlinkToPrivate(t *testing.T) {
 
 	dmRes, err := Search(workspace, SearchArgs{
 		Query:       "secret",
-		Scope:       "auto",
+		Visibility:  "auto",
+		Kind:        "any",
 		ChannelType: "dm",
 		TopK:        10,
 	})
@@ -96,7 +98,8 @@ func TestSearchPreviewIsUTF8Safe(t *testing.T) {
 
 	res, err := Search(workspace, SearchArgs{
 		Query:       "你",
-		Scope:       "public",
+		Visibility:  "public",
+		Kind:        "any",
 		ChannelType: "group",
 		TopK:        1,
 	})
@@ -116,6 +119,62 @@ func TestSearchPreviewIsUTF8Safe(t *testing.T) {
 	}
 	if len([]rune(preview)) != 123 {
 		t.Fatalf("preview rune length should be 123 (120+...), got=%d", len([]rune(preview)))
+	}
+}
+
+func TestSearchVisibilityAndKindMatrix(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public", "daily"), 0o755); err != nil {
+		t.Fatalf("mkdir public daily: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "private", "daily"), 0o755); err != nil {
+		t.Fatalf("mkdir private daily: %v", err)
+	}
+	write := func(rel, content string) {
+		t.Helper()
+		abs := filepath.Join(workspace, filepath.FromSlash(rel))
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("memory/public/MEMORY.md", "shared token\n")
+	write("memory/public/daily/2026-03-05.md", "shared token\n")
+	write("memory/private/MEMORY.md", "shared token\n")
+	write("memory/private/daily/2026-03-05.md", "shared token\n")
+
+	tests := []struct {
+		name        string
+		channelType string
+		visibility  string
+		kind        string
+		wantCount   int
+		wantKinds   map[string]bool
+		wantVis     map[string]bool
+	}{
+		{name: "group public any", channelType: "group", visibility: "public", kind: "any", wantCount: 2, wantKinds: map[string]bool{"curated": true, "daily": true}, wantVis: map[string]bool{VisibilityPublic: true}},
+		{name: "group private blocked", channelType: "group", visibility: "private", kind: "any", wantCount: 0},
+		{name: "dm private curated", channelType: "dm", visibility: "private", kind: "curated", wantCount: 1, wantKinds: map[string]bool{"curated": true}, wantVis: map[string]bool{VisibilityPrivate: true}},
+		{name: "dm auto daily", channelType: "dm", visibility: "auto", kind: "daily", wantCount: 2, wantKinds: map[string]bool{"daily": true}, wantVis: map[string]bool{VisibilityPrivate: true, VisibilityPublic: true}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := Search(workspace, SearchArgs{Query: "shared token", Visibility: tc.visibility, Kind: tc.kind, ChannelType: tc.channelType, TopK: 10})
+			if err != nil {
+				t.Fatalf("search: %v", err)
+			}
+			if len(res.Hits) != tc.wantCount {
+				t.Fatalf("unexpected hit count=%d hits=%+v", len(res.Hits), res.Hits)
+			}
+			for _, hit := range res.Hits {
+				if tc.wantKinds != nil && !tc.wantKinds[hit.Kind] {
+					t.Fatalf("unexpected kind %q in hit %+v", hit.Kind, hit)
+				}
+				if tc.wantVis != nil && !tc.wantVis[hit.Visibility] {
+					t.Fatalf("unexpected visibility %q in hit %+v", hit.Visibility, hit)
+				}
+			}
+		})
 	}
 }
 
@@ -233,29 +292,56 @@ func TestWriterDailyAndCurated(t *testing.T) {
 	w := NewWriter(workspace)
 	now := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
 
-	dailyPath, err := w.WriteDaily("test", "记住我喜欢 Go", now)
+	dailyPath, err := w.WriteDaily("test", "记住我喜欢 Go", now, VisibilityPrivate)
 	if err != nil {
 		t.Fatalf("write daily: %v", err)
 	}
-	if dailyPath != "memory/2026-03-05.md" {
+	if dailyPath != "memory/private/daily/2026-03-05.md" {
 		t.Fatalf("unexpected daily path: %s", dailyPath)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, filepath.FromSlash(dailyPath))); err != nil {
 		t.Fatalf("daily file should exist: %v", err)
 	}
 
-	curatedPath, err := w.WriteCurated("我喜欢 Go", now)
+	curatedPath, err := w.WriteCurated("我喜欢 Go", now, VisibilityPublic)
 	if err != nil {
 		t.Fatalf("write curated: %v", err)
 	}
-	if curatedPath != "MEMORY.md" {
+	if curatedPath != "memory/public/MEMORY.md" {
 		t.Fatalf("unexpected curated path: %s", curatedPath)
 	}
-	curatedData, err := os.ReadFile(filepath.Join(workspace, curatedPath))
+	curatedData, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(curatedPath)))
 	if err != nil {
 		t.Fatalf("read curated: %v", err)
 	}
 	if !strings.Contains(string(curatedData), "我喜欢 Go") {
 		t.Fatalf("curated content mismatch: %s", string(curatedData))
+	}
+}
+
+func TestGetAllowsLegacyRootCuratedPath(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("legacy\n"), 0o644); err != nil {
+		t.Fatalf("write legacy curated: %v", err)
+	}
+
+	res, err := Get(workspace, GetArgs{Path: "MEMORY.md", Lines: []int{1, 1}}, DefaultMaxGetChars)
+	if err != nil {
+		t.Fatalf("get legacy curated: %v", err)
+	}
+	if res.Path != "MEMORY.md" {
+		t.Fatalf("unexpected legacy path: %s", res.Path)
+	}
+	if !strings.Contains(res.Content, "legacy") {
+		t.Fatalf("unexpected legacy content: %q", res.Content)
+	}
+}
+
+func TestVisibilityForChannel(t *testing.T) {
+	if got := VisibilityForChannel("dm"); got != VisibilityPrivate {
+		t.Fatalf("dm should map to private visibility, got %q", got)
+	}
+	if got := VisibilityForChannel("group"); got != VisibilityPublic {
+		t.Fatalf("group should map to public visibility, got %q", got)
 	}
 }

@@ -19,61 +19,79 @@ var (
 )
 
 type MemoryFile struct {
-	Path  string
-	Scope string
+	Path       string
+	Visibility string
+	Kind       string
 }
 
-func allowedScopesForChannel(channelType string) map[string]bool {
+type PathInfo struct {
+	Visibility string
+	Kind       string
+}
+
+func allowedVisibilitiesForChannel(channelType string) map[string]bool {
 	switch strings.ToLower(strings.TrimSpace(channelType)) {
 	case "dm":
-		return map[string]bool{"private": true, "public": true}
+		return map[string]bool{VisibilityPrivate: true, VisibilityPublic: true}
 	default:
-		return map[string]bool{"public": true}
+		return map[string]bool{VisibilityPublic: true}
 	}
 }
 
-// CanAccessScope returns whether a conversation channel can read a memory scope.
-func CanAccessScope(channelType, scope string) bool {
-	allowed := allowedScopesForChannel(channelType)
-	return allowed[strings.ToLower(strings.TrimSpace(scope))]
+func CanAccessVisibility(channelType, visibility string) bool {
+	allowed := allowedVisibilitiesForChannel(channelType)
+	return allowed[strings.ToLower(strings.TrimSpace(visibility))]
 }
 
-func classifyMemoryPath(rel string) (scope string, allowed bool) {
+// CanAccessScope keeps the existing name for callers that still think in scope/public/private terms.
+func CanAccessScope(channelType, scope string) bool {
+	return CanAccessVisibility(channelType, scope)
+}
+
+func describeMemoryPath(rel string) (info PathInfo, allowed bool) {
 	switch {
 	case rel == "MEMORY.md":
-		return "public", true
+		return PathInfo{Visibility: VisibilityPublic, Kind: "curated"}, true
+	case rel == "memory/public/MEMORY.md":
+		return PathInfo{Visibility: VisibilityPublic, Kind: "curated"}, true
+	case rel == "memory/private/MEMORY.md":
+		return PathInfo{Visibility: VisibilityPrivate, Kind: "curated"}, true
+	case strings.HasPrefix(rel, "memory/public/daily/") && strings.HasSuffix(rel, ".md"):
+		return PathInfo{Visibility: VisibilityPublic, Kind: "daily"}, true
+	case strings.HasPrefix(rel, "memory/private/daily/") && strings.HasSuffix(rel, ".md"):
+		return PathInfo{Visibility: VisibilityPrivate, Kind: "daily"}, true
+	case strings.HasPrefix(rel, "memory/public/") && strings.HasSuffix(rel, ".md"):
+		return PathInfo{Visibility: VisibilityPublic, Kind: "daily"}, true
+	case strings.HasPrefix(rel, "memory/private/") && strings.HasSuffix(rel, ".md"):
+		return PathInfo{Visibility: VisibilityPrivate, Kind: "daily"}, true
 	case strings.HasPrefix(rel, "memory/") && strings.HasSuffix(rel, ".md"):
-		if strings.HasPrefix(rel, "memory/public/") {
-			return "public", true
-		}
-		return "private", true
+		return PathInfo{Visibility: VisibilityPrivate, Kind: "daily"}, true
 	default:
-		return "", false
+		return PathInfo{}, false
 	}
 }
 
-// ResolvePath validates a memory path and returns normalized relative + absolute path.
-func ResolvePath(workspace, rawPath string) (string, string, string, error) {
+func ResolvePathInfo(workspace, rawPath string) (string, string, PathInfo, error) {
 	p := strings.TrimSpace(rawPath)
 	if p == "" {
-		return "", "", "", fmt.Errorf("%w: empty path", ErrPathDenied)
+		return "", "", PathInfo{}, fmt.Errorf("%w: empty path", ErrPathDenied)
 	}
 
 	clean := filepath.Clean(filepath.FromSlash(p))
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
-		return "", "", "", fmt.Errorf("%w: outside workspace", ErrPathDenied)
+		return "", "", PathInfo{}, fmt.Errorf("%w: outside workspace", ErrPathDenied)
 	}
 
 	rel := filepath.ToSlash(clean)
-	scope, allowed := classifyMemoryPath(rel)
+	info, allowed := describeMemoryPath(rel)
 	if !allowed {
-		return "", "", "", fmt.Errorf("%w: path not in whitelist", ErrPathDenied)
+		return "", "", PathInfo{}, fmt.Errorf("%w: path not in whitelist", ErrPathDenied)
 	}
 
 	abs := filepath.Join(workspace, clean)
 	workspaceAbs, err := filepath.Abs(workspace)
 	if err != nil {
-		return "", "", "", err
+		return "", "", PathInfo{}, err
 	}
 	workspaceReal := workspaceAbs
 	if resolvedWorkspace, err := filepath.EvalSymlinks(workspaceAbs); err == nil {
@@ -81,44 +99,52 @@ func ResolvePath(workspace, rawPath string) (string, string, string, error) {
 	}
 	absPath, err := filepath.Abs(abs)
 	if err != nil {
-		return "", "", "", err
+		return "", "", PathInfo{}, err
 	}
 	inside, err := isWithinWorkspace(workspaceAbs, absPath)
 	if err != nil {
-		return "", "", "", err
+		return "", "", PathInfo{}, err
 	}
 	if !inside {
-		return "", "", "", fmt.Errorf("%w: outside workspace", ErrPathDenied)
+		return "", "", PathInfo{}, fmt.Errorf("%w: outside workspace", ErrPathDenied)
 	}
 
-	// Prevent symlink escapes: resolved target must stay inside workspace.
 	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
 		resolvedAbs, err := filepath.Abs(resolved)
 		if err != nil {
-			return "", "", "", err
+			return "", "", PathInfo{}, err
 		}
 		inside, err := isWithinWorkspace(workspaceReal, resolvedAbs)
 		if err != nil {
-			return "", "", "", err
+			return "", "", PathInfo{}, err
 		}
 		if !inside {
-			return "", "", "", fmt.Errorf("%w: symlink escapes workspace", ErrPathDenied)
+			return "", "", PathInfo{}, fmt.Errorf("%w: symlink escapes workspace", ErrPathDenied)
 		}
 		resolvedRel, err := filepath.Rel(workspaceReal, resolvedAbs)
 		if err != nil {
-			return "", "", "", err
+			return "", "", PathInfo{}, err
 		}
 		resolvedRel = filepath.ToSlash(filepath.Clean(resolvedRel))
-		resolvedScope, resolvedAllowed := classifyMemoryPath(resolvedRel)
+		resolvedInfo, resolvedAllowed := describeMemoryPath(resolvedRel)
 		if !resolvedAllowed {
-			return "", "", "", fmt.Errorf("%w: symlink target not in whitelist", ErrPathDenied)
+			return "", "", PathInfo{}, fmt.Errorf("%w: symlink target not in whitelist", ErrPathDenied)
 		}
-		scope = resolvedScope
+		info = resolvedInfo
 	} else if !os.IsNotExist(err) {
-		return "", "", "", err
+		return "", "", PathInfo{}, err
 	}
 
-	return rel, absPath, scope, nil
+	return rel, absPath, info, nil
+}
+
+// ResolvePath validates a memory path and returns normalized relative + absolute path.
+func ResolvePath(workspace, rawPath string) (string, string, string, error) {
+	rel, abs, info, err := ResolvePathInfo(workspace, rawPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	return rel, abs, info.Visibility, nil
 }
 
 func isWithinWorkspace(workspaceAbs, candidateAbs string) (bool, error) {
@@ -132,7 +158,6 @@ func isWithinWorkspace(workspaceAbs, candidateAbs string) (bool, error) {
 	return true, nil
 }
 
-// ListFiles returns all searchable memory markdown files.
 func ListFiles(workspace string) ([]MemoryFile, error) {
 	out := make([]MemoryFile, 0, 16)
 
@@ -152,11 +177,11 @@ func ListFiles(workspace string) ([]MemoryFile, error) {
 			if err != nil {
 				return nil
 			}
-			rel, _, scope, err := ResolvePath(workspace, filepath.ToSlash(relPath))
+			rel, _, info, err := ResolvePathInfo(workspace, filepath.ToSlash(relPath))
 			if err != nil {
 				return nil
 			}
-			out = append(out, MemoryFile{Path: rel, Scope: scope})
+			out = append(out, MemoryFile{Path: rel, Visibility: info.Visibility, Kind: info.Kind})
 			return nil
 		})
 		if err != nil {
@@ -165,8 +190,8 @@ func ListFiles(workspace string) ([]MemoryFile, error) {
 	}
 
 	if stat, err := os.Stat(filepath.Join(workspace, "MEMORY.md")); err == nil && !stat.IsDir() {
-		if rel, _, scope, err := ResolvePath(workspace, "MEMORY.md"); err == nil {
-			out = append(out, MemoryFile{Path: rel, Scope: scope})
+		if rel, _, info, err := ResolvePathInfo(workspace, "MEMORY.md"); err == nil {
+			out = append(out, MemoryFile{Path: rel, Visibility: info.Visibility, Kind: info.Kind})
 		}
 	}
 

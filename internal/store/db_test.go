@@ -129,6 +129,77 @@ func TestFinalizeRunUpdatesFTSAndSessionAggregate(t *testing.T) {
 	}
 }
 
+func TestFinalizeRunRecentMessagesRestoresAssistantToolCalls(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:conv:tool:1",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello tool"},
+	}, "sha256:test-tool", now)
+	if err != nil {
+		t.Fatalf("ingest event: %v", err)
+	}
+	if err := db.MarkEventQueued(ctx, result.EventID, now); err != nil {
+		t.Fatalf("mark queued: %v", err)
+	}
+	claimed, ok, err := db.ClaimEvent(ctx, result.EventID, "run_tool_1", now)
+	if err != nil || !ok {
+		t.Fatalf("claim event ok=%v err=%v", ok, err)
+	}
+	toolCalls := []model.ToolCall{{ToolCallID: "call_1", Name: "memory_search", Args: map[string]any{"query": "hello tool"}}}
+	if err := db.FinalizeRun(ctx, RunFinalize{
+		RunID:             claimed.RunID,
+		EventID:           claimed.Event.EventID,
+		SessionKey:        claimed.Event.SessionKey,
+		SessionID:         claimed.Event.ActiveSessionID,
+		RunMode:           model.RunModeNormal,
+		RunStatus:         model.RunStatusCompleted,
+		EventStatus:       model.EventStatusProcessed,
+		Provider:          "fake",
+		Model:             "default",
+		PromptTokens:      8,
+		CompletionTokens:  8,
+		TotalTokens:       16,
+		LatencyMS:         12,
+		FinishReason:      "stop",
+		RawFinishReason:   "stop",
+		ProviderRequestID: "fake-request-1",
+		OutputText:        "done",
+		AssistantReply:    "done",
+		OutboxBody:        "done",
+		Messages: []StoredMessage{
+			{MessageID: "msg_user", SessionKey: claimed.Event.SessionKey, SessionID: claimed.Event.ActiveSessionID, RunID: claimed.RunID, Role: "user", Content: "hello tool", Visible: true, CreatedAt: now},
+			{MessageID: "msg_assistant_calls", SessionKey: claimed.Event.SessionKey, SessionID: claimed.Event.ActiveSessionID, RunID: claimed.RunID, Role: "assistant", Content: "", Visible: false, ToolCalls: toolCalls, CreatedAt: now},
+			{MessageID: "msg_tool", SessionKey: claimed.Event.SessionKey, SessionID: claimed.Event.ActiveSessionID, RunID: claimed.RunID, Role: "tool", Content: `{"hits":[]}`, Visible: true, ToolCallID: "call_1", ToolName: "memory_search", CreatedAt: now},
+			{MessageID: "msg_assistant", SessionKey: claimed.Event.SessionKey, SessionID: claimed.Event.ActiveSessionID, RunID: claimed.RunID, Role: "assistant", Content: "done", Visible: true, CreatedAt: now},
+		},
+		Now: now,
+	}); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+
+	history, err := db.RecentMessages(ctx, claimed.Event.ActiveSessionID, 10)
+	if err != nil {
+		t.Fatalf("recent messages: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 history messages, got %+v", history)
+	}
+	if history[1].Role != "assistant" || len(history[1].ToolCalls) != 1 {
+		t.Fatalf("expected assistant tool_calls restored, got %+v", history)
+	}
+	if history[1].ToolCalls[0].ToolCallID != "call_1" || history[1].ToolCalls[0].Name != "memory_search" {
+		t.Fatalf("unexpected restored tool calls: %+v", history[1].ToolCalls)
+	}
+	if history[2].Role != "tool" || history[2].ToolCallID != "call_1" {
+		t.Fatalf("expected tool result after assistant tool_calls, got %+v", history)
+	}
+}
+
 func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)

@@ -55,7 +55,7 @@ func (db *DB) FinalizeRun(ctx context.Context, finalize RunFinalize) error {
 			if err != nil {
 				return err
 			}
-			meta, err := json.Marshal(message.Meta)
+			meta, err := encodeStoredMeta(message.Meta, message.ToolCalls)
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,7 @@ func (db *DB) FinalizeRun(ctx context.Context, finalize RunFinalize) error {
 				message.ToolName,
 				string(toolArgs),
 				string(toolResult),
-				string(meta),
+				meta,
 				timeText(message.CreatedAt),
 			); err != nil {
 				return err

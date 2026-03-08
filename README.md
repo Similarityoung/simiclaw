@@ -36,6 +36,67 @@
   - `workspace/runtime/native/**`
   - `workspace/runtime/app.db`
 
+## Prompt / Skills / Memory
+
+当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前采用单一 `full` prompt 形态，固定包含以下 5 个 section：
+
+- `Identity & Runtime Rules`
+- `Project Context`
+- `Available Skills`
+- `Memory Policy`
+- `Current Run Context`
+
+### Bootstrap 文件
+
+工作区根目录下这 3 个文件会按顺序注入 `Project Context`：
+
+- `AGENTS.md`
+- `IDENTITY.md`
+- `USER.md`
+
+这些文件都是**可选**的，runtime 只会读取，不会自动创建。
+
+### Skills
+
+- skill 采用工作区内 Markdown 技能包：`workspace/skills/<name>/SKILL.md`
+- prompt 中只注入紧凑的 skill 索引（`name / description / path`），不会注入 skill 正文
+- 需要读取正文时，模型应使用 `context_get`
+
+`context_get` 目前只允许读取：
+
+- `AGENTS.md`
+- `IDENTITY.md`
+- `USER.md`
+- `skills/<name>/SKILL.md`
+
+### Memory
+
+memory 采用双轴模型：
+
+- `visibility`: `public | private`
+- `kind`: `curated | daily`
+
+canonical 路径如下：
+
+- `memory/public/MEMORY.md`
+- `memory/private/MEMORY.md`
+- `memory/public/daily/YYYY-MM-DD.md`
+- `memory/private/daily/YYYY-MM-DD.md`
+
+兼容读取旧根路径 `MEMORY.md`，但所有新写入都走 canonical 路径。
+
+默认策略：
+
+- prompt 只注入 curated memory
+- `public` curated 始终注入
+- `private` curated 仅在 `dm` 会话中注入
+- daily memory 默认不注入，优先通过 `memory_search` + `memory_get` recall
+
+`memory_search` 现使用双轴过滤参数：
+
+- `visibility=auto|public|private`
+- `kind=any|curated|daily`
+
 ## 目录概览
 
 - `cmd/simiclaw/internal/*`：命令入口
