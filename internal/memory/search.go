@@ -11,17 +11,19 @@ import (
 
 type SearchArgs struct {
 	Query       string
-	Scope       string
+	Visibility  string
+	Kind        string
 	TopK        int
 	ChannelType string
 }
 
 type SearchHit struct {
-	Path    string  `json:"path"`
-	Scope   string  `json:"scope"`
-	Lines   []int   `json:"lines"`
-	Score   float64 `json:"score"`
-	Preview string  `json:"preview"`
+	Path       string  `json:"path"`
+	Visibility string  `json:"visibility"`
+	Kind       string  `json:"kind"`
+	Lines      []int   `json:"lines"`
+	Score      float64 `json:"score"`
+	Preview    string  `json:"preview"`
 }
 
 type SearchResult struct {
@@ -43,7 +45,11 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 		topK = 20
 	}
 
-	allowedScopes, err := resolveScopes(strings.TrimSpace(args.Scope), strings.TrimSpace(args.ChannelType))
+	allowedVisibilities, err := resolveVisibilities(strings.TrimSpace(args.Visibility), strings.TrimSpace(args.ChannelType))
+	if err != nil {
+		return SearchResult{}, err
+	}
+	allowedKinds, err := resolveKinds(strings.TrimSpace(args.Kind))
 	if err != nil {
 		return SearchResult{}, err
 	}
@@ -60,7 +66,7 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 	tokens := tokenize(query)
 	candidates := make([]SearchHit, 0, 32)
 	for _, f := range files {
-		if !allowedScopes[f.Scope] {
+		if !allowedVisibilities[f.Visibility] || !allowedKinds[f.Kind] {
 			continue
 		}
 		abs := filepath.Join(workspace, filepath.FromSlash(f.Path))
@@ -80,11 +86,12 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 			}
 			preview := truncatePreview(line, 120)
 			candidates = append(candidates, SearchHit{
-				Path:    f.Path,
-				Scope:   f.Scope,
-				Lines:   []int{lineNo, lineNo},
-				Score:   float64(score),
-				Preview: preview,
+				Path:       f.Path,
+				Visibility: f.Visibility,
+				Kind:       f.Kind,
+				Lines:      []int{lineNo, lineNo},
+				Score:      float64(score),
+				Preview:    preview,
 			})
 		}
 		_ = fh.Close()
@@ -105,16 +112,31 @@ func Search(workspace string, args SearchArgs) (SearchResult, error) {
 	return SearchResult{Disabled: false, Hits: candidates}, nil
 }
 
-func resolveScopes(scope, channelType string) (map[string]bool, error) {
-	switch scope {
+func resolveVisibilities(visibility, channelType string) (map[string]bool, error) {
+	allowed := allowedVisibilitiesForChannel(channelType)
+	switch visibility {
 	case "", "auto":
-		return allowedScopesForChannel(channelType), nil
-	case "private":
-		return map[string]bool{"private": true}, nil
-	case "public":
-		return map[string]bool{"public": true}, nil
+		return allowed, nil
+	case VisibilityPublic, VisibilityPrivate:
+		if !allowed[visibility] {
+			return map[string]bool{}, nil
+		}
+		return map[string]bool{visibility: true}, nil
 	default:
-		return nil, fmt.Errorf("invalid scope")
+		return nil, fmt.Errorf("invalid visibility")
+	}
+}
+
+func resolveKinds(kind string) (map[string]bool, error) {
+	switch kind {
+	case "", "any":
+		return map[string]bool{"curated": true, "daily": true}, nil
+	case "curated":
+		return map[string]bool{"curated": true}, nil
+	case "daily":
+		return map[string]bool{"daily": true}, nil
+	default:
+		return nil, fmt.Errorf("invalid kind")
 	}
 }
 

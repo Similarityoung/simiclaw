@@ -15,21 +15,24 @@ func RegisterMemorySearch(reg *Registry) {
 		Parameters: ParameterSchema{
 			Type: "object",
 			Properties: map[string]ParameterSchema{
-				"query": {Type: "string", Description: "搜索关键词"},
-				"scope": {Type: "string", Description: "auto | daily | curated", Enum: []string{"auto", "daily", "curated"}},
-				"top_k": {Type: "integer", Description: "返回条数，默认 6"},
+				"query":      {Type: "string", Description: "搜索关键词"},
+				"visibility": {Type: "string", Description: "auto | public | private", Enum: []string{"auto", "public", "private"}},
+				"kind":       {Type: "string", Description: "any | curated | daily", Enum: []string{"any", "curated", "daily"}},
+				"top_k":      {Type: "integer", Description: "返回条数，默认 6"},
 			},
 			Required: []string{"query"},
 		},
 	}
 	reg.Register("memory_search", schema, func(_ context.Context, toolCtx Context, args map[string]any) Result {
 		query, _ := args["query"].(string)
-		scope, _ := args["scope"].(string)
+		visibility, _ := args["visibility"].(string)
+		kind, _ := args["kind"].(string)
 		topK := parseInt(args["top_k"], 6)
 
 		res, err := memory.Search(toolCtx.Workspace, memory.SearchArgs{
 			Query:       query,
-			Scope:       scope,
+			Visibility:  visibility,
+			Kind:        kind,
 			TopK:        topK,
 			ChannelType: toolCtx.Conversation.ChannelType,
 		})
