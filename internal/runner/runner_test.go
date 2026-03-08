@@ -54,9 +54,10 @@ func TestProviderRunnerPrependsSystemPrompt(t *testing.T) {
 	}
 	if !containsAll(output.AssistantReply,
 		"## Identity & Runtime Rules",
-		"## Project Context",
-		"## Available Skills",
+		"## Tool Contract",
 		"## Memory Policy",
+		"## Workspace Instructions & Context",
+		"## Available Skills",
 		"## Current Run Context",
 	) {
 		t.Fatalf("expected system prompt sections in reply, got %q", output.AssistantReply)

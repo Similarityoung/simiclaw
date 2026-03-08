@@ -10,7 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func TestBuilderBuildIncludesFiveSectionsInOrder(t *testing.T) {
+func TestBuilderBuildIncludesSectionsInOrder(t *testing.T) {
 	b := NewBuilder(t.TempDir())
 	got := b.Build(BuildInput{Context: RunContext{
 		Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC),
@@ -26,9 +26,10 @@ func TestBuilderBuildIncludesFiveSectionsInOrder(t *testing.T) {
 
 	sections := []string{
 		"## Identity & Runtime Rules",
-		"## Project Context",
-		"## Available Skills",
+		"## Tool Contract",
 		"## Memory Policy",
+		"## Workspace Instructions & Context",
+		"## Available Skills",
 		"## Current Run Context",
 	}
 	last := -1
@@ -41,6 +42,9 @@ func TestBuilderBuildIncludesFiveSectionsInOrder(t *testing.T) {
 			t.Fatalf("section %q out of order in prompt: %s", section, got)
 		}
 		last = idx
+	}
+	if strings.Contains(got, "## Heartbeat Policy") {
+		t.Fatalf("did not expect heartbeat policy in normal message prompt: %s", got)
 	}
 	if !strings.Contains(got, "2026-03-08T09:10:11Z") {
 		t.Fatalf("expected UTC timestamp in prompt, got: %s", got)
@@ -75,16 +79,26 @@ func TestBuilderEscapesRunContextFields(t *testing.T) {
 	}
 }
 
-func TestBuilderInjectsBootstrapFilesInOrder(t *testing.T) {
+func TestBuilderInjectsWorkspaceContextFilesInOrder(t *testing.T) {
 	workspace := t.TempDir()
-	writeFile(t, filepath.Join(workspace, "AGENTS.md"), "agents rules")
+	writeFile(t, filepath.Join(workspace, "SOUL.md"), "soul rules")
 	writeFile(t, filepath.Join(workspace, "IDENTITY.md"), "identity profile")
 	writeFile(t, filepath.Join(workspace, "USER.md"), "user prefs")
+	writeFile(t, filepath.Join(workspace, "AGENTS.md"), "project rules")
+	writeFile(t, filepath.Join(workspace, "TOOLS.md"), "tool facts")
+	writeFile(t, filepath.Join(workspace, "BOOTSTRAP.md"), "bootstrap warning")
 
 	b := NewBuilder(workspace)
-	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
+	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "message"}})
 
-	wantOrder := []string{"### AGENTS.md", "agents rules", "### IDENTITY.md", "identity profile", "### USER.md", "user prefs"}
+	wantOrder := []string{
+		"### SOUL.md", "soul rules",
+		"### IDENTITY.md", "identity profile",
+		"### USER.md", "user prefs",
+		"### AGENTS.md", "project rules",
+		"### TOOLS.md", "tool facts",
+		"### BOOTSTRAP.md", "bootstrap warning",
+	}
 	last := -1
 	for _, needle := range wantOrder {
 		idx := strings.Index(got, needle)
@@ -98,64 +112,92 @@ func TestBuilderInjectsBootstrapFilesInOrder(t *testing.T) {
 	}
 }
 
-func TestBuilderSkipsMissingBootstrapFiles(t *testing.T) {
+func TestBuilderSkipsMissingContextFiles(t *testing.T) {
 	workspace := t.TempDir()
 	writeFile(t, filepath.Join(workspace, "USER.md"), "user prefs")
 
 	b := NewBuilder(workspace)
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
 
-	if strings.Contains(got, "### AGENTS.md") || strings.Contains(got, "### IDENTITY.md") {
-		t.Fatalf("expected missing bootstrap files to be skipped, got: %s", got)
+	if strings.Contains(got, "### SOUL.md") || strings.Contains(got, "### AGENTS.md") {
+		t.Fatalf("expected missing context files to be skipped, got: %s", got)
 	}
 	if !strings.Contains(got, "### USER.md") {
 		t.Fatalf("expected USER.md to be injected, got: %s", got)
 	}
 }
 
-func TestBuilderSkipsBootstrapSymlinkOutsideWorkspace(t *testing.T) {
+func TestBuilderSkipsContextSymlinkOutsideWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	outside := t.TempDir()
 	target := filepath.Join(outside, "secret.md")
 	writeFile(t, target, "outside secret")
-	if err := os.Symlink(target, filepath.Join(workspace, "AGENTS.md")); err != nil {
-		t.Fatalf("symlink AGENTS.md: %v", err)
+	if err := os.Symlink(target, filepath.Join(workspace, "SOUL.md")); err != nil {
+		t.Fatalf("symlink SOUL.md: %v", err)
 	}
 
 	b := NewBuilder(workspace)
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
 
-	if strings.Contains(got, "outside secret") || strings.Contains(got, "### AGENTS.md") {
-		t.Fatalf("expected outside bootstrap symlink to be skipped, got: %s", got)
+	if strings.Contains(got, "outside secret") || strings.Contains(got, "### SOUL.md") {
+		t.Fatalf("expected outside context symlink to be skipped, got: %s", got)
 	}
 }
 
-func TestBuilderReusesCacheAndInvalidatesOnBootstrapChange(t *testing.T) {
+func TestBuilderHeartbeatSectionOnlyForCronFire(t *testing.T) {
 	workspace := t.TempDir()
-	path := filepath.Join(workspace, "AGENTS.md")
-	writeFile(t, path, "v1")
-
+	writeFile(t, filepath.Join(workspace, "HEARTBEAT.md"), "heartbeat checklist")
 	b := NewBuilder(workspace)
+
+	normal := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "message"}})
+	if strings.Contains(normal, "## Heartbeat Policy") || strings.Contains(normal, "heartbeat checklist") {
+		t.Fatalf("did not expect heartbeat content in normal prompt, got: %s", normal)
+	}
+
+	cron := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 12, 0, time.UTC), PayloadType: "cron_fire"}})
+	if !strings.Contains(cron, "## Heartbeat Policy") || !strings.Contains(cron, "heartbeat checklist") {
+		t.Fatalf("expected heartbeat content for cron_fire, got: %s", cron)
+	}
+}
+
+func TestBuilderHeartbeatPolicyFallsBackWithoutHeartbeatFile(t *testing.T) {
+	b := NewBuilder(t.TempDir())
+	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "cron_fire"}})
+	if !strings.Contains(got, "当前工作区未提供 HEARTBEAT.md") {
+		t.Fatalf("expected heartbeat fallback, got: %s", got)
+	}
+}
+
+func TestBuilderReusesCacheAndInvalidatesOnContextPresenceAndContentChange(t *testing.T) {
+	workspace := t.TempDir()
+	b := NewBuilder(workspace)
+
 	first := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
 	second := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 12, 0, time.UTC)}})
 	if b.staticBuilds != 1 {
-		t.Fatalf("expected cached static prefix to be reused, got staticBuilds=%d", b.staticBuilds)
+		t.Fatalf("expected cached static prefix to be reused, got=%d", b.staticBuilds)
 	}
-	if !strings.Contains(first, "v1") || !strings.Contains(second, "v1") {
-		t.Fatalf("expected cached content to contain v1, first=%q second=%q", first, second)
+	if !strings.Contains(first, "当前轮次未注入额外的工作区上下文文件。") || !strings.Contains(second, "当前轮次未注入额外的工作区上下文文件。") {
+		t.Fatalf("expected cached static context section before context change, first=%q second=%q", first, second)
 	}
 
-	writeFile(t, path, "v2")
-	future := time.Date(2026, 3, 8, 9, 10, 30, 0, time.UTC)
-	if err := os.Chtimes(path, future, future); err != nil {
-		t.Fatalf("chtimes bootstrap file: %v", err)
-	}
+	path := filepath.Join(workspace, "SOUL.md")
+	writeFile(t, path, "soul v1")
 	third := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 13, 0, time.UTC)}})
 	if b.staticBuilds != 2 {
-		t.Fatalf("expected cache invalidation after bootstrap change, got staticBuilds=%d", b.staticBuilds)
+		t.Fatalf("expected cache invalidation after context file creation, got=%d", b.staticBuilds)
 	}
-	if !strings.Contains(third, "v2") {
-		t.Fatalf("expected updated bootstrap content after invalidation, got: %s", third)
+	if !strings.Contains(third, "soul v1") {
+		t.Fatalf("expected injected soul content, got: %s", third)
+	}
+
+	writeFile(t, path, "soul v2")
+	fourth := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 14, 0, time.UTC)}})
+	if b.staticBuilds != 3 {
+		t.Fatalf("expected cache invalidation after context content change, got=%d", b.staticBuilds)
+	}
+	if !strings.Contains(fourth, "soul v2") {
+		t.Fatalf("expected updated soul content, got: %s", fourth)
 	}
 }
 
@@ -177,18 +219,6 @@ func TestBuilderInjectsSortedSkillSummary(t *testing.T) {
 	}
 	if !strings.Contains(got, "context_get") {
 		t.Fatalf("expected prompt to mention context_get, got: %s", got)
-	}
-}
-
-func TestBuilderSkillSummaryFallsBackWithoutFrontmatter(t *testing.T) {
-	workspace := t.TempDir()
-	writeFile(t, filepath.Join(workspace, "skills", "fallback", "SKILL.md"), "# Fallback title\n\nUse this skill when fallback is needed.")
-
-	b := NewBuilder(workspace)
-	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
-
-	if !strings.Contains(got, "- fallback — Fallback title (skills/fallback/SKILL.md)") {
-		t.Fatalf("expected fallback skill summary, got: %s", got)
 	}
 }
 
@@ -238,17 +268,13 @@ func TestBuilderInvalidatesCacheOnSkillChange(t *testing.T) {
 	first := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC)}})
 	second := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 12, 0, time.UTC)}})
 	if b.staticBuilds != 1 {
-		t.Fatalf("expected cached static prefix to be reused before skill change, got=%d", b.staticBuilds)
+		t.Fatalf("expected cached static prefix before skill change, got=%d", b.staticBuilds)
 	}
 	if !strings.Contains(first, "v1") || !strings.Contains(second, "v1") {
 		t.Fatalf("expected v1 skill summary before invalidation, first=%q second=%q", first, second)
 	}
 
 	writeFile(t, path, "---\nname: Alpha\ndescription: v2\n---\n\n# Alpha")
-	future := time.Date(2026, 3, 8, 9, 11, 0, 0, time.UTC)
-	if err := os.Chtimes(path, future, future); err != nil {
-		t.Fatalf("chtimes skill file: %v", err)
-	}
 	third := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 13, 0, time.UTC)}})
 	if b.staticBuilds != 2 {
 		t.Fatalf("expected skill change to invalidate cache, got=%d", b.staticBuilds)
@@ -338,10 +364,6 @@ func TestBuilderInvalidatesCacheOnCuratedMemoryChange(t *testing.T) {
 	}
 
 	writeFile(t, path, "public v2")
-	future := time.Date(2026, 3, 8, 9, 12, 0, 0, time.UTC)
-	if err := os.Chtimes(path, future, future); err != nil {
-		t.Fatalf("chtimes curated file: %v", err)
-	}
 	third := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 13, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
 	if b.staticBuilds != 2 {
 		t.Fatalf("expected curated change to invalidate cache, got=%d", b.staticBuilds)
