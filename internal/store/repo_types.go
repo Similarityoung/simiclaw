@@ -27,6 +27,7 @@ type StoredMessage struct {
 	Role       string
 	Content    string
 	Visible    bool
+	ToolCalls  []model.ToolCall
 	ToolCallID string
 	ToolName   string
 	ToolArgs   map[string]any
@@ -80,6 +81,7 @@ type LookupEvent struct {
 type HistoryMessage struct {
 	Role       string
 	Content    string
+	ToolCalls  []model.ToolCall
 	ToolCallID string
 	ToolName   string
 }

@@ -104,6 +104,84 @@ func TestProviderRunnerRecoversToolPanicAndStreamsSanitizedToolEvents(t *testing
 	}
 }
 
+func TestProviderRunnerPersistsAssistantToolCallsMessage(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register("echo", tools.Schema{Name: "echo"}, func(_ context.Context, _ tools.Context, args map[string]any) tools.Result {
+		return tools.Result{Output: map[string]any{"echo": args["query"]}}
+	})
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "done: {{last_user_message}}",
+		FakeToolName:         "echo",
+		FakeToolArgsJSON:     `{"query":"hello"}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r := newTestRunner(t, cfg, registry)
+	output, err := r.Run(context.Background(), testEvent("remember this"), 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	var toolCallMsg *OutputMessage
+	for i := range output.Messages {
+		msg := &output.Messages[i]
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			toolCallMsg = msg
+			break
+		}
+	}
+	if toolCallMsg == nil {
+		t.Fatalf("expected hidden assistant tool_calls message, got %+v", output.Messages)
+	}
+	if toolCallMsg.Visible {
+		t.Fatalf("assistant tool_calls message should be hidden, got %+v", toolCallMsg)
+	}
+	if len(toolCallMsg.ToolCalls) != 1 || toolCallMsg.ToolCalls[0].Name != "echo" {
+		t.Fatalf("unexpected tool_calls message: %+v", toolCallMsg)
+	}
+}
+
+func TestHistoryToChatMessagesSkipsOrphanToolResults(t *testing.T) {
+	history := []store.HistoryMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "tool", Content: `{"path":"AGENTS.md"}`, ToolCallID: "call_orphan", ToolName: "context_get"},
+		{Role: "assistant", Content: "world"},
+	}
+
+	got := historyToChatMessages(history)
+	if len(got) != 2 {
+		t.Fatalf("expected orphan tool message to be skipped, got %+v", got)
+	}
+	if got[0].Role != "user" || got[1].Role != "assistant" {
+		t.Fatalf("unexpected chat history order: %+v", got)
+	}
+}
+
+func TestHistoryToChatMessagesPreservesAssistantToolChain(t *testing.T) {
+	history := []store.HistoryMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", ToolCalls: []model.ToolCall{{ToolCallID: "call_1", Name: "memory_search", Args: map[string]any{"query": "hello"}}}},
+		{Role: "tool", Content: `{"hits":[]}`, ToolCallID: "call_1", ToolName: "memory_search"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	got := historyToChatMessages(history)
+	if len(got) != 4 {
+		t.Fatalf("expected complete tool chain, got %+v", got)
+	}
+	if got[1].Role != "assistant" || len(got[1].ToolCalls) != 1 || got[1].ToolCalls[0].ToolCallID != "call_1" {
+		t.Fatalf("expected assistant tool_calls in history, got %+v", got)
+	}
+	if got[2].Role != "tool" || got[2].ToolCallID != "call_1" {
+		t.Fatalf("expected matched tool result, got %+v", got)
+	}
+}
+
 func TestProviderRunnerNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	r, workspace := newTestRunnerWithWorkspace(t, config.Default().LLM, nil)
 

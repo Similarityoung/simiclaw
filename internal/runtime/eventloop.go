@@ -176,6 +176,7 @@ func (l *EventLoop) processEvent(eventID string) {
 				Role:       msg.Role,
 				Content:    msg.Content,
 				Visible:    msg.Visible,
+				ToolCalls:  msg.ToolCalls,
 				ToolCallID: msg.ToolCallID,
 				ToolName:   msg.ToolName,
 				ToolArgs:   msg.ToolArgs,
