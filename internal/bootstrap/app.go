@@ -12,6 +12,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
@@ -22,6 +23,7 @@ type App struct {
 	Gateway    *gateway.Service
 	EventLoop  *runtime.EventLoop
 	Supervisor *runtime.Supervisor
+	StreamHub  *streaming.Hub
 	Handler    http.Handler
 }
 
@@ -37,17 +39,19 @@ func NewApp(cfg config.Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
-	eventLoop := runtime.NewEventLoop(db, run, cfg.EventQueueCapacity, cfg.MaxToolRounds)
+	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
 	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, outbound.StdoutSender{})
 	gatewayService := gateway.NewService(cfg, db, eventLoop)
-	server := httpapi.New(cfg, db, gatewayService, supervisor)
+	server := httpapi.New(cfg, db, gatewayService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
 		DB:         db,
 		Gateway:    gatewayService,
 		EventLoop:  eventLoop,
 		Supervisor: supervisor,
+		StreamHub:  streamHub,
 		Handler:    server.Handler(),
 	}, nil
 }

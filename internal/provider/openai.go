@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -16,8 +17,9 @@ import (
 )
 
 type openAICompatibleProvider struct {
-	name   string
-	client openai.Client
+	name           string
+	client         openai.Client
+	requestTimeout time.Duration
 }
 
 func newOpenAICompatibleProvider(name string, cfg config.LLMProviderConfig) (LLMProvider, error) {
@@ -26,18 +28,67 @@ func newOpenAICompatibleProvider(name string, cfg config.LLMProviderConfig) (LLM
 	}
 	opts := []option.RequestOption{
 		option.WithAPIKey(cfg.APIKey),
-		option.WithHTTPClient(&http.Client{Timeout: cfg.Timeout.Duration}),
+		option.WithHTTPClient(&http.Client{}),
 	}
 	if strings.TrimSpace(cfg.BaseURL) != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
 	return &openAICompatibleProvider{
-		name:   name,
-		client: openai.NewClient(opts...),
+		name:           name,
+		client:         openai.NewClient(opts...),
+		requestTimeout: cfg.Timeout.Duration,
 	}, nil
 }
 
 func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) {
+	params := buildChatCompletionParams(req, false)
+
+	resp, err := p.client.Chat.Completions.New(ctx, params, p.requestTimeoutOption()...)
+	if err != nil {
+		return ChatResult{}, err
+	}
+	if len(resp.Choices) == 0 {
+		return ChatResult{}, errors.New("openai-compatible provider returned no choices")
+	}
+	return chatResultFromCompletion(p.name, resp)
+}
+
+func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatRequest, sink StreamSink) (ChatResult, error) {
+	params := buildChatCompletionParams(req, true)
+	stream := p.client.Chat.Completions.NewStreaming(ctx, params, p.requestTimeoutOption()...)
+	acc := openai.ChatCompletionAccumulator{}
+	toolAcc := newToolCallAccumulator()
+	for stream.Next() {
+		chunk := stream.Current()
+		if !acc.AddChunk(chunk) {
+			return ChatResult{}, errors.New("openai-compatible provider returned inconsistent streaming chunks")
+		}
+		toolAcc.AddChunk(chunk)
+		if sink != nil {
+			for _, choice := range chunk.Choices {
+				if choice.Index != 0 {
+					continue
+				}
+				if delta := choice.Delta.Content; delta != "" {
+					sink.OnTextDelta(delta)
+				}
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return ChatResult{}, err
+	}
+	return chatResultFromAccumulator(p.name, &acc, toolAcc)
+}
+
+func (p *openAICompatibleProvider) requestTimeoutOption() []option.RequestOption {
+	if p.requestTimeout <= 0 {
+		return nil
+	}
+	return []option.RequestOption{option.WithRequestTimeout(p.requestTimeout)}
+}
+
+func buildChatCompletionParams(req ChatRequest, includeUsage bool) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(req.Model),
 		Messages: buildChatMessages(req.Messages),
@@ -48,20 +99,21 @@ func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (C
 		}
 		params.Tools = buildToolParams(req.Tools)
 	}
+	if includeUsage {
+		params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		}
+	}
+	return params
+}
 
-	resp, err := p.client.Chat.Completions.New(ctx, params)
-	if err != nil {
-		return ChatResult{}, err
-	}
-	if len(resp.Choices) == 0 {
-		return ChatResult{}, errors.New("openai-compatible provider returned no choices")
-	}
+func chatResultFromCompletion(providerName string, resp *openai.ChatCompletion) (ChatResult, error) {
 	choice := resp.Choices[0]
 	result := ChatResult{
 		Text:              choice.Message.Content,
 		FinishReason:      choice.FinishReason,
 		RawFinishReason:   choice.FinishReason,
-		Provider:          p.name,
+		Provider:          providerName,
 		Model:             resp.Model,
 		ProviderRequestID: resp.ID,
 		Usage: Usage{

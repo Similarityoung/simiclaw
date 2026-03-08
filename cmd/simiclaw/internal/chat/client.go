@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,20 +33,53 @@ func (e *APIError) Error() string {
 }
 
 type HTTPClient struct {
-	baseURL      string
-	apiKey       string
-	httpClient   *http.Client
-	pollInterval time.Duration
-	pollTimeout  time.Duration
+	baseURL          string
+	apiKey           string
+	httpClient       *http.Client
+	streamHTTPClient *http.Client
+	requestTimeout   time.Duration
+	pollInterval     time.Duration
+	pollTimeout      time.Duration
 }
+
+type StreamEventHandler interface {
+	HandleStreamEvent(event model.ChatStreamEvent) error
+}
+
+type StreamRecoverableError struct {
+	EventID string
+	Err     error
+}
+
+func (e *StreamRecoverableError) Error() string {
+	if e == nil || e.Err == nil {
+		return "stream interrupted"
+	}
+	if e.EventID == "" {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("stream interrupted for %s: %s", e.EventID, e.Err)
+}
+
+func (e *StreamRecoverableError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+var ErrStreamUnsupported = errors.New("streaming unsupported")
+var ErrStreamProtocolMismatch = errors.New("stream protocol mismatch")
 
 func NewHTTPClient(baseURL, apiKey string, requestTimeout, pollInterval, pollTimeout time.Duration) *HTTPClient {
 	return &HTTPClient{
-		baseURL:      strings.TrimRight(baseURL, "/"),
-		apiKey:       strings.TrimSpace(apiKey),
-		httpClient:   &http.Client{Timeout: requestTimeout},
-		pollInterval: pollInterval,
-		pollTimeout:  pollTimeout,
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		apiKey:           strings.TrimSpace(apiKey),
+		httpClient:       &http.Client{},
+		streamHTTPClient: newStreamHTTPClient(requestTimeout),
+		requestTimeout:   requestTimeout,
+		pollInterval:     pollInterval,
+		pollTimeout:      pollTimeout,
 	}
 }
 
@@ -57,6 +91,120 @@ func (c *HTTPClient) SendAndWait(ctx context.Context, req model.IngestRequest) (
 	return c.pollEvent(ctx, ingestResp.EventID)
 }
 
+func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return model.EventRecord{}, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat:stream", bytes.NewReader(body))
+	if err != nil {
+		return model.EventRecord{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	resp, err := c.streamHTTPClient.Do(httpReq)
+	if err != nil {
+		return model.EventRecord{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if isStreamFallbackStatus(resp.StatusCode) {
+			return model.EventRecord{}, ErrStreamUnsupported
+		}
+		return model.EventRecord{}, decodeAPIError(resp)
+	}
+	if !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return model.EventRecord{}, ErrStreamUnsupported
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var acceptedEventID string
+	for {
+		var (
+			eventType string
+			data      []byte
+		)
+		if acceptedEventID == "" {
+			eventType, data, err = readSSEEventWithTimeout(reader, resp.Body, c.requestTimeout)
+		} else {
+			eventType, data, err = readSSEEvent(reader)
+		}
+		if err != nil {
+			if acceptedEventID != "" {
+				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+			}
+			return model.EventRecord{}, err
+		}
+		var event model.ChatStreamEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			if acceptedEventID != "" {
+				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+			}
+			return model.EventRecord{}, err
+		}
+		if eventType != string(event.Type) {
+			err = fmt.Errorf("stream event type mismatch: header=%s payload=%s", eventType, event.Type)
+			if acceptedEventID != "" {
+				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+			}
+			return model.EventRecord{}, err
+		}
+		if event.Type == model.ChatStreamEventAccepted {
+			acceptedEventID = event.EventID
+			if handler != nil {
+				if err := handler.HandleStreamEvent(event); err != nil {
+					return model.EventRecord{}, err
+				}
+			}
+			if event.StreamProtocolVersion != model.ChatStreamProtocolVersion {
+				return model.EventRecord{}, &StreamRecoverableError{
+					EventID: acceptedEventID,
+					Err:     ErrStreamProtocolMismatch,
+				}
+			}
+			continue
+		}
+		if handler != nil {
+			if err := handler.HandleStreamEvent(event); err != nil {
+				return model.EventRecord{}, err
+			}
+		}
+		if event.Type == model.ChatStreamEventDone || event.Type == model.ChatStreamEventError {
+			if event.EventRecord != nil {
+				if !isTerminalEvent(*event.EventRecord) {
+					_ = resp.Body.Close()
+					return c.pollEvent(ctx, event.EventRecord.EventID)
+				}
+				return *event.EventRecord, nil
+			}
+			if event.Error != nil {
+				return model.EventRecord{}, &APIError{StatusCode: http.StatusOK, Code: event.Error.Code, Message: event.Error.Message}
+			}
+			return model.EventRecord{}, errors.New("stream terminal event missing event_record")
+		}
+	}
+}
+
+func newStreamHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
+	if responseHeaderTimeout <= 0 {
+		return &http.Client{}
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{}
+	}
+	cloned := transport.Clone()
+	cloned.ResponseHeaderTimeout = responseHeaderTimeout
+	return &http.Client{Transport: cloned}
+}
+
+func (c *HTTPClient) PollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
+	return c.pollEvent(ctx, eventID)
+}
+
 func (c *HTTPClient) ingest(ctx context.Context, req model.IngestRequest) (model.IngestResponse, error) {
 	var out model.IngestResponse
 	body, err := json.Marshal(req)
@@ -64,7 +212,9 @@ func (c *HTTPClient) ingest(ctx context.Context, req model.IngestRequest) (model
 		return out, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/events:ingest", bytes.NewReader(body))
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.baseURL+"/v1/events:ingest", bytes.NewReader(body))
 	if err != nil {
 		return out, err
 	}
@@ -118,7 +268,9 @@ func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.Event
 
 func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
 	var rec model.EventRecord
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/events/"+url.PathEscape(eventID), nil)
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.baseURL+"/v1/events/"+url.PathEscape(eventID), nil)
 	if err != nil {
 		return rec, err
 	}
@@ -171,4 +323,75 @@ func decodeAPIError(resp *http.Response) error {
 		msg = fmt.Sprintf("http status %d", resp.StatusCode)
 	}
 	return &APIError{StatusCode: resp.StatusCode, Message: msg}
+}
+
+func isStreamFallbackStatus(status int) bool {
+	return status == http.StatusNotFound ||
+		status == http.StatusMethodNotAllowed ||
+		status == http.StatusNotImplemented ||
+		status == http.StatusBadGateway
+}
+
+type sseReadResult struct {
+	eventType string
+	data      []byte
+	err       error
+}
+
+func readSSEEventWithTimeout(r *bufio.Reader, closer io.Closer, timeout time.Duration) (string, []byte, error) {
+	if timeout <= 0 {
+		return readSSEEvent(r)
+	}
+	resultCh := make(chan sseReadResult, 1)
+	go func() {
+		eventType, data, err := readSSEEvent(r)
+		resultCh <- sseReadResult{eventType: eventType, data: data, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-resultCh:
+		return result.eventType, result.data, result.err
+	case <-timer.C:
+		if closer != nil {
+			_ = closer.Close()
+		}
+		return "", nil, fmt.Errorf("stream handshake timeout after %s: %w", timeout, context.DeadlineExceeded)
+	}
+}
+
+func readSSEEvent(r *bufio.Reader) (string, []byte, error) {
+	var (
+		eventType string
+		data      []byte
+	)
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return "", nil, err
+		}
+		if line == "\n" {
+			if eventType == "" && len(data) == 0 {
+				continue
+			}
+			return eventType, data, nil
+		}
+		if len(line) > 0 && line[0] == ':' {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "event: "):
+			eventType = strings.TrimRight(line[len("event: "):], "\r\n")
+		case strings.HasPrefix(line, "data: "):
+			part := strings.TrimRight(line[len("data: "):], "\r\n")
+			if data == nil {
+				data = []byte(part)
+				continue
+			}
+			data = append(data, '\n')
+			data = append(data, part...)
+		}
+	}
 }

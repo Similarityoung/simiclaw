@@ -30,10 +30,13 @@ type Config struct {
 	BaseURL      string
 	Conversation string
 	APIKey       string
+	Stream       bool
 }
 
 type ChatClient interface {
 	SendAndWait(ctx context.Context, req model.IngestRequest) (model.EventRecord, error)
+	SendStream(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
+	PollEvent(ctx context.Context, eventID string) (model.EventRecord, error)
 }
 
 type replInput struct {
@@ -52,7 +55,7 @@ func Run(args []string) error {
 	defer stop()
 
 	client := NewHTTPClient(cfg.BaseURL, cfg.APIKey, defaultReqTimeout, defaultPollInterval, defaultPollTimeout)
-	return runREPL(ctx, os.Stdin, os.Stdout, client, cfg.Conversation, time.Now)
+	return runREPL(ctx, os.Stdin, os.Stdout, client, cfg.Conversation, cfg.Stream, time.Now)
 }
 
 func parseConfig(args []string) (Config, error) {
@@ -64,6 +67,7 @@ func parseConfig(args []string) (Config, error) {
 	baseURL := fs.String("base-url", cfg.BaseURL, "gateway base url")
 	conversation := fs.String("conversation", cfg.Conversation, "conversation id")
 	apiKey := fs.String("api-key", "", "api key for Authorization header")
+	stream := fs.Bool("stream", true, "use SSE streaming chat when available")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -71,6 +75,7 @@ func parseConfig(args []string) (Config, error) {
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(*baseURL), "/")
 	cfg.Conversation = strings.TrimSpace(*conversation)
 	cfg.APIKey = strings.TrimSpace(*apiKey)
+	cfg.Stream = *stream
 
 	if cfg.BaseURL == "" {
 		return Config{}, errors.New("base-url is required")
@@ -81,7 +86,7 @@ func parseConfig(args []string) (Config, error) {
 	return cfg, nil
 }
 
-func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, now func() time.Time) error {
+func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, useStream bool, now func() time.Time) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
 	inputCh := startScanner(ctx, scanner)
@@ -124,12 +129,17 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 
 		req := cli.BuildIngestRequest(conversationID, fixedParticipantID, seq, text)
 		seq++
-		rec, err := client.SendAndWait(ctx, req)
+		renderer := newStreamRenderer(out)
+		rec, err := sendOneTurn(ctx, client, req, useStream, renderer)
 		if err != nil {
+			renderer.Abort()
 			if _, werr := fmt.Fprintf(out, "error> %s\n", formatError(err)); werr != nil {
 				return werr
 			}
 			continue
+		}
+		if err := renderer.Finish(rec); err != nil {
+			return err
 		}
 		if rec.Status == model.EventStatusFailed {
 			if rec.Error != nil {
@@ -142,14 +152,6 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 				}
 			}
 			continue
-		}
-
-		reply := rec.AssistantReply
-		if reply == "" {
-			reply = "(no reply)"
-		}
-		if _, err := fmt.Fprintf(out, "bot> %s\n", reply); err != nil {
-			return err
 		}
 
 		if rec.OutboxStatus == model.OutboxStatusDead && rec.Error != nil {
@@ -195,4 +197,23 @@ func formatError(err error) string {
 		return apiErr.Error()
 	}
 	return err.Error()
+}
+
+func sendOneTurn(ctx context.Context, client ChatClient, req model.IngestRequest, useStream bool, renderer *streamRenderer) (model.EventRecord, error) {
+	if !useStream {
+		return client.SendAndWait(ctx, req)
+	}
+	rec, err := client.SendStream(ctx, req, renderer)
+	if err == nil {
+		return rec, nil
+	}
+	var recoverable *StreamRecoverableError
+	switch {
+	case errors.Is(err, ErrStreamUnsupported):
+		return client.SendAndWait(ctx, req)
+	case errors.As(err, &recoverable) && recoverable.EventID != "":
+		return client.PollEvent(ctx, recoverable.EventID)
+	default:
+		return model.EventRecord{}, err
+	}
 }

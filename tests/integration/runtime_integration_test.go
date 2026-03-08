@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -76,6 +77,65 @@ func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
 	body, code := doRequest(t, app, http.MethodGet, "/readyz", nil)
 	if code != http.StatusOK {
 		t.Fatalf("readyz expected 200, got %d body=%s", code, string(body))
+	}
+}
+
+func TestChatStreamAcceptedToDone(t *testing.T) {
+	app := newTestApp(t)
+	server := httptest.NewServer(app.Handler)
+	defer server.Close()
+
+	req := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "integration-stream", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:integration-stream:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello stream"},
+	}
+	body, _ := json.Marshal(req)
+	resp, err := http.Post(server.URL+"/v1/chat:stream", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("chat stream request: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("expected text/event-stream, got %q", got)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	accepted := readStreamEvent(t, reader)
+	if accepted.Type != model.ChatStreamEventAccepted {
+		t.Fatalf("expected accepted event, got %+v", accepted)
+	}
+	var (
+		sawText bool
+		done    model.ChatStreamEvent
+	)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		event := readStreamEvent(t, reader)
+		switch event.Type {
+		case model.ChatStreamEventTextDelta:
+			sawText = true
+		case model.ChatStreamEventDone:
+			done = event
+			goto complete
+		}
+	}
+	t.Fatalf("timeout waiting for done event")
+
+complete:
+	if !sawText {
+		t.Fatalf("expected at least one text_delta event")
+	}
+	if done.EventRecord == nil {
+		t.Fatalf("done missing event_record: %+v", done)
+	}
+	if done.EventRecord.EventID != accepted.EventID {
+		t.Fatalf("event id mismatch: accepted=%s done=%+v", accepted.EventID, done.EventRecord)
+	}
+	if done.EventRecord.AssistantReply != "已收到: hello stream" {
+		t.Fatalf("unexpected assistant reply: %+v", done.EventRecord)
 	}
 }
 
@@ -168,4 +228,52 @@ func doRequest(t *testing.T, app *bootstrap.App, method, path string, body []byt
 	rr := httptest.NewRecorder()
 	app.Handler.ServeHTTP(rr, req)
 	return rr.Body.Bytes(), rr.Code
+}
+
+func readStreamEvent(t *testing.T, reader *bufio.Reader) model.ChatStreamEvent {
+	t.Helper()
+	var (
+		eventType string
+		data      []byte
+	)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read SSE line: %v", err)
+		}
+		if line == "\n" {
+			if eventType == "" && len(data) == 0 {
+				continue
+			}
+			var event model.ChatStreamEvent
+			if err := json.Unmarshal(data, &event); err != nil {
+				t.Fatalf("decode SSE payload: %v", err)
+			}
+			if string(event.Type) != eventType {
+				t.Fatalf("event type mismatch header=%s payload=%s", eventType, event.Type)
+			}
+			return event
+		}
+		if len(line) > 0 && line[0] == ':' {
+			continue
+		}
+		switch {
+		case len(line) > len("event: ") && line[:len("event: ")] == "event: ":
+			eventType = trimLine(line[len("event: "):])
+		case len(line) > len("data: ") && line[:len("data: ")] == "data: ":
+			if data == nil {
+				data = []byte(trimLine(line[len("data: "):]))
+				continue
+			}
+			data = append(data, '\n')
+			data = append(data, trimLine(line[len("data: "):])...)
+		}
+	}
+}
+
+func trimLine(in string) string {
+	for len(in) > 0 && (in[len(in)-1] == '\n' || in[len(in)-1] == '\r') {
+		in = in[:len(in)-1]
+	}
+	return in
 }

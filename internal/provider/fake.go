@@ -75,3 +75,37 @@ func (p *fakeProvider) Chat(_ context.Context, req ChatRequest) (ChatResult, err
 		ProviderRequestID: p.cfg.FakeRequestID,
 	}, nil
 }
+
+func (p *fakeProvider) StreamChat(ctx context.Context, req ChatRequest, sink StreamSink) (ChatResult, error) {
+	result, err := p.Chat(ctx, req)
+	if err != nil {
+		return ChatResult{}, err
+	}
+	if sink == nil || strings.TrimSpace(result.Text) == "" {
+		return result, ctx.Err()
+	}
+	for _, chunk := range splitRunes(result.Text, 4) {
+		if err := ctx.Err(); err != nil {
+			return ChatResult{}, err
+		}
+		sink.OnTextDelta(chunk)
+	}
+	return result, nil
+}
+
+func splitRunes(in string, chunkSize int) []string {
+	if chunkSize <= 0 {
+		chunkSize = 1
+	}
+	runes := []rune(in)
+	out := make([]string, 0, (len(runes)+chunkSize-1)/chunkSize)
+	for len(runes) > 0 {
+		n := chunkSize
+		if len(runes) < n {
+			n = len(runes)
+		}
+		out = append(out, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return out
+}
