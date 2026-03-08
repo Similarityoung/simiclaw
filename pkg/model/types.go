@@ -123,6 +123,22 @@ type ErrorBlock struct {
 	Details map[string]any `json:"details,omitempty"`
 }
 
+type MessageRecord struct {
+	MessageID  string         `json:"message_id"`
+	SessionKey string         `json:"session_key"`
+	SessionID  string         `json:"session_id"`
+	RunID      string         `json:"run_id"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Visible    bool           `json:"visible"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolName   string         `json:"tool_name,omitempty"`
+	ToolArgs   map[string]any `json:"tool_args,omitempty"`
+	ToolResult map[string]any `json:"tool_result,omitempty"`
+	Meta       map[string]any `json:"meta,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+}
+
 type EventRecord struct {
 	EventID           string       `json:"event_id"`
 	Status            EventStatus  `json:"status"`

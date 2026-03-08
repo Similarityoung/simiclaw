@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -20,4 +21,13 @@ func writeAPIError(w http.ResponseWriter, e *gateway.APIError) {
 		w.Header().Set("Retry-After", strconv.Itoa(e.RetryAfter))
 	}
 	writeJSON(w, e.StatusCode, model.ErrorResponse{Error: model.ErrorBlock{Code: e.Code, Message: e.Message, Details: e.Details}})
+}
+
+func writeSSEData(w http.ResponseWriter, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "data: %s\n\n", string(b))
+	return err
 }

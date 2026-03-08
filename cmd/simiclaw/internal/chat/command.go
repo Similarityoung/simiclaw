@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
+
+	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -21,16 +24,14 @@ const (
 	defaultBaseURL      = "http://127.0.0.1:8080"
 	defaultConversation = "cli_default"
 	fixedParticipantID  = "local_user"
-	defaultPollInterval = 50 * time.Millisecond
-	defaultPollTimeout  = 60 * time.Second
-	defaultReqTimeout   = 3 * time.Second
 )
 
-type Config struct {
-	BaseURL      string
+type Options struct {
 	Conversation string
-	APIKey       string
-	Stream       bool
+	SessionKey   string
+	NewSession   bool
+	NoStream     bool
+	HistoryLimit int
 }
 
 type ChatClient interface {
@@ -46,44 +47,60 @@ type replInput struct {
 }
 
 func Run(args []string) error {
-	cfg, err := parseConfig(args)
+	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
+	opts := Options{}
+	baseURL := fs.String("base-url", common.DefaultBaseURL, "gateway base url")
+	apiKey := fs.String("api-key", "", "api key for Authorization header")
+	fs.StringVar(&opts.Conversation, "conversation", "", "conversation id")
+	fs.StringVar(&opts.SessionKey, "session-key", "", "session key")
+	fs.BoolVar(&opts.NewSession, "new", false, "create a new session")
+	fs.BoolVar(&opts.NoStream, "no-stream", false, "disable streaming chat")
+	fs.IntVar(&opts.HistoryLimit, "history-limit", 50, "history items to load")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	runtimeOpts, err := common.ResolveRuntimeOptions(common.RuntimeFlagValues{BaseURL: *baseURL, APIKey: *apiKey}, os.Stdout)
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	client := NewHTTPClient(cfg.BaseURL, cfg.APIKey, defaultReqTimeout, defaultPollInterval, defaultPollTimeout)
-	return runREPL(ctx, os.Stdin, os.Stdout, client, cfg.Conversation, cfg.Stream, time.Now)
+	return runTUI(common.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
 }
 
-func parseConfig(args []string) (Config, error) {
-	cfg := Config{
-		BaseURL:      defaultBaseURL,
-		Conversation: defaultConversation,
+func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *cobra.Command {
+	opts := Options{}
+	cmd := &cobra.Command{
+		Use:   "chat",
+		Short: "启动交互式聊天 TUI",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !common.IsInteractive(streams) {
+				return common.WrapExit(1, errors.New("chat requires an interactive terminal"))
+			}
+			runtimeOpts, err := common.ResolveRuntimeOptions(*globals, streams.Out)
+			if err != nil {
+				return common.WrapExit(2, err)
+			}
+			return runTUI(streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
+		},
 	}
-	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
-	baseURL := fs.String("base-url", cfg.BaseURL, "gateway base url")
-	conversation := fs.String("conversation", cfg.Conversation, "conversation id")
-	apiKey := fs.String("api-key", "", "api key for Authorization header")
-	stream := fs.Bool("stream", true, "use SSE streaming chat when available")
-	if err := fs.Parse(args); err != nil {
-		return Config{}, err
-	}
+	cmd.Flags().StringVar(&opts.Conversation, "conversation", "", "conversation id")
+	cmd.Flags().StringVar(&opts.SessionKey, "session-key", "", "session key")
+	cmd.Flags().BoolVar(&opts.NewSession, "new", false, "create a new session")
+	cmd.Flags().BoolVar(&opts.NoStream, "no-stream", false, "disable streaming chat")
+	cmd.Flags().IntVar(&opts.HistoryLimit, "history-limit", 50, "history items to load")
+	return cmd
+}
 
-	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(*baseURL), "/")
-	cfg.Conversation = strings.TrimSpace(*conversation)
-	cfg.APIKey = strings.TrimSpace(*apiKey)
-	cfg.Stream = *stream
-
-	if cfg.BaseURL == "" {
-		return Config{}, errors.New("base-url is required")
+func runTUI(streams common.IOStreams, cli *sharedclient.Client, opts Options) error {
+	model := newModel(streams, cli, opts)
+	program := tea.NewProgram(model, tea.WithAltScreen())
+	finalModel, err := program.Run()
+	if err != nil {
+		return err
 	}
-	if cfg.Conversation == "" {
-		return Config{}, errors.New("conversation is required")
+	if m, ok := finalModel.(*modelState); ok && m.finalErr != nil {
+		return m.finalErr
 	}
-	return cfg, nil
+	return nil
 }
 
 func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, useStream bool, now func() time.Time) error {
@@ -91,6 +108,9 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
 	inputCh := startScanner(ctx, scanner)
 	seq := now().UnixMilli()
+	if conversationID == "" {
+		conversationID = defaultConversation
+	}
 
 	for {
 		if _, err := fmt.Fprint(out, "you> "); err != nil {
@@ -98,28 +118,28 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 		}
 
 		var (
-			in replInput
-			ok bool
+			input replInput
+			ok    bool
 		)
 		select {
 		case <-ctx.Done():
 			return nil
-		case in, ok = <-inputCh:
+		case input, ok = <-inputCh:
 			if !ok {
 				return nil
 			}
 		}
-		if in.err != nil {
+		if input.err != nil {
 			if ctx.Err() == nil {
-				return in.err
+				return input.err
 			}
 			return nil
 		}
-		if in.eof {
+		if input.eof {
 			return nil
 		}
 
-		text := strings.TrimSpace(in.text)
+		text := strings.TrimSpace(input.text)
 		if text == "" {
 			continue
 		}
@@ -153,7 +173,6 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 			}
 			continue
 		}
-
 		if rec.OutboxStatus == model.OutboxStatusDead && rec.Error != nil {
 			if _, err := fmt.Fprintf(out, "error> %s: %s\n", rec.Error.Code, rec.Error.Message); err != nil {
 				return err
@@ -174,7 +193,6 @@ func startScanner(ctx context.Context, scanner *bufio.Scanner) <-chan replInput 
 				return
 			}
 		}
-
 		if err := scanner.Err(); err != nil {
 			select {
 			case out <- replInput{err: err}:
@@ -182,7 +200,6 @@ func startScanner(ctx context.Context, scanner *bufio.Scanner) <-chan replInput 
 			}
 			return
 		}
-
 		select {
 		case out <- replInput{eof: true}:
 		case <-ctx.Done():

@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -77,7 +79,89 @@ func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, li
 	return hits, rows.Err()
 }
 
+func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]model.MessageRecord, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT message_id, session_key, session_id, run_id, role, content, visible,
+		tool_call_id, tool_name, tool_args_json, tool_result_json, meta_json, created_at
+		FROM messages
+		WHERE session_id = ?`
+	args := []any{sessionID}
+	if visibleOnly {
+		query += ` AND visible = 1`
+	}
+	if !before.IsZero() || beforeMessageID != "" {
+		if before.IsZero() {
+			before = time.Now().UTC().Add(24 * time.Hour)
+		}
+		query += ` AND (created_at < ? OR (created_at = ? AND message_id < ?))`
+		beforeText := timeText(before)
+		args = append(args, beforeText, beforeText, beforeMessageID)
+	}
+	query += ` ORDER BY created_at DESC, message_id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := db.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.MessageRecord, 0, limit)
+	for rows.Next() {
+		var (
+			rec            model.MessageRecord
+			visible        int
+			toolArgsJSON   string
+			toolResultJSON string
+			metaJSON       string
+			createdAt      string
+		)
+		if err := rows.Scan(
+			&rec.MessageID,
+			&rec.SessionKey,
+			&rec.SessionID,
+			&rec.RunID,
+			&rec.Role,
+			&rec.Content,
+			&visible,
+			&rec.ToolCallID,
+			&rec.ToolName,
+			&toolArgsJSON,
+			&toolResultJSON,
+			&metaJSON,
+			&createdAt,
+		); err != nil {
+			return nil, err
+		}
+		rec.Visible = visible == 1
+		rec.CreatedAt = mustParseTime(createdAt)
+		if strings.TrimSpace(toolArgsJSON) != "" && toolArgsJSON != "null" && toolArgsJSON != "{}" {
+			_ = json.Unmarshal([]byte(toolArgsJSON), &rec.ToolArgs)
+		}
+		if strings.TrimSpace(toolResultJSON) != "" && toolResultJSON != "null" && toolResultJSON != "{}" {
+			_ = json.Unmarshal([]byte(toolResultJSON), &rec.ToolResult)
+		}
+		if strings.TrimSpace(metaJSON) != "" && metaJSON != "null" && metaJSON != "{}" {
+			_ = json.Unmarshal([]byte(metaJSON), &rec.Meta)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	reverseMessages(out)
+	return out, nil
+}
+
 func reverseHistory(items []HistoryMessage) {
+	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+		items[i], items[j] = items[j], items[i]
+	}
+}
+
+func reverseMessages(items []model.MessageRecord) {
 	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
 		items[i], items[j] = items[j], items[i]
 	}

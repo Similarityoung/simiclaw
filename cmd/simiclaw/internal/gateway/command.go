@@ -7,11 +7,19 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
+
+type Options struct {
+	ConfigPath string
+	Workspace  string
+	Listen     string
+}
 
 // Run 解析启动参数并运行网关 HTTP 服务，处理进程退出信号。
 func Run(args []string) error {
@@ -22,23 +30,41 @@ func Run(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	return run(Options{ConfigPath: *configPath, Workspace: *workspaceOverride, Listen: *listenOverride})
+}
 
+func NewCommand() *cobra.Command {
+	opts := Options{}
+	cmd := &cobra.Command{
+		Use:     "serve",
+		Aliases: []string{"gateway"},
+		Short:   "启动 HTTP 服务",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return run(opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.ConfigPath, "config", "", "config json file")
+	cmd.Flags().StringVar(&opts.Workspace, "workspace", "", "workspace override")
+	cmd.Flags().StringVar(&opts.Listen, "listen", "", "listen address override")
+	return cmd
+}
+
+func run(opts Options) error {
 	// 先加载 .env（可选），让环境变量覆盖优先于 JSON 配置
 	if err := config.LoadDotEnv(".env"); err != nil {
 		return err
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		return err
 	}
 
-	// 命令行参数覆盖配置文件中的对应项，优先级最高。
-	if *workspaceOverride != "" {
-		cfg.Workspace = *workspaceOverride
+	if opts.Workspace != "" {
+		cfg.Workspace = opts.Workspace
 	}
-	if *listenOverride != "" {
-		cfg.ListenAddr = *listenOverride
+	if opts.Listen != "" {
+		cfg.ListenAddr = opts.Listen
 	}
 	if cfg.Workspace == "" {
 		cfg.Workspace = "."
