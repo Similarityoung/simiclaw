@@ -160,6 +160,17 @@ func TestBuilderHeartbeatSectionOnlyForCronFire(t *testing.T) {
 	}
 }
 
+func TestBuilderHeartbeatPolicyIncludesCronToolBudgetGuidance(t *testing.T) {
+	b := NewBuilder(t.TempDir())
+	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "cron_fire"}})
+	if !strings.Contains(got, "不要再对 HEARTBEAT.md 调用 context_get") {
+		t.Fatalf("expected heartbeat policy to forbid rereading HEARTBEAT.md, got: %s", got)
+	}
+	if !strings.Contains(got, "默认先做一次 memory_search") || !strings.Contains(got, "拿到足够证据后立即总结") {
+		t.Fatalf("expected heartbeat policy to include small cron tool budget guidance, got: %s", got)
+	}
+}
+
 func TestBuilderHeartbeatPolicyFallsBackWithoutHeartbeatFile(t *testing.T) {
 	b := NewBuilder(t.TempDir())
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "cron_fire"}})

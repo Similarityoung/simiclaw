@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -170,6 +171,22 @@ var cronFireAllowedTools = map[string]struct{}{
 	"context_get":   {},
 }
 
+var cronFireToolBudgets = map[string]int{
+	"memory_search": 1,
+	"memory_get":    1,
+	"context_get":   1,
+}
+
+var cronFireInjectedRootFiles = map[string]struct{}{
+	"SOUL.md":      {},
+	"IDENTITY.md":  {},
+	"USER.md":      {},
+	"AGENTS.md":    {},
+	"TOOLS.md":     {},
+	"BOOTSTRAP.md": {},
+	"HEARTBEAT.md": {},
+}
+
 func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink, opts llmRunOptions) (RunOutput, error) {
 	defaultModel := r.providers.DefaultModel()
 	llmProvider, actualModel, err := r.providers.Resolve(defaultModel)
@@ -226,9 +243,10 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 	}
 
 	var (
-		totalUsage provider.Usage
-		reply      string
-		last       provider.ChatResult
+		totalUsage    provider.Usage
+		reply         string
+		last          provider.ChatResult
+		toolUseCounts = map[string]int{}
 	)
 	for round := 0; round <= maxToolRounds; round++ {
 		last, err = llmProvider.StreamChat(ctx, provider.ChatRequest{
@@ -280,16 +298,27 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			sink.OnToolStart(call.ToolCallID, call.Name, displayArgs, argsTruncated)
 
 			var res tools.Result
-			if toolAllowed(call.Name, opts.allowedTools) {
-				res = callToolSafely(ctx, r.registry, tools.Context{
-					Workspace:    r.workspace,
-					Conversation: event.Conversation,
-				}, call.Name, call.Args)
-			} else {
+			switch {
+			case !toolAllowed(call.Name, opts.allowedTools):
 				res = tools.Result{Error: &model.ErrorBlock{
 					Code:    model.ErrorCodeForbidden,
 					Message: fmt.Sprintf("tool %q is not allowed for payload_type=%s", call.Name, event.Payload.Type),
 				}}
+			case strings.EqualFold(strings.TrimSpace(event.Payload.Type), "cron_fire"):
+				if errBlock := cronFireToolPolicyError(call, toolUseCounts); errBlock != nil {
+					res = tools.Result{Error: errBlock}
+				} else {
+					res = callToolSafely(ctx, r.registry, tools.Context{
+						Workspace:    r.workspace,
+						Conversation: event.Conversation,
+					}, call.Name, call.Args)
+					toolUseCounts[call.Name]++
+				}
+			default:
+				res = callToolSafely(ctx, r.registry, tools.Context{
+					Workspace:    r.workspace,
+					Conversation: event.Conversation,
+				}, call.Name, call.Args)
 			}
 			exec := model.ToolExecution{
 				ToolCallID: call.ToolCallID,
@@ -369,6 +398,27 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		AssistantReply: assistantReply,
 		SuppressOutput: opts.suppressOutput,
 	}, nil
+}
+
+func cronFireToolPolicyError(call model.ToolCall, counts map[string]int) *model.ErrorBlock {
+	if budget, ok := cronFireToolBudgets[call.Name]; ok && counts[call.Name] >= budget {
+		return &model.ErrorBlock{
+			Code:    model.ErrorCodeForbidden,
+			Message: fmt.Sprintf("cron_fire tool budget exhausted for %q; summarize with current evidence instead of fetching more context", call.Name),
+		}
+	}
+	if call.Name != "context_get" {
+		return nil
+	}
+	path, _ := call.Args["path"].(string)
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(path))))
+	if _, ok := cronFireInjectedRootFiles[clean]; ok {
+		return &model.ErrorBlock{
+			Code:    model.ErrorCodeForbidden,
+			Message: fmt.Sprintf("context_get %q is already injected into the cron_fire system prompt; summarize with current evidence instead of rereading it", clean),
+		}
+	}
+	return nil
 }
 
 func toolAllowed(name string, allowed map[string]struct{}) bool {

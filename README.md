@@ -224,6 +224,7 @@ make accept-current
 - 对外仍属于 `NO_REPLY`，最终 event 状态为 `suppressed`
 - 内部会走 suppressed LLM + tool loop，而不是直接写 memory 后结束
 - tool 权限显式限制为 `memory_search`、`memory_get`、`context_get`
+- `HEARTBEAT.md` 和已注入的根提示文件默认不应再通过 `context_get` 重读；后台巡检遵循小预算策略：先搜索，必要时再补一次读取，然后立即总结
 - `cron_fire` 产生的入口消息、assistant 中间消息、tool 调用结果、最终 assistant 消息都会持久化为 hidden message
 - 普通 UI 的默认历史查询不会显示这些消息，普通聊天恢复上下文时也不会回灌这些 `cron_fire` 历史
 

@@ -327,6 +327,32 @@ func TestProviderRunnerCronFireRejectsNonAllowlistedTool(t *testing.T) {
 	}
 }
 
+func TestCronFireToolPolicyRejectsInjectedPromptFiles(t *testing.T) {
+	errBlock := cronFireToolPolicyError(model.ToolCall{
+		Name: "context_get",
+		Args: map[string]any{"path": "./HEARTBEAT.md"},
+	}, map[string]int{})
+	if errBlock == nil || errBlock.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden reread guard, got %+v", errBlock)
+	}
+	if !strings.Contains(errBlock.Message, "already injected") {
+		t.Fatalf("expected injected prompt file hint, got %+v", errBlock)
+	}
+}
+
+func TestCronFireToolPolicyRejectsBudgetOverflow(t *testing.T) {
+	errBlock := cronFireToolPolicyError(model.ToolCall{
+		Name: "memory_search",
+		Args: map[string]any{"query": "alpha"},
+	}, map[string]int{"memory_search": 1})
+	if errBlock == nil || errBlock.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden budget guard, got %+v", errBlock)
+	}
+	if !strings.Contains(errBlock.Message, "tool budget exhausted") {
+		t.Fatalf("expected budget hint, got %+v", errBlock)
+	}
+}
+
 func TestProviderRunnerNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	r, workspace := newTestRunnerWithWorkspace(t, config.Default().LLM, nil)
 

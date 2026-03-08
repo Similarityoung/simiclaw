@@ -217,6 +217,10 @@ func (b *Builder) heartbeatPolicySection() string {
 
 - 当前 payload_type=cron_fire，属于后台巡检执行。
 - 本轮只允许读取工作区上下文与已有记忆，不允许写入或整理长期记忆。
+- HEARTBEAT.md 的内容已经直接注入本节；不要再对 HEARTBEAT.md 调用 context_get。
+- SOUL.md、IDENTITY.md、USER.md、AGENTS.md、TOOLS.md、BOOTSTRAP.md 若已出现在 prompt 中，默认不要重复读取，除非确实需要精确行号。
+- 默认先做一次 memory_search；若命中，再最多做一次后续读取（memory_get 或 context_get）补证据；拿到足够证据后立即总结。
+- 不要为了“再确认一次”重复调用工具，不要枚举无关文件，不要扩张任务范围。
 - 若 HEARTBEAT.md 存在，按其中 checklist 执行；若不存在，则只做保守检查，不要扩张任务范围。`)}
 	entry, ok := b.readContextText(heartbeatContextFile)
 	if !ok {
