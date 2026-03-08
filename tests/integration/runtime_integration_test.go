@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +72,53 @@ func TestNoReplySuppressed(t *testing.T) {
 	}
 	if event.OutboxStatus != "" {
 		t.Fatalf("expected no outbox status, got %+v", event)
+	}
+}
+
+func TestNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
+	app := newTestApp(t)
+	day := time.Now().UTC().Format("2006-01-02")
+
+	flushReq := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "integration-canonical-dm", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:integration-canonical-dm:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "memory_flush", Text: "flush canonical"},
+	}
+	flushResp := ingest(t, app, flushReq, http.StatusAccepted)
+	flushEvent := pollEvent(t, app, flushResp.EventID)
+	if flushEvent.Status != model.EventStatusSuppressed {
+		t.Fatalf("expected suppressed flush event, got %+v", flushEvent)
+	}
+	privateDaily := filepath.Join(app.Cfg.Workspace, "memory", "private", "daily", day+".md")
+	privateData, err := os.ReadFile(privateDaily)
+	if err != nil {
+		t.Fatalf("read private daily: %v", err)
+	}
+	if !strings.Contains(string(privateData), "flush canonical") {
+		t.Fatalf("expected flush text in private daily file, got %q", string(privateData))
+	}
+
+	compactReq := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "integration-canonical-group", ChannelType: "group"},
+		IdempotencyKey: "cli:integration-canonical-group:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "compaction", Text: "group canonical"},
+	}
+	compactResp := ingest(t, app, compactReq, http.StatusAccepted)
+	compactEvent := pollEvent(t, app, compactResp.EventID)
+	if compactEvent.Status != model.EventStatusSuppressed {
+		t.Fatalf("expected suppressed compaction event, got %+v", compactEvent)
+	}
+	publicCurated := filepath.Join(app.Cfg.Workspace, "memory", "public", "MEMORY.md")
+	publicData, err := os.ReadFile(publicCurated)
+	if err != nil {
+		t.Fatalf("read public curated: %v", err)
+	}
+	if !strings.Contains(string(publicData), "group canonical") {
+		t.Fatalf("expected compaction text in public curated file, got %q", string(publicData))
 	}
 }
 
