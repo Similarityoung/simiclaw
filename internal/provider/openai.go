@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -16,8 +17,9 @@ import (
 )
 
 type openAICompatibleProvider struct {
-	name   string
-	client openai.Client
+	name           string
+	client         openai.Client
+	requestTimeout time.Duration
 }
 
 func newOpenAICompatibleProvider(name string, cfg config.LLMProviderConfig) (LLMProvider, error) {
@@ -26,21 +28,22 @@ func newOpenAICompatibleProvider(name string, cfg config.LLMProviderConfig) (LLM
 	}
 	opts := []option.RequestOption{
 		option.WithAPIKey(cfg.APIKey),
-		option.WithHTTPClient(&http.Client{Timeout: cfg.Timeout.Duration}),
+		option.WithHTTPClient(&http.Client{}),
 	}
 	if strings.TrimSpace(cfg.BaseURL) != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
 	return &openAICompatibleProvider{
-		name:   name,
-		client: openai.NewClient(opts...),
+		name:           name,
+		client:         openai.NewClient(opts...),
+		requestTimeout: cfg.Timeout.Duration,
 	}, nil
 }
 
 func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) {
 	params := buildChatCompletionParams(req, false)
 
-	resp, err := p.client.Chat.Completions.New(ctx, params)
+	resp, err := p.client.Chat.Completions.New(ctx, params, p.requestTimeoutOption()...)
 	if err != nil {
 		return ChatResult{}, err
 	}
@@ -76,6 +79,13 @@ func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatReque
 		return ChatResult{}, err
 	}
 	return chatResultFromAccumulator(p.name, &acc, toolAcc)
+}
+
+func (p *openAICompatibleProvider) requestTimeoutOption() []option.RequestOption {
+	if p.requestTimeout <= 0 {
+		return nil
+	}
+	return []option.RequestOption{option.WithRequestTimeout(p.requestTimeout)}
 }
 
 func buildChatCompletionParams(req ChatRequest, includeUsage bool) openai.ChatCompletionNewParams {

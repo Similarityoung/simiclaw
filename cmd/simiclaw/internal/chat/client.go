@@ -36,6 +36,7 @@ type HTTPClient struct {
 	baseURL        string
 	apiKey         string
 	httpClient     *http.Client
+	streamHTTPClient *http.Client
 	requestTimeout time.Duration
 	pollInterval   time.Duration
 	pollTimeout    time.Duration
@@ -75,6 +76,7 @@ func NewHTTPClient(baseURL, apiKey string, requestTimeout, pollInterval, pollTim
 		baseURL:        strings.TrimRight(baseURL, "/"),
 		apiKey:         strings.TrimSpace(apiKey),
 		httpClient:     &http.Client{},
+		streamHTTPClient: newStreamHTTPClient(requestTimeout),
 		requestTimeout: requestTimeout,
 		pollInterval:   pollInterval,
 		pollTimeout:    pollTimeout,
@@ -102,7 +104,7 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.streamHTTPClient.Do(httpReq)
 	if err != nil {
 		return model.EventRecord{}, err
 	}
@@ -121,7 +123,15 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 	reader := bufio.NewReader(resp.Body)
 	var acceptedEventID string
 	for {
-		eventType, data, err := readSSEEvent(reader)
+		var (
+			eventType string
+			data      []byte
+		)
+		if acceptedEventID == "" {
+			eventType, data, err = readSSEEventWithTimeout(reader, resp.Body, c.requestTimeout)
+		} else {
+			eventType, data, err = readSSEEvent(reader)
+		}
 		if err != nil {
 			if acceptedEventID != "" {
 				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
@@ -164,6 +174,10 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 		}
 		if event.Type == model.ChatStreamEventDone || event.Type == model.ChatStreamEventError {
 			if event.EventRecord != nil {
+				if !isTerminalEvent(*event.EventRecord) {
+					_ = resp.Body.Close()
+					return c.pollEvent(ctx, event.EventRecord.EventID)
+				}
 				return *event.EventRecord, nil
 			}
 			if event.Error != nil {
@@ -172,6 +186,19 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 			return model.EventRecord{}, errors.New("stream terminal event missing event_record")
 		}
 	}
+}
+
+func newStreamHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
+	if responseHeaderTimeout <= 0 {
+		return &http.Client{}
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{}
+	}
+	cloned := transport.Clone()
+	cloned.ResponseHeaderTimeout = responseHeaderTimeout
+	return &http.Client{Transport: cloned}
 }
 
 func (c *HTTPClient) PollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
@@ -303,6 +330,36 @@ func isStreamFallbackStatus(status int) bool {
 		status == http.StatusMethodNotAllowed ||
 		status == http.StatusNotImplemented ||
 		status == http.StatusBadGateway
+}
+
+type sseReadResult struct {
+	eventType string
+	data      []byte
+	err       error
+}
+
+func readSSEEventWithTimeout(r *bufio.Reader, closer io.Closer, timeout time.Duration) (string, []byte, error) {
+	if timeout <= 0 {
+		return readSSEEvent(r)
+	}
+	resultCh := make(chan sseReadResult, 1)
+	go func() {
+		eventType, data, err := readSSEEvent(r)
+		resultCh <- sseReadResult{eventType: eventType, data: data, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-resultCh:
+		return result.eventType, result.data, result.err
+	case <-timer.C:
+		if closer != nil {
+			_ = closer.Close()
+		}
+		return "", nil, fmt.Errorf("stream handshake timeout after %s: %w", timeout, context.DeadlineExceeded)
+	}
 }
 
 func readSSEEvent(r *bufio.Reader) (string, []byte, error) {
