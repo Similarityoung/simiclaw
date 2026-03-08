@@ -32,6 +32,8 @@ func (p *fakeProvider) Chat(_ context.Context, req ChatRequest) (ChatResult, err
 		text = "已收到: {{last_user_message}}"
 	}
 	lastUser := ""
+	firstSystem := ""
+	roles := make([]string, 0, len(req.Messages))
 	seenToolResult := false
 	for i := len(req.Messages) - 1; i >= 0; i-- {
 		switch req.Messages[i].Role {
@@ -43,7 +45,15 @@ func (p *fakeProvider) Chat(_ context.Context, req ChatRequest) (ChatResult, err
 			seenToolResult = true
 		}
 	}
+	for _, msg := range req.Messages {
+		roles = append(roles, msg.Role)
+		if msg.Role == "system" && firstSystem == "" {
+			firstSystem = msg.Content
+		}
+	}
 	text = strings.ReplaceAll(text, "{{last_user_message}}", lastUser)
+	text = strings.ReplaceAll(text, "{{first_system_message}}", firstSystem)
+	text = strings.ReplaceAll(text, "{{message_roles}}", strings.Join(roles, ","))
 
 	var toolCalls []model.ToolCall
 	if p.cfg.FakeToolName != "" && !seenToolResult {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/memory"
+	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -52,6 +53,7 @@ type ProviderRunner struct {
 	registry     *tools.Registry
 	providers    *provider.Factory
 	writer       *memory.Writer
+	prompts      *prompt.Builder
 	historyLimit int
 }
 
@@ -68,6 +70,7 @@ func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry,
 		registry:     registry,
 		providers:    providers,
 		writer:       memory.NewWriter(workspace),
+		prompts:      prompt.NewBuilder(workspace),
 		historyLimit: 20,
 	}
 }
@@ -151,7 +154,15 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		Content: strings.TrimSpace(event.Payload.Text),
 		Visible: true,
 	}}
-	chatMessages := make([]provider.ChatMessage, 0, len(history)+1)
+	systemPrompt := r.prompts.Build(prompt.BuildInput{Context: prompt.RunContext{
+		Now:          now,
+		Conversation: event.Conversation,
+		SessionKey:   event.SessionKey,
+		SessionID:    event.ActiveSessionID,
+		PayloadType:  event.Payload.Type,
+	}})
+	chatMessages := make([]provider.ChatMessage, 0, len(history)+2)
+	chatMessages = append(chatMessages, provider.ChatMessage{Role: "system", Content: systemPrompt})
 	for _, msg := range history {
 		chatMessages = append(chatMessages, provider.ChatMessage{
 			Role:       msg.Role,

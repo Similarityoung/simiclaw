@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/similarityyoung/simiclaw/internal/provider"
@@ -22,6 +23,40 @@ func TestProviderRunnerContinuesWhenStreamSinkPanics(t *testing.T) {
 	}
 	if output.Trace.Diagnostics["stream_sink.text_delta"] == "" {
 		t.Fatalf("expected sink panic diagnostic, got %+v", output.Trace.Diagnostics)
+	}
+}
+
+func TestProviderRunnerPrependsSystemPrompt(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "roles={{message_roles}}\nsystem={{first_system_message}}",
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r := newTestRunner(t, cfg, nil)
+	output, err := r.Run(context.Background(), testEvent("hello"), 1, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if output.AssistantReply == "" {
+		t.Fatalf("expected assistant reply")
+	}
+	if want := "roles=system,user"; output.AssistantReply[:len(want)] != want {
+		t.Fatalf("expected roles prefix %q, got %q", want, output.AssistantReply)
+	}
+	if !containsAll(output.AssistantReply,
+		"## Identity & Runtime Rules",
+		"## Project Context",
+		"## Available Skills",
+		"## Memory Policy",
+		"## Current Run Context",
+	) {
+		t.Fatalf("expected system prompt sections in reply, got %q", output.AssistantReply)
 	}
 }
 
@@ -149,4 +184,13 @@ func (c *captureSink) OnToolResult(toolCallID, toolName string, result map[strin
 		Truncated:  truncated,
 		Error:      apiErr,
 	})
+}
+
+func containsAll(in string, needles ...string) bool {
+	for _, needle := range needles {
+		if !strings.Contains(in, needle) {
+			return false
+		}
+	}
+	return true
 }
