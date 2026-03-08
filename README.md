@@ -4,7 +4,7 @@
 
 ## 当前能力
 
-- CLI：`init | serve | chat | version`
+- CLI：`chat | inspect | init | serve | version | completion`
 - HTTP：
   - `POST /v1/chat:stream`
   - `POST /v1/events:ingest`
@@ -16,6 +16,7 @@
   - `GET /v1/runs/{run_id}/trace`
   - `GET /v1/sessions`
   - `GET /v1/sessions/{session_key}`
+  - `GET /v1/sessions/{session_key}/history`
   - `GET /healthz`
   - `GET /readyz`
 - Worker：
@@ -83,12 +84,21 @@ go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ### 3. 使用 chat CLI
 
 ```bash
-go run ./cmd/simiclaw chat
+go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
 ```
 
-默认会优先使用 `POST /v1/chat:stream` 建立 SSE 流式对话；如果服务端不支持流式或协议版本不兼容，CLI 会自动回退到原有的 ingest + 轮询模式。可通过 `-stream=false` 强制关闭流式。
+`chat` 默认进入 Bubble Tea TUI：启动先选会话，可新建会话、回放历史、发送消息，并优先使用 `POST /v1/chat:stream` 流式展示回复；如果流中断或服务端不支持，会自动回退到 ingest + 轮询。
 
-### 4. 手动 ingest
+### 4. Inspect / Completion
+
+```bash
+go run ./cmd/simiclaw inspect health
+go run ./cmd/simiclaw inspect sessions --limit 20
+go run ./cmd/simiclaw inspect trace <run-id> --output json
+go run ./cmd/simiclaw completion bash
+```
+
+### 5. 手动 ingest
 
 ```bash
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
