@@ -83,6 +83,7 @@ func TestLoadEnvOpenAIAliases(t *testing.T) {
 	t.Setenv("LLM_API_KEY", "test-key")
 	t.Setenv("LLM_BASE_URL", "https://api.deepseek.com")
 	t.Setenv("LLM_MODEL", "openai/deepseek-chat")
+	t.Setenv("TELEGRAM_TOKEN", "")
 
 	cfg, err := Load("")
 	if err != nil {

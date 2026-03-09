@@ -1,0 +1,207 @@
+.sidebar {
+  position: relative;
+  min-height: calc(100vh - 40px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(19, 23, 31, 0.96), rgba(14, 17, 24, 0.94));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 22px 18px 18px;
+}
+
+.brandBlock,
+.actionsRow,
+.metaRow,
+.sessionCardTop,
+.sessionCardSubline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brandBlock {
+  justify-content: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.brandMark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: linear-gradient(135deg, rgba(124, 140, 255, 0.28), rgba(124, 140, 255, 0.08));
+  border: 1px solid rgba(124, 140, 255, 0.22);
+  color: #f7f9ff;
+}
+
+.brandTitle {
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.brandSubtitle,
+.metaRow,
+.sessionCardSubline,
+.sessionCardTime,
+.sessionCardKey,
+.searchLabel {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(245, 247, 250, 0.46);
+}
+
+.brandSubtitle {
+  margin-top: 4px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.actionsRow {
+  margin-bottom: 16px;
+}
+
+.searchField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.searchField input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(10, 12, 18, 0.9);
+  color: #f5f7fa;
+  outline: none;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.searchField input:focus {
+  border-color: rgba(124, 140, 255, 0.54);
+  background: rgba(23, 27, 36, 0.96);
+}
+
+.metaRow {
+  margin-top: 14px;
+}
+
+.sessionList {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+  margin: 14px -4px 0 0;
+  flex: 1;
+}
+
+.sessionCard {
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(15, 18, 24, 0.84);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.sessionCard:hover,
+.primaryButton:hover,
+.ghostButton:hover,
+.loadMoreButton:hover {
+  transform: translateY(-1px);
+}
+
+.sessionCardActive {
+  border-color: rgba(124, 140, 255, 0.46);
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.16), rgba(16, 19, 27, 0.96));
+}
+
+.sessionCardTitle {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: #f5f7fa;
+}
+
+.sessionCardKey {
+  margin-top: 10px;
+  font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(245, 247, 250, 0.34);
+}
+
+.primaryButton,
+.ghostButton,
+.loadMoreButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-radius: 12px;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.primaryButton:disabled,
+.ghostButton:disabled,
+.loadMoreButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primaryButton {
+  min-width: 112px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  color: #f7f9ff;
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.96), rgba(101, 118, 243, 0.92));
+}
+
+.ghostButton,
+.loadMoreButton {
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(17, 20, 27, 0.82);
+  color: rgba(245, 247, 250, 0.78);
+}
+
+.loadMoreButton {
+  width: 100%;
+  margin-top: 12px;
+}
+
+@media (max-width: 959px) {
+  .sidebar {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    bottom: 14px;
+    width: min(320px, calc(100vw - 28px));
+    transform: translateX(calc(-100% - 24px));
+    z-index: 30;
+  }
+
+  .open {
+    transform: translateX(0);
+  }
+}

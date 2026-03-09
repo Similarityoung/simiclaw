@@ -1,0 +1,105 @@
+.dock {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(17, 20, 27, 0.94), rgba(11, 13, 18, 0.98));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+
+.header,
+.footer,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.subline,
+.inlineStatus {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(245, 247, 250, 0.5);
+}
+
+.input {
+  width: 100%;
+  margin-top: 14px;
+  min-height: 128px;
+  resize: vertical;
+  padding: 14px 16px;
+  line-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(10, 12, 18, 0.94);
+  color: #f5f7fa;
+  outline: none;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.input:focus {
+  border-color: rgba(124, 140, 255, 0.54);
+  background: rgba(23, 27, 36, 0.96);
+}
+
+.inlineStatus {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.statusDanger {
+  color: #fb7185;
+}
+
+.primaryButton,
+.ghostButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-radius: 12px;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.primaryButton:hover,
+.ghostButton:hover {
+  transform: translateY(-1px);
+}
+
+.primaryButton:disabled,
+.ghostButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primaryButton {
+  min-width: 112px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  color: #f7f9ff;
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.96), rgba(101, 118, 243, 0.92));
+}
+
+.ghostButton {
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(17, 20, 27, 0.82);
+  color: rgba(245, 247, 250, 0.78);
+}
+
+@media (max-width: 959px) {
+  .header,
+  .footer,
+  .actions {
+    flex-wrap: wrap;
+  }
+}

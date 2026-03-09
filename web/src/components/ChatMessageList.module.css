@@ -1,0 +1,160 @@
+.scrollArea {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.historyLoadRow,
+.metaRow {
+  display: flex;
+  align-items: center;
+}
+
+.historyLoadRow {
+  justify-content: center;
+}
+
+.metaRow {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.emptyStage {
+  margin: auto 0;
+  padding: 40px 32px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(18, 22, 30, 0.82), rgba(11, 14, 20, 0.94));
+}
+
+.emptyEyebrow,
+.role,
+.time {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(245, 247, 250, 0.5);
+}
+
+.emptyEyebrow,
+.role {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.emptyTitle {
+  margin-top: 12px;
+  font-size: 26px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.emptyBody {
+  margin-top: 12px;
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 24px;
+  color: rgba(245, 247, 250, 0.68);
+}
+
+.userRow,
+.assistantRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.userRow {
+  align-items: flex-end;
+}
+
+.assistantRow {
+  align-items: flex-start;
+}
+
+.assistantBubble,
+.userBubble {
+  max-width: min(760px, calc(100% - 48px));
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.assistantBubble {
+  background: rgba(23, 27, 36, 0.92);
+}
+
+.userBubble {
+  background: linear-gradient(180deg, rgba(21, 26, 40, 0.96), rgba(13, 17, 28, 0.98));
+  border-color: rgba(124, 140, 255, 0.3);
+}
+
+.content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 24px;
+  color: #f5f7fa;
+}
+
+.streamingCursor {
+  display: inline-block;
+  width: 9px;
+  height: 18px;
+  margin-left: 6px;
+  vertical-align: text-bottom;
+  border-radius: 999px;
+  background: rgba(124, 140, 255, 0.9);
+  animation: blink 1s ease infinite;
+}
+
+.ghostButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(17, 20, 27, 0.82);
+  color: rgba(245, 247, 250, 0.78);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.ghostButton:hover {
+  transform: translateY(-1px);
+}
+
+.ghostButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 959px) {
+  .assistantBubble,
+  .userBubble {
+    max-width: 100%;
+  }
+
+  .emptyStage {
+    padding: 32px 22px;
+  }
+
+  .emptyTitle {
+    font-size: 22px;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.24;
+  }
+  50% {
+    opacity: 1;
+  }
+}

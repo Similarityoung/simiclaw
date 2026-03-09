@@ -1,0 +1,25 @@
+.notice {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(17, 20, 27, 0.88);
+}
+
+.danger {
+  border-color: rgba(251, 113, 133, 0.22);
+  background: rgba(33, 18, 24, 0.9);
+}
+
+.title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: #f5f7fa;
+}
+
+.body {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 20px;
+  color: rgba(245, 247, 250, 0.58);
+}

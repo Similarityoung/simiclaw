@@ -1,0 +1,90 @@
+.header,
+.left,
+.right {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.left {
+  justify-content: flex-start;
+}
+
+.title {
+  font-size: 30px;
+  line-height: 36px;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: #f5f7fa;
+}
+
+.subtitle {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(245, 247, 250, 0.5);
+}
+
+.modelBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(23, 27, 36, 0.9);
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(245, 247, 250, 0.72);
+}
+
+.chromeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(17, 20, 27, 0.82);
+  color: rgba(245, 247, 250, 0.78);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.chromeButton:hover {
+  transform: translateY(-1px);
+}
+
+.chromeButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (min-width: 1280px) {
+  .chromeButton {
+    display: none;
+  }
+}
+
+@media (max-width: 959px) {
+  .header,
+  .left,
+  .right {
+    flex-wrap: wrap;
+  }
+
+  .title {
+    font-size: 24px;
+    line-height: 30px;
+  }
+}
