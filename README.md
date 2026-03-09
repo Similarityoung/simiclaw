@@ -41,7 +41,7 @@
 当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前文本资源分为 4 层：
 
 - `pkg/prompt/system/`：给模型看的系统固定 prompt
-- `cmd/simiclaw/internal/initcmd/templates/`：`init` 使用的 workspace 脚手架模板
+- `internal/workspace/templates/`：`init` 使用的 workspace 脚手架模板
 - `workspace/` 根文件：用户/项目可编辑上下文
 - `internal/ui/messages/`：给 CLI 等用户界面使用的可见文案
 

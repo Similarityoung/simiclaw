@@ -18,7 +18,7 @@
 !.env.example
 
 # Runtime workspace
-workspace/
+/workspace/
 
 # oh my opencode
 .sisyphus

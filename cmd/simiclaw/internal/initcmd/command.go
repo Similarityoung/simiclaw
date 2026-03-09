@@ -10,6 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	workspacepkg "github.com/similarityyoung/simiclaw/internal/workspace"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 )
 
@@ -49,7 +50,7 @@ func run(opts Options, streams common.IOStreams) error {
 	if err := store.InitWorkspace(opts.Workspace, opts.ForceNewRuntime, config.Default().DBBusyTimeout.Duration); err != nil {
 		return err
 	}
-	if err := scaffoldWorkspaceFiles(opts.Workspace); err != nil {
+	if err := workspacepkg.ScaffoldFiles(opts.Workspace); err != nil {
 		return err
 	}
 	out := streams.Out

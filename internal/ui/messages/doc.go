@@ -6,7 +6,7 @@
 //   - inspect.go: inspect command output labels and formatting helpers
 //
 // Runtime model prompts stay in pkg/prompt.
-// Workspace scaffold templates stay in cmd/simiclaw/internal/initcmd/templates/.
+// Workspace scaffold templates stay in internal/workspace/templates/.
 // Future Web or Telegram surfaces can add channel-specific files here without mixing
 // user-visible messages into runtime prompt text.
 package messages

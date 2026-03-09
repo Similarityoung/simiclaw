@@ -11,22 +11,6 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
 
-func TestEmbeddedWorkspaceTemplatesContainExpectedFiles(t *testing.T) {
-	got := sortedWorkspaceTemplateNames()
-	want := []string{"BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}
-	if len(got) != len(want) {
-		t.Fatalf("unexpected template count got=%v want=%v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("unexpected template order got=%v want=%v", got, want)
-		}
-	}
-	if !strings.Contains(workspaceTemplates["BOOTSTRAP.md"], "Please delete this file manually") {
-		t.Fatalf("expected embedded bootstrap template warning, got %q", workspaceTemplates["BOOTSTRAP.md"])
-	}
-}
-
 func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	var out bytes.Buffer
@@ -54,28 +38,5 @@ func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(bootstrap), "Please delete this file manually") {
 		t.Fatalf("expected bootstrap warning, got %q", string(bootstrap))
-	}
-}
-
-func TestRunDoesNotOverwriteExistingPromptFiles(t *testing.T) {
-	workspace := filepath.Join(t.TempDir(), "workspace")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
-	}
-	userPath := filepath.Join(workspace, "USER.md")
-	if err := os.WriteFile(userPath, []byte("custom user prefs\n"), 0o644); err != nil {
-		t.Fatalf("seed USER.md: %v", err)
-	}
-
-	if err := run(Options{Workspace: workspace}, common.IOStreams{}); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
-
-	data, err := os.ReadFile(userPath)
-	if err != nil {
-		t.Fatalf("read USER.md: %v", err)
-	}
-	if string(data) != "custom user prefs\n" {
-		t.Fatalf("expected existing USER.md to be preserved, got %q", string(data))
 	}
 }

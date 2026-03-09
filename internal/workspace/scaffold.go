@@ -1,4 +1,4 @@
-package initcmd
+package workspace
 
 import (
 	"errors"
@@ -8,9 +8,9 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/store"
 )
 
-func scaffoldWorkspaceFiles(workspace string) error {
-	for _, rel := range sortedWorkspaceTemplateNames() {
-		if err := writeTemplateIfMissing(filepath.Join(workspace, rel), workspaceTemplates[rel]); err != nil {
+func ScaffoldFiles(root string) error {
+	for _, rel := range templateNames() {
+		if err := writeTemplateIfMissing(filepath.Join(root, rel), templates[rel]); err != nil {
 			return err
 		}
 	}
