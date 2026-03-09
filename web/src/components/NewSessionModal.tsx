@@ -23,7 +23,14 @@ export default function NewSessionModal({
 
   return (
     <div className={styles.backdrop} onClick={onClose}>
-      <div className={styles.card} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+      <div
+        className={styles.card}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.key === 'Escape' && onClose()}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+      >
         <div className={styles.header}>
           <div>
             <div className={styles.title}>新建会话</div>

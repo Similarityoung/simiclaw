@@ -18,6 +18,8 @@ export default function ChatHeader({
   onToggleSidebar,
   onToggleDebug,
 }: ChatHeaderProps) {
+  const relativeLastActivity = formatRelativeTime(lastActivity);
+
   return (
     <header className={styles.header}>
       <div className={styles.left}>
@@ -28,8 +30,12 @@ export default function ChatHeader({
           <div className={styles.title}>{conversation}</div>
           <div className={styles.subtitle}>
             <span>{status || '等待输入'}</span>
-            <span>·</span>
-            <span>{formatRelativeTime(lastActivity)}</span>
+            {relativeLastActivity !== '—' ? (
+              <>
+                <span>·</span>
+                <span>{relativeLastActivity}</span>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
