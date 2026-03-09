@@ -1,19 +1,28 @@
 .sidebar {
   position: relative;
-  min-height: calc(100vh - 40px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(19, 23, 31, 0.96), rgba(14, 17, 24, 0.94));
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(10px);
+  min-height: calc(100vh - 48px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 28px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(18px);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+.sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 22%);
+  pointer-events: none;
 }
 
 .inner {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 22px 18px 18px;
+  padding: 24px 20px 20px;
 }
 
 .brandBlock,
@@ -29,28 +38,32 @@
 
 .brandBlock {
   justify-content: flex-start;
-  gap: 14px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 22px;
 }
 
 .brandMark {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  background: linear-gradient(135deg, rgba(124, 140, 255, 0.28), rgba(124, 140, 255, 0.08));
-  border: 1px solid rgba(124, 140, 255, 0.22);
-  color: #f7f9ff;
+  letter-spacing: 0.18em;
+  background:
+    linear-gradient(135deg, rgba(142, 160, 255, 0.34), rgba(142, 160, 255, 0.08)),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(142, 160, 255, 0.22);
+  color: rgba(247, 249, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .brandTitle {
-  font-size: 20px;
-  line-height: 1.25;
-  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 650;
+  letter-spacing: -0.03em;
 }
 
 .brandSubtitle,
@@ -61,17 +74,17 @@
 .searchLabel {
   font-size: 12px;
   line-height: 18px;
-  color: rgba(245, 247, 250, 0.46);
+  color: var(--text-tertiary);
 }
 
 .brandSubtitle {
-  margin-top: 4px;
+  margin-top: 6px;
   text-transform: lowercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
 .actionsRow {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .searchField {
@@ -82,23 +95,24 @@
 
 .searchField input {
   width: 100%;
-  height: 44px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  background: rgba(10, 12, 18, 0.9);
-  color: #f5f7fa;
+  height: 46px;
+  padding: 0 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: rgba(11, 14, 20, 0.9);
+  color: var(--text-primary);
   outline: none;
-  transition: border-color 180ms ease, background 180ms ease;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
 .searchField input:focus {
-  border-color: rgba(124, 140, 255, 0.54);
-  background: rgba(23, 27, 36, 0.96);
+  border-color: rgba(142, 160, 255, 0.54);
+  background: rgba(19, 24, 33, 0.96);
+  box-shadow: 0 0 0 4px rgba(142, 160, 255, 0.08);
 }
 
 .metaRow {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .sessionList {
@@ -106,20 +120,21 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding-right: 4px;
-  margin: 14px -4px 0 0;
+  margin: 16px -4px 0 0;
   flex: 1;
 }
 
 .sessionCard {
   width: 100%;
-  padding: 14px;
+  padding: 16px;
   text-align: left;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(15, 18, 24, 0.84);
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(17, 20, 27, 0.84), rgba(12, 15, 21, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
 .sessionCard:hover,
@@ -129,25 +144,31 @@
   transform: translateY(-1px);
 }
 
+.sessionCard:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow-soft);
+}
+
 .sessionCardActive {
-  border-color: rgba(124, 140, 255, 0.46);
-  background: linear-gradient(180deg, rgba(124, 140, 255, 0.16), rgba(16, 19, 27, 0.96));
+  border-color: rgba(142, 160, 255, 0.38);
+  background: linear-gradient(180deg, rgba(142, 160, 255, 0.18), rgba(16, 19, 27, 0.96));
+  box-shadow: 0 16px 34px rgba(25, 30, 52, 0.3);
 }
 
 .sessionCardTitle {
   font-size: 15px;
   line-height: 22px;
   font-weight: 600;
-  color: #f5f7fa;
+  color: var(--text-primary);
 }
 
 .sessionCardKey {
   margin-top: 10px;
-  font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: rgba(245, 247, 250, 0.34);
+  color: var(--text-quaternary);
 }
 
 .primaryButton,
@@ -156,8 +177,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
-  border-radius: 12px;
+  height: 42px;
+  border-radius: 14px;
   transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
 }
 
@@ -171,18 +192,19 @@
 
 .primaryButton {
   min-width: 112px;
-  padding: 0 16px;
+  padding: 0 18px;
   border: 1px solid transparent;
-  color: #f7f9ff;
-  background: linear-gradient(180deg, rgba(124, 140, 255, 0.96), rgba(101, 118, 243, 0.92));
+  color: rgba(247, 249, 255, 0.98);
+  background: linear-gradient(180deg, rgba(142, 160, 255, 0.98), rgba(111, 132, 255, 0.9));
+  box-shadow: 0 14px 30px rgba(82, 96, 177, 0.3);
 }
 
 .ghostButton,
 .loadMoreButton {
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(17, 20, 27, 0.82);
-  color: rgba(245, 247, 250, 0.78);
+  padding: 0 15px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(16, 20, 28, 0.82);
+  color: var(--text-secondary);
 }
 
 .loadMoreButton {
