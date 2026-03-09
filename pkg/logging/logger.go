@@ -19,7 +19,8 @@ type Field struct {
 }
 
 type Logger struct {
-	base *zap.Logger
+	base   *zap.Logger
+	module string
 }
 
 func String(key, val string) Field {
@@ -82,30 +83,27 @@ func Init(level string) error {
 
 // L 返回附带 module 字段的 logger。
 func L(module string) *Logger {
-	if strings.TrimSpace(module) == "" {
-		return &Logger{base: zap.L()}
-	}
-	return &Logger{base: zap.L().With(zap.String("module", module))}
+	return &Logger{base: zap.L(), module: strings.TrimSpace(module)}
 }
 
 func (l *Logger) With(fields ...Field) *Logger {
-	return &Logger{base: l.unwrap().With(toZapFields(fields)...)}
+	return &Logger{base: l.unwrap().With(toZapFields(fields)...), module: l.module}
 }
 
 func (l *Logger) Debug(msg string, fields ...Field) {
-	l.unwrap().Debug(msg, toZapFields(fields)...)
+	l.unwrap().Debug(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Info(msg string, fields ...Field) {
-	l.unwrap().Info(msg, toZapFields(fields)...)
+	l.unwrap().Info(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Warn(msg string, fields ...Field) {
-	l.unwrap().Warn(msg, toZapFields(fields)...)
+	l.unwrap().Warn(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Error(msg string, fields ...Field) {
-	l.unwrap().Error(msg, toZapFields(fields)...)
+	l.unwrap().Error(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 // Sync 刷新 logger 缓冲；忽略 stdout/stderr 的常见无效 sync 错误。
@@ -148,6 +146,16 @@ func (l *Logger) unwrap() *zap.Logger {
 		return zap.L()
 	}
 	return l.base
+}
+
+func (l *Logger) formatMessage(msg string) string {
+	if l == nil || l.module == "" {
+		return msg
+	}
+	if msg == "" {
+		return fmt.Sprintf("[%s]", l.module)
+	}
+	return fmt.Sprintf("[%s] %s", l.module, msg)
 }
 
 func toZapFields(fields []Field) []zap.Field {

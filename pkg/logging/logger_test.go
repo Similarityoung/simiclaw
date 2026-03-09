@@ -51,15 +51,7 @@ func TestInitAndConsoleOutput(t *testing.T) {
 		logging.Sync()
 	})
 
-	line := firstNonEmptyLine(out)
-	if line == "" {
-		t.Fatal("expected log output")
-	}
-
-	parts := strings.Split(line, "\t")
-	if len(parts) < 5 {
-		t.Fatalf("unexpected console output: %q", line)
-	}
+	parts := splitConsoleLine(t, out)
 	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$`).MatchString(parts[0]); !matched {
 		t.Fatalf("unexpected timestamp: %q", parts[0])
 	}
@@ -69,14 +61,29 @@ func TestInitAndConsoleOutput(t *testing.T) {
 	if !strings.Contains(parts[2], "logger_test.go") {
 		t.Fatalf("caller=%q", parts[2])
 	}
-	if parts[3] != "ingest accepted" {
+	if parts[3] != "[gateway] ingest accepted" {
 		t.Fatalf("msg=%q", parts[3])
-	}
-	if !strings.Contains(parts[4], `"module": "gateway"`) {
-		t.Fatalf("module fields=%q", parts[4])
 	}
 	if !strings.Contains(parts[4], `"key": "value"`) {
 		t.Fatalf("key fields=%q", parts[4])
+	}
+	if strings.Contains(parts[4], `"module"`) {
+		t.Fatalf("unexpected module field=%q", parts[4])
+	}
+}
+
+func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		logging.L("").Info("plain message")
+		logging.Sync()
+	})
+
+	parts := splitConsoleLine(t, out)
+	if parts[3] != "plain message" {
+		t.Fatalf("msg=%q", parts[3])
 	}
 }
 
@@ -111,6 +118,20 @@ func captureStdout(t *testing.T, fn func()) string {
 	_ = r.Close()
 
 	return out
+}
+
+func splitConsoleLine(t *testing.T, out string) []string {
+	t.Helper()
+
+	line := firstNonEmptyLine(out)
+	if line == "" {
+		t.Fatal("expected log output")
+	}
+	parts := strings.Split(line, "\t")
+	if len(parts) < 4 {
+		t.Fatalf("unexpected console output: %q", line)
+	}
+	return parts
 }
 
 func firstNonEmptyLine(out string) string {
