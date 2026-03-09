@@ -2,9 +2,9 @@ package logging_test
 
 import (
 	"bufio"
-	"encoding/json"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -42,7 +42,7 @@ func TestParseLevel(t *testing.T) {
 	}
 }
 
-func TestInitAndJSONOutput(t *testing.T) {
+func TestInitAndConsoleOutput(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
@@ -51,33 +51,58 @@ func TestInitAndJSONOutput(t *testing.T) {
 		logging.Sync()
 	})
 
-	line := firstNonEmptyLine(out)
-	if line == "" {
-		t.Fatal("expected log output")
+	parts := splitConsoleLine(t, out, 5)
+	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$`).MatchString(parts[0]); !matched {
+		t.Fatalf("unexpected timestamp: %q", parts[0])
 	}
+	if parts[1] != "INFO" {
+		t.Fatalf("level=%q", parts[1])
+	}
+	if !strings.Contains(parts[2], "logger_test.go") {
+		t.Fatalf("caller=%q", parts[2])
+	}
+	if parts[3] != "[gateway] ingest accepted" {
+		t.Fatalf("msg=%q", parts[3])
+	}
+	if !strings.Contains(parts[4], `"key": "value"`) {
+		t.Fatalf("key fields=%q", parts[4])
+	}
+	if strings.Contains(parts[4], `"module"`) {
+		t.Fatalf("unexpected module field=%q", parts[4])
+	}
+}
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(line), &got); err != nil {
-		t.Fatalf("invalid json output: %v", err)
+func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		logging.L("").Info("plain message")
+		logging.Sync()
+	})
+
+	parts := splitConsoleLine(t, out, 4)
+	if parts[3] != "plain message" {
+		t.Fatalf("msg=%q", parts[3])
 	}
-	if got["level"] != "info" {
-		t.Fatalf("level=%v", got["level"])
+}
+
+func TestNilLoggerWithDoesNotPanic(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		var logger *logging.Logger
+		logger.With(logging.String("key", "value")).Info("plain message")
+		logging.Sync()
+	})
+
+	parts := splitConsoleLine(t, out, 5)
+	if parts[3] != "plain message" {
+		t.Fatalf("msg=%q", parts[3])
 	}
-	if got["msg"] != "ingest accepted" {
-		t.Fatalf("msg=%v", got["msg"])
-	}
-	if got["module"] != "gateway" {
-		t.Fatalf("module=%v", got["module"])
-	}
-	if got["key"] != "value" {
-		t.Fatalf("key=%v", got["key"])
-	}
-	caller, ok := got["caller"].(string)
-	if !ok || !strings.Contains(caller, "logger_test.go") {
-		t.Fatalf("caller=%v", got["caller"])
-	}
-	if _, ok := got["ts"]; !ok {
-		t.Fatal("missing ts field")
+	if !strings.Contains(parts[4], `"key": "value"`) {
+		t.Fatalf("key fields=%q", parts[4])
 	}
 }
 
@@ -112,6 +137,20 @@ func captureStdout(t *testing.T, fn func()) string {
 	_ = r.Close()
 
 	return out
+}
+
+func splitConsoleLine(t *testing.T, out string, minParts int) []string {
+	t.Helper()
+
+	line := firstNonEmptyLine(out)
+	if line == "" {
+		t.Fatal("expected log output")
+	}
+	parts := strings.Split(line, "\t")
+	if len(parts) < minParts {
+		t.Fatalf("unexpected console output parts=%d want>=%d: %q", len(parts), minParts, line)
+	}
+	return parts
 }
 
 func firstNonEmptyLine(out string) string {

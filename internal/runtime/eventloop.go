@@ -197,7 +197,7 @@ func (l *EventLoop) processEvent(eventID string) {
 			finalize.OutboxBody = output.AssistantReply
 		}
 		if err := l.db.FinalizeRun(ctx, finalize); err != nil {
-			logger.Error("eventloop.finalize_failed",
+			logger.Error("finalize failed",
 				logging.String("status", "failed"),
 				logging.String("error_code", model.ErrorCodeInternal),
 				logging.Error(err),
@@ -217,7 +217,7 @@ func (l *EventLoop) processEvent(eventID string) {
 				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromFinalize(finalize))
 			}
 		}
-		logger.Info("eventloop.completed",
+		logger.Info("completed",
 			logging.String("status", string(finalize.EventStatus)),
 			logging.Int64("latency_ms", time.Since(now).Milliseconds()),
 		)

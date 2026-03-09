@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -19,7 +20,8 @@ type Field struct {
 }
 
 type Logger struct {
-	base *zap.Logger
+	base   *zap.Logger
+	module string
 }
 
 func String(key, val string) Field {
@@ -67,7 +69,7 @@ func ParseLevel(raw string) (zapcore.Level, error) {
 	}
 }
 
-// Init 初始化全局 logger，输出固定为 JSON 到 stdout。
+// Init 初始化全局 logger，输出固定为 console 文本到 stdout。
 func Init(level string) error {
 	if strings.TrimSpace(level) == "" {
 		level = defaultLogLevel
@@ -80,32 +82,32 @@ func Init(level string) error {
 	return nil
 }
 
-// L 返回附带 module 字段的 logger。
+// L 返回附带 module 消息前缀的 logger。
 func L(module string) *Logger {
-	if strings.TrimSpace(module) == "" {
-		return &Logger{base: zap.L()}
-	}
-	return &Logger{base: zap.L().With(zap.String("module", module))}
+	return &Logger{base: zap.L(), module: strings.TrimSpace(module)}
 }
 
 func (l *Logger) With(fields ...Field) *Logger {
-	return &Logger{base: l.unwrap().With(toZapFields(fields)...)}
+	if l == nil {
+		return &Logger{base: zap.L().With(toZapFields(fields)...)}
+	}
+	return &Logger{base: l.unwrap().With(toZapFields(fields)...), module: l.module}
 }
 
 func (l *Logger) Debug(msg string, fields ...Field) {
-	l.unwrap().Debug(msg, toZapFields(fields)...)
+	l.unwrap().Debug(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Info(msg string, fields ...Field) {
-	l.unwrap().Info(msg, toZapFields(fields)...)
+	l.unwrap().Info(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Warn(msg string, fields ...Field) {
-	l.unwrap().Warn(msg, toZapFields(fields)...)
+	l.unwrap().Warn(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 func (l *Logger) Error(msg string, fields ...Field) {
-	l.unwrap().Error(msg, toZapFields(fields)...)
+	l.unwrap().Error(l.formatMessage(msg), toZapFields(fields)...)
 }
 
 // Sync 刷新 logger 缓冲；忽略 stdout/stderr 的常见无效 sync 错误。
@@ -129,18 +131,22 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "ts",
 		LevelKey:       "level",
-		NameKey:        "logger",
+		NameKey:        "",
 		CallerKey:      "caller",
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.RFC3339NanoTimeEncoder,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeTime:     encodeOffsetTime,
 		EncodeDuration: zapcore.StringDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
-	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), sink, parsed)
+	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), sink, parsed)
 	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
+}
+
+func encodeOffsetTime(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+	enc.AppendString(t.Local().Format("2006-01-02T15:04:05.000-0700"))
 }
 
 func (l *Logger) unwrap() *zap.Logger {
@@ -148,6 +154,16 @@ func (l *Logger) unwrap() *zap.Logger {
 		return zap.L()
 	}
 	return l.base
+}
+
+func (l *Logger) formatMessage(msg string) string {
+	if l == nil || l.module == "" {
+		return msg
+	}
+	if msg == "" {
+		return fmt.Sprintf("[%s]", l.module)
+	}
+	return fmt.Sprintf("[%s] %s", l.module, msg)
 }
 
 func toZapFields(fields []Field) []zap.Field {

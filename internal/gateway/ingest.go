@@ -95,7 +95,7 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 	if s.eventLoop.TryEnqueue(result.EventID) {
 		_ = s.db.MarkEventQueued(ctx, result.EventID, time.Now().UTC())
 	}
-	logger.Info("gateway.ingest.accepted",
+	logger.Info("ingest accepted",
 		logging.String("status", ingestStatusAccepted),
 		logging.String("event_id", result.EventID),
 		logging.String("session_key", sessionKey),
