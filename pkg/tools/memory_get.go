@@ -59,6 +59,8 @@ func RegisterBuiltins(reg *Registry) {
 	RegisterContextGet(reg)
 	RegisterMemorySearch(reg)
 	RegisterMemoryGet(reg)
+	RegisterWorkspacePatch(reg)
+	RegisterWorkspaceDelete(reg)
 }
 
 func parseInt(v any, fallback int) int {
