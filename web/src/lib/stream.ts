@@ -6,6 +6,7 @@ import {
 } from '../types';
 
 const terminalEventTypes = new Set(['done', 'error']);
+const terminalPollTimeoutMs = 60000;
 
 export class APIError extends Error {
   readonly statusCode: number;
@@ -158,7 +159,7 @@ export async function waitForTerminalEvent(
   eventID: string,
   signal?: AbortSignal,
 ): Promise<EventRecord> {
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + terminalPollTimeoutMs;
   while (Date.now() < deadline) {
     signal?.throwIfAborted();
     const record = await client.getEvent(eventID);
