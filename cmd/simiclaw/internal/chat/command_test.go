@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -49,7 +50,7 @@ func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T
 	if err != nil {
 		t.Fatalf("runREPL returned error: %v", err)
 	}
-	want := "you> bot> hel\r\033[2Kbot> hello world\nyou> "
+	want := messages.Chat.REPLPrompt + messages.Chat.StreamBotPrompt + "hel" + messages.Chat.StreamBotRewrite("hello world") + messages.Chat.REPLPrompt
 	if out.String() != want {
 		t.Fatalf("unexpected output:\nwant: %q\ngot:  %q", want, out.String())
 	}
@@ -79,7 +80,7 @@ func TestRunREPLEmptyDoneStillCompletesTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runREPL returned error: %v", err)
 	}
-	want := "you> bot> (no reply)\nyou> "
+	want := messages.Chat.REPLPrompt + messages.Chat.StreamBotPrompt + messages.Chat.StreamNoReply + "\n" + messages.Chat.REPLPrompt
 	if out.String() != want {
 		t.Fatalf("unexpected output:\nwant: %q\ngot:  %q", want, out.String())
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,19 +93,23 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 	}
 	safeSink := newSafeStreamSink(sink, &trace)
 	if runMode == model.RunModeNoReply {
-		return r.runNoReply(event, start, trace)
+		return r.runNoReply(ctx, event, maxToolRounds, start, &trace, safeSink)
 	}
 	return r.runInteractive(ctx, event, maxToolRounds, start, &trace, safeSink)
 }
 
-func (r *ProviderRunner) runNoReply(event model.InternalEvent, now time.Time, trace model.RunTrace) (RunOutput, error) {
+func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
+	if event.Payload.Type == "cron_fire" {
+		return r.runSuppressedCronFire(ctx, event, maxToolRounds, now, trace)
+	}
+
 	note := strings.TrimSpace(event.Payload.Text)
 	if note == "" {
 		note = event.Payload.Type
 	}
 	visibility := memory.VisibilityForChannel(event.Conversation.ChannelType)
 	switch event.Payload.Type {
-	case "memory_flush", "cron_fire":
+	case "memory_flush":
 		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now, visibility)
 	case "compaction":
 		_, _ = r.writer.WriteCurated(note, now, visibility)
@@ -118,15 +123,71 @@ func (r *ProviderRunner) runNoReply(event model.InternalEvent, now time.Time, tr
 			Role:    "system",
 			Content: note,
 			Visible: false,
-			Meta:    map[string]any{"payload_type": event.Payload.Type},
+			Meta:    map[string]any{payloadTypeMetaKey: event.Payload.Type},
 		}},
-		Trace:          trace,
+		Trace:          *trace,
 		AssistantReply: "",
 		SuppressOutput: true,
 	}, nil
 }
 
+func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace) (RunOutput, error) {
+	return r.runLLM(ctx, event, maxToolRounds, now, trace, newSafeStreamSink(nil, trace), llmRunOptions{
+		runMode:               model.RunModeNoReply,
+		suppressOutput:        true,
+		userVisible:           false,
+		toolVisible:           false,
+		finalAssistantVisible: false,
+		messageMeta:           map[string]any{payloadTypeMetaKey: event.Payload.Type},
+		allowedTools:          cronFireAllowedTools,
+	})
+}
+
 func (r *ProviderRunner) runInteractive(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
+	return r.runLLM(ctx, event, maxToolRounds, now, trace, sink, llmRunOptions{
+		runMode:               model.RunModeNormal,
+		suppressOutput:        false,
+		userVisible:           true,
+		toolVisible:           true,
+		finalAssistantVisible: true,
+	})
+}
+
+type llmRunOptions struct {
+	runMode               model.RunMode
+	suppressOutput        bool
+	userVisible           bool
+	toolVisible           bool
+	finalAssistantVisible bool
+	messageMeta           map[string]any
+	allowedTools          map[string]struct{}
+}
+
+const payloadTypeMetaKey = "payload_type"
+
+var cronFireAllowedTools = map[string]struct{}{
+	"memory_search": {},
+	"memory_get":    {},
+	"context_get":   {},
+}
+
+var cronFireToolBudgets = map[string]int{
+	"memory_search": 1,
+	"memory_get":    1,
+	"context_get":   1,
+}
+
+var cronFireInjectedRootFiles = map[string]struct{}{
+	"SOUL.md":      {},
+	"IDENTITY.md":  {},
+	"USER.md":      {},
+	"AGENTS.md":    {},
+	"TOOLS.md":     {},
+	"BOOTSTRAP.md": {},
+	"HEARTBEAT.md": {},
+}
+
+func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink, opts llmRunOptions) (RunOutput, error) {
 	defaultModel := r.providers.DefaultModel()
 	llmProvider, actualModel, err := r.providers.Resolve(defaultModel)
 	if err != nil {
@@ -134,16 +195,16 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
 		trace.FinishedAt = time.Now().UTC()
 		trace.LatencyMS = time.Since(now).Milliseconds()
-		return RunOutput{RunMode: model.RunModeNormal, Trace: *trace}, err
+		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
-	history, err := r.db.RecentMessages(ctx, event.ActiveSessionID, r.historyLimit)
+	history, err := r.db.RecentMessagesForPrompt(ctx, event.ActiveSessionID, r.historyLimit)
 	if err != nil {
 		trace.Status = model.RunStatusFailed
 		trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
 		trace.FinishedAt = time.Now().UTC()
 		trace.LatencyMS = time.Since(now).Milliseconds()
-		return RunOutput{RunMode: model.RunModeNormal, Trace: *trace}, err
+		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 	ragHits, _ := r.db.SearchMessagesFTS(ctx, event.ActiveSessionID, strings.TrimSpace(event.Payload.Text), 5)
 	trace.ContextManifest = &model.ContextManifest{
@@ -154,7 +215,8 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 	messages := []OutputMessage{{
 		Role:    "user",
 		Content: strings.TrimSpace(event.Payload.Text),
-		Visible: true,
+		Visible: opts.userVisible,
+		Meta:    cloneMap(opts.messageMeta),
 	}}
 	systemPrompt := r.prompts.Build(prompt.BuildInput{Context: prompt.RunContext{
 		Now:          now,
@@ -170,6 +232,9 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 
 	toolDefs := make([]provider.ToolDefinition, 0)
 	for _, def := range r.registry.Definitions() {
+		if !toolAllowed(def.Schema.Name, opts.allowedTools) {
+			continue
+		}
 		toolDefs = append(toolDefs, provider.ToolDefinition{
 			Name:        def.Schema.Name,
 			Description: def.Schema.Description,
@@ -178,9 +243,10 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 	}
 
 	var (
-		totalUsage provider.Usage
-		reply      string
-		last       provider.ChatResult
+		totalUsage    provider.Usage
+		reply         string
+		last          provider.ChatResult
+		toolUseCounts = map[string]int{}
 	)
 	for round := 0; round <= maxToolRounds; round++ {
 		last, err = llmProvider.StreamChat(ctx, provider.ChatRequest{
@@ -194,7 +260,7 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 			trace.FinishedAt = time.Now().UTC()
 			trace.LatencyMS = time.Since(now).Milliseconds()
 			return RunOutput{
-				RunMode:  model.RunModeNormal,
+				RunMode:  opts.runMode,
 				Messages: messages,
 				Trace:    *trace,
 			}, err
@@ -219,6 +285,7 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 			Content:   strings.TrimSpace(last.Text),
 			Visible:   false,
 			ToolCalls: cloneToolCalls(last.ToolCalls),
+			Meta:      cloneMap(opts.messageMeta),
 		}
 		messages = append(messages, assistantToolMessage)
 		chatMessages = append(chatMessages, provider.ChatMessage{
@@ -229,10 +296,30 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		for _, call := range last.ToolCalls {
 			displayArgs, argsTruncated := sanitizeDisplayMap(call.Args)
 			sink.OnToolStart(call.ToolCallID, call.Name, displayArgs, argsTruncated)
-			res := callToolSafely(ctx, r.registry, tools.Context{
-				Workspace:    r.workspace,
-				Conversation: event.Conversation,
-			}, call.Name, call.Args)
+
+			var res tools.Result
+			switch {
+			case !toolAllowed(call.Name, opts.allowedTools):
+				res = tools.Result{Error: &model.ErrorBlock{
+					Code:    model.ErrorCodeForbidden,
+					Message: fmt.Sprintf("tool %q is not allowed for payload_type=%s", call.Name, event.Payload.Type),
+				}}
+			case strings.EqualFold(strings.TrimSpace(event.Payload.Type), "cron_fire"):
+				if errBlock := cronFireToolPolicyError(call, toolUseCounts); errBlock != nil {
+					res = tools.Result{Error: errBlock}
+				} else {
+					res = callToolSafely(ctx, r.registry, tools.Context{
+						Workspace:    r.workspace,
+						Conversation: event.Conversation,
+					}, call.Name, call.Args)
+					toolUseCounts[call.Name]++
+				}
+			default:
+				res = callToolSafely(ctx, r.registry, tools.Context{
+					Workspace:    r.workspace,
+					Conversation: event.Conversation,
+				}, call.Name, call.Args)
+			}
 			exec := model.ToolExecution{
 				ToolCallID: call.ToolCallID,
 				Name:       call.Name,
@@ -259,11 +346,12 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 			messages = append(messages, OutputMessage{
 				Role:       "tool",
 				Content:    content,
-				Visible:    true,
+				Visible:    opts.toolVisible,
 				ToolCallID: call.ToolCallID,
 				ToolName:   call.Name,
 				ToolArgs:   call.Args,
 				ToolResult: payload,
+				Meta:       cloneMap(opts.messageMeta),
 			})
 			chatMessages = append(chatMessages, provider.ChatMessage{
 				Role:       "tool",
@@ -280,7 +368,8 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 		messages = append(messages, OutputMessage{
 			Role:    "assistant",
 			Content: reply,
-			Visible: true,
+			Visible: opts.finalAssistantVisible,
+			Meta:    cloneMap(opts.messageMeta),
 		})
 	}
 
@@ -297,19 +386,56 @@ func (r *ProviderRunner) runInteractive(ctx context.Context, event model.Interna
 	trace.FinishedAt = time.Now().UTC()
 	trace.LatencyMS = time.Since(now).Milliseconds()
 
+	assistantReply := reply
+	if opts.suppressOutput {
+		assistantReply = ""
+	}
+
 	return RunOutput{
-		RunMode:        model.RunModeNormal,
+		RunMode:        opts.runMode,
 		Messages:       messages,
 		Trace:          *trace,
-		AssistantReply: reply,
-		SuppressOutput: false,
+		AssistantReply: assistantReply,
+		SuppressOutput: opts.suppressOutput,
 	}, nil
+}
+
+func cronFireToolPolicyError(call model.ToolCall, counts map[string]int) *model.ErrorBlock {
+	if budget, ok := cronFireToolBudgets[call.Name]; ok && counts[call.Name] >= budget {
+		return &model.ErrorBlock{
+			Code:    model.ErrorCodeForbidden,
+			Message: fmt.Sprintf("cron_fire tool budget exhausted for %q; summarize with current evidence instead of fetching more context", call.Name),
+		}
+	}
+	if call.Name != "context_get" {
+		return nil
+	}
+	path, _ := call.Args["path"].(string)
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(path))))
+	if _, ok := cronFireInjectedRootFiles[clean]; ok {
+		return &model.ErrorBlock{
+			Code:    model.ErrorCodeForbidden,
+			Message: fmt.Sprintf("context_get %q is already injected into the cron_fire system prompt; summarize with current evidence instead of rereading it", clean),
+		}
+	}
+	return nil
+}
+
+func toolAllowed(name string, allowed map[string]struct{}) bool {
+	if allowed == nil {
+		return true
+	}
+	_, ok := allowed[name]
+	return ok
 }
 
 func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessage {
 	out := make([]provider.ChatMessage, 0, len(history))
 	pendingToolCalls := map[string]bool{}
 	for _, msg := range history {
+		if msg.Meta[payloadTypeMetaKey] == "cron_fire" {
+			continue
+		}
 		switch msg.Role {
 		case "assistant":
 			if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {

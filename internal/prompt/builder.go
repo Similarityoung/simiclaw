@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
@@ -14,21 +15,39 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/contextfile"
 	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	promptpkg "github.com/similarityyoung/simiclaw/pkg/prompt"
 )
 
-var bootstrapFiles = []string{"AGENTS.md", "IDENTITY.md", "USER.md"}
+var workspaceContextFiles = []string{"SOUL.md", "IDENTITY.md", "USER.md", "AGENTS.md", "TOOLS.md"}
+
+const (
+	bootstrapContextFile = "BOOTSTRAP.md"
+	heartbeatContextFile = "HEARTBEAT.md"
+)
 
 type Builder struct {
 	workspace string
 
-	mu                sync.RWMutex
-	cachedStatic      string
-	cachedMemoryMode  string
-	bootstrapAtCache  map[string]time.Time
-	skillFilesAtCache map[string]time.Time
-	skillDirsAtCache  map[string]time.Time
-	curatedAtCache    map[string]time.Time
-	staticBuilds      int
+	mu           sync.RWMutex
+	cachedStatic map[string]staticCacheEntry
+	staticBuilds int
+}
+
+type staticCacheEntry struct {
+	content      string
+	fingerprints map[string]string
+}
+
+type staticVariant struct {
+	memoryMode       string
+	includeHeartbeat bool
+}
+
+func (v staticVariant) key() string {
+	if v.includeHeartbeat {
+		return v.memoryMode + "|heartbeat"
+	}
+	return v.memoryMode + "|normal"
 }
 
 type RunContext struct {
@@ -56,7 +75,7 @@ type textEntry struct {
 }
 
 func NewBuilder(workspace string) *Builder {
-	return &Builder{workspace: workspace}
+	return &Builder{workspace: workspace, cachedStatic: map[string]staticCacheEntry{}}
 }
 
 func (b *Builder) Build(input BuildInput) string {
@@ -66,41 +85,61 @@ func (b *Builder) Build(input BuildInput) string {
 	}
 
 	parts := []string{
-		b.buildStaticPrefix(input.Context.Conversation.ChannelType),
+		b.buildStaticPrefix(buildStaticVariant(input.Context)),
 		b.currentRunContextSection(input.Context, now),
 	}
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
-func (b *Builder) buildStaticPrefix(channelType string) string {
-	memoryMode := buildMemoryMode(channelType)
+func buildStaticVariant(ctx RunContext) staticVariant {
+	return staticVariant{
+		memoryMode:       buildMemoryMode(ctx.Conversation.ChannelType),
+		includeHeartbeat: strings.EqualFold(strings.TrimSpace(ctx.PayloadType), "cron_fire"),
+	}
+}
+
+func (b *Builder) buildStaticPrefix(variant staticVariant) string {
+	key := variant.key()
+	snapshot := b.snapshotStaticState(variant)
+
 	b.mu.RLock()
-	if b.cachedStatic != "" && b.cachedMemoryMode == memoryMode && !b.staticSourcesChangedLocked(memoryMode) {
-		cached := b.cachedStatic
+	if entry, ok := b.cachedStatic[key]; ok && equalStringMap(entry.fingerprints, snapshot) {
+		cached := entry.content
 		b.mu.RUnlock()
 		return cached
 	}
 	b.mu.RUnlock()
 
+	content, snapshot, cacheable := stableStaticBuild(
+		func() string { return b.buildStaticContent(variant) },
+		func() map[string]string { return b.snapshotStaticState(variant) },
+	)
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.cachedStatic != "" && b.cachedMemoryMode == memoryMode && !b.staticSourcesChangedLocked(memoryMode) {
-		return b.cachedStatic
+	latest := b.snapshotStaticState(variant)
+	if entry, ok := b.cachedStatic[key]; ok && equalStringMap(entry.fingerprints, latest) {
+		return entry.content
 	}
+	if cacheable && equalStringMap(snapshot, latest) {
+		b.cachedStatic[key] = staticCacheEntry{content: content, fingerprints: snapshot}
+		b.staticBuilds++
+	}
+	return content
+}
 
+func (b *Builder) buildStaticContent(variant staticVariant) string {
 	parts := []string{
 		b.identitySection(),
-		b.projectContextSection(),
+		b.toolContractSection(),
+		b.memoryPolicySection(variant.memoryMode),
+		b.workspaceContextSection(),
 		b.availableSkillsSection(),
-		b.memoryPolicySection(channelType),
 	}
-	b.cachedStatic = strings.Join(parts, "\n\n---\n\n")
-	b.cachedMemoryMode = memoryMode
-	b.bootstrapAtCache = b.snapshotBootstrapState()
-	b.skillFilesAtCache, b.skillDirsAtCache = b.snapshotSkillState()
-	b.curatedAtCache = b.snapshotCuratedState(memoryMode)
-	b.staticBuilds++
-	return b.cachedStatic
+	if variant.includeHeartbeat {
+		parts = append(parts, b.heartbeatPolicySection())
+	}
+	return strings.Join(parts, "\n\n---\n\n")
 }
 
 func (b *Builder) identitySection() string {
@@ -108,21 +147,29 @@ func (b *Builder) identitySection() string {
 	if err != nil {
 		workspacePath = b.workspace
 	}
-	return strings.TrimSpace(fmt.Sprintf(`## Identity & Runtime Rules
-
-你是 SimiClaw，一个运行在本地工作区内的 Go Agent Runtime 助手。
-
-- 当前工作区：%s
-- 回答默认跟随用户语言；若用户未指定，则优先使用用户消息的语言。
-- 涉及执行动作、读取记忆或使用扩展能力时，优先使用工具，不要假装已经执行。
-- 遵守工作区内显式规则文件；显式用户指令优先于近似上下文。`, workspacePath))
+	return promptpkg.Render(promptpkg.SystemText.IdentityRuntime, map[string]string{"workspace_path": workspacePath})
 }
 
-func (b *Builder) projectContextSection() string {
-	parts := make([]string, 0, len(bootstrapFiles)+1)
-	parts = append(parts, "## Project Context")
+func (b *Builder) toolContractSection() string {
+	return promptpkg.SystemText.ToolContract
+}
+
+func (b *Builder) memoryPolicySection(memoryMode string) string {
+	parts := []string{promptpkg.SystemText.MemoryPolicy}
+	blocks := b.curatedMemoryBlocks(memoryMode)
+	if len(blocks) == 0 {
+		parts = append(parts, "### Injected Curated Memory\n\nNo curated memory is injected for this run.")
+		return strings.Join(parts, "\n\n")
+	}
+	parts = append(parts, "### Injected Curated Memory")
+	parts = append(parts, blocks...)
+	return strings.Join(parts, "\n\n")
+}
+
+func (b *Builder) workspaceContextSection() string {
+	parts := []string{"## Workspace Instructions & Context"}
 	loaded := 0
-	for _, name := range bootstrapFiles {
+	for _, name := range append(append([]string{}, workspaceContextFiles...), bootstrapContextFile) {
 		entry, ok := b.readContextText(name)
 		if !ok {
 			continue
@@ -131,41 +178,33 @@ func (b *Builder) projectContextSection() string {
 		loaded++
 	}
 	if loaded == 0 {
-		parts = append(parts, "当前轮次未注入额外的工作区 bootstrap 内容。")
+		parts = append(parts, "No extra workspace context files are injected for this run.")
 	}
 	return strings.Join(parts, "\n\n")
 }
 
 func (b *Builder) availableSkillsSection() string {
 	skills := b.loadSkillSummaries()
-	parts := []string{
-		"## Available Skills",
-	}
+	parts := []string{"## Available Skills"}
 	if len(skills) == 0 {
-		parts = append(parts, "当前工作区未发现可用 skill。")
+		parts = append(parts, "No skills were found in the current workspace.")
 		return strings.Join(parts, "\n\n")
 	}
-	parts = append(parts, "需要 skill 正文时，先使用 context_get 读取对应的 `skills/<name>/SKILL.md`。")
+	parts = append(parts, "To read a skill body, use context_get on `skills/<name>/SKILL.md` first.")
 	for _, skill := range skills {
 		parts = append(parts, fmt.Sprintf("- %s — %s (%s)", skill.Name, skill.Description, skill.Path))
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-func (b *Builder) memoryPolicySection(channelType string) string {
-	parts := []string{strings.TrimSpace(`## Memory Policy
-
-- 记忆应通过显式 recall 获取，不要声称自己“天然记得”工作区事实。
-- 当问题可能依赖历史偏好、长期事实或日常记录时，优先使用 memory_search，再按需使用 memory_get。
-- 当前 prompt 只注入 curated memory；daily memory 默认不直注入。
-- 近似上下文仅供参考；若与显式指令冲突，以显式指令为准。`)}
-	blocks := b.curatedMemoryBlocks(channelType)
-	if len(blocks) == 0 {
-		parts = append(parts, "### Injected Curated Memory\n\n当前轮次未注入 curated memory。")
+func (b *Builder) heartbeatPolicySection() string {
+	parts := []string{promptpkg.SystemText.HeartbeatPolicy}
+	entry, ok := b.readContextText(heartbeatContextFile)
+	if !ok {
+		parts = append(parts, "### HEARTBEAT.md\n\nThe current workspace does not provide HEARTBEAT.md. Follow the conservative default policy.")
 		return strings.Join(parts, "\n\n")
 	}
-	parts = append(parts, "### Injected Curated Memory")
-	parts = append(parts, blocks...)
+	parts = append(parts, fmt.Sprintf("### %s\n\n%s", entry.DisplayPath, entry.Content))
 	return strings.Join(parts, "\n\n")
 }
 
@@ -210,12 +249,12 @@ func (b *Builder) readContextText(rel string) (textEntry, bool) {
 	return textEntry{DisplayPath: normalizedRel, ResolvedPath: resolvedPath(absPath), Content: content}, true
 }
 
-func (b *Builder) readMemoryText(rel, channelType string) (textEntry, bool) {
+func (b *Builder) readMemoryText(rel, memoryMode string) (textEntry, bool) {
 	normalizedRel, absPath, visibility, err := memory.ResolvePath(b.workspace, rel)
 	if err != nil {
 		return textEntry{}, false
 	}
-	if !memory.CanAccessVisibility(channelType, visibility) {
+	if !canAccessMemoryVisibility(memoryMode, visibility) {
 		return textEntry{}, false
 	}
 	content, ok := b.readFileText(absPath)
@@ -317,7 +356,7 @@ func parseSkillSummary(workspace, absPath, raw string) (SkillSummary, bool) {
 		description = summarizeMarkdown(body)
 	}
 	if description == "" {
-		description = "无描述"
+		description = "No description"
 	}
 	return SkillSummary{Name: name, Description: description, Path: rel}, true
 }
@@ -360,95 +399,135 @@ func summarizeMarkdown(body string) string {
 	return ""
 }
 
-func (b *Builder) snapshotBootstrapState() map[string]time.Time {
-	state := make(map[string]time.Time, len(bootstrapFiles))
-	for _, name := range bootstrapFiles {
-		path := filepath.Join(b.workspace, name)
-		if info, err := os.Stat(path); err == nil {
-			state[path] = info.ModTime()
-			continue
-		}
-		state[path] = time.Time{}
+func (b *Builder) snapshotStaticState(variant staticVariant) map[string]string {
+	state := map[string]string{}
+	for _, name := range workspaceContextFiles {
+		state["ctx:"+name] = b.snapshotContextFileFingerprint(name)
+	}
+	state["ctx:"+bootstrapContextFile] = b.snapshotContextFileFingerprint(bootstrapContextFile)
+	if variant.includeHeartbeat {
+		state["ctx:"+heartbeatContextFile] = b.snapshotContextFileFingerprint(heartbeatContextFile)
+	}
+	for rel, fingerprint := range b.snapshotSkillState() {
+		state["skill:"+rel] = fingerprint
+	}
+	for rel, fingerprint := range b.snapshotCuratedState(variant.memoryMode) {
+		state["memory:"+rel] = fingerprint
 	}
 	return state
 }
 
-func (b *Builder) snapshotSkillState() (map[string]time.Time, map[string]time.Time) {
-	files := map[string]time.Time{}
-	dirs := map[string]time.Time{}
+func (b *Builder) snapshotSkillState() map[string]string {
+	state := map[string]string{}
 	root := filepath.Join(b.workspace, "skills")
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
+		if walkErr != nil || d.IsDir() || d.Name() != "SKILL.md" {
 			return nil
 		}
-		info, err := os.Stat(path)
+		rel, err := filepath.Rel(b.workspace, path)
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() {
-			dirs[path] = info.ModTime()
-			return nil
-		}
-		if d.Name() == "SKILL.md" {
-			files[path] = info.ModTime()
-		}
+		rel = filepath.ToSlash(rel)
+		state[rel] = b.snapshotContextFileFingerprint(rel)
 		return nil
 	})
-	return files, dirs
+	return state
 }
 
-func (b *Builder) staticSourcesChangedLocked(memoryMode string) bool {
-	if !equalTimeMap(b.bootstrapAtCache, b.snapshotBootstrapState()) {
-		return true
+func (b *Builder) snapshotCuratedState(memoryMode string) map[string]string {
+	state := map[string]string{}
+	candidates := []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"}
+	if memoryMode == "public_private" {
+		candidates = append(candidates, filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")))
 	}
-	files, dirs := b.snapshotSkillState()
-	if !equalTimeMap(b.skillFilesAtCache, files) {
-		return true
+	for _, rel := range candidates {
+		state[rel] = b.snapshotMemoryFileFingerprint(rel, memoryMode)
 	}
-	if !equalTimeMap(b.skillDirsAtCache, dirs) {
-		return true
-	}
-	if !equalTimeMap(b.curatedAtCache, b.snapshotCuratedState(memoryMode)) {
-		return true
-	}
-	return false
+	return state
 }
 
-func (b *Builder) curatedMemoryBlocks(channelType string) []string {
+func (b *Builder) snapshotContextFileFingerprint(rel string) string {
+	absCandidate := filepath.Join(b.workspace, filepath.FromSlash(rel))
+	info, err := os.Lstat(absCandidate)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "missing"
+		}
+		return "stat_error"
+	}
+	normalizedRel, absPath, err := contextfile.ResolvePath(b.workspace, rel)
+	if err != nil {
+		return "denied:" + fileMarker(absCandidate, info)
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "read_error"
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "empty:" + normalizedRel + ":" + resolvedPath(absPath)
+	}
+	sum := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("ok:%s:%s:%x", normalizedRel, resolvedPath(absPath), sum)
+}
+
+func (b *Builder) snapshotMemoryFileFingerprint(rel, memoryMode string) string {
+	absCandidate := filepath.Join(b.workspace, filepath.FromSlash(rel))
+	info, err := os.Lstat(absCandidate)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "missing"
+		}
+		return "stat_error"
+	}
+	normalizedRel, absPath, visibility, err := memory.ResolvePath(b.workspace, rel)
+	if err != nil {
+		return "denied:" + fileMarker(absCandidate, info)
+	}
+	if !canAccessMemoryVisibility(memoryMode, visibility) {
+		return "denied_visibility:" + visibility
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "read_error"
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "empty:" + normalizedRel + ":" + resolvedPath(absPath)
+	}
+	sum := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("ok:%s:%s:%x", normalizedRel, resolvedPath(absPath), sum)
+}
+
+func fileMarker(path string, info os.FileInfo) string {
+	marker := info.Mode().String()
+	if info.Mode()&os.ModeSymlink != 0 {
+		if target, err := os.Readlink(path); err == nil {
+			marker += ":" + target
+		}
+	}
+	return marker
+}
+
+func (b *Builder) curatedMemoryBlocks(memoryMode string) []string {
 	blocks := make([]string, 0, 3)
 	seen := map[string]bool{}
 	for _, rel := range []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"} {
-		entry, ok := b.readMemoryText(rel, channelType)
+		entry, ok := b.readMemoryText(rel, memoryMode)
 		if !ok || seen[entry.ResolvedPath] {
 			continue
 		}
 		seen[entry.ResolvedPath] = true
 		blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", entry.DisplayPath, entry.Content))
 	}
-	if buildMemoryMode(channelType) == "public_private" {
-		entry, ok := b.readMemoryText(filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")), channelType)
+	if memoryMode == "public_private" {
+		entry, ok := b.readMemoryText(filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")), memoryMode)
 		if ok && !seen[entry.ResolvedPath] {
 			blocks = append(blocks, fmt.Sprintf("#### %s\n\n%s", entry.DisplayPath, entry.Content))
 		}
 	}
 	return blocks
-}
-
-func (b *Builder) snapshotCuratedState(memoryMode string) map[string]time.Time {
-	state := map[string]time.Time{}
-	candidates := []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"}
-	if memoryMode == "public_private" {
-		candidates = append(candidates, filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")))
-	}
-	for _, rel := range candidates {
-		path := filepath.Join(b.workspace, filepath.FromSlash(rel))
-		if info, err := os.Stat(path); err == nil {
-			state[path] = info.ModTime()
-			continue
-		}
-		state[path] = time.Time{}
-	}
-	return state
 }
 
 func buildMemoryMode(channelType string) string {
@@ -458,7 +537,14 @@ func buildMemoryMode(channelType string) string {
 	return "public_only"
 }
 
-func equalTimeMap(left, right map[string]time.Time) bool {
+func canAccessMemoryVisibility(memoryMode, visibility string) bool {
+	if strings.EqualFold(strings.TrimSpace(visibility), memory.VisibilityPublic) {
+		return true
+	}
+	return memoryMode == "public_private" && strings.EqualFold(strings.TrimSpace(visibility), memory.VisibilityPrivate)
+}
+
+func equalStringMap(left, right map[string]string) bool {
 	if len(left) != len(right) {
 		return false
 	}
@@ -467,9 +553,21 @@ func equalTimeMap(left, right map[string]time.Time) bool {
 		if !ok {
 			return false
 		}
-		if !leftValue.Equal(rightValue) {
+		if leftValue != rightValue {
 			return false
 		}
 	}
 	return true
+}
+
+func stableStaticBuild(build func() string, snapshot func() map[string]string) (string, map[string]string, bool) {
+	for attempt := 0; attempt < 3; attempt++ {
+		before := snapshot()
+		content := build()
+		after := snapshot()
+		if equalStringMap(before, after) {
+			return content, after, true
+		}
+	}
+	return build(), snapshot(), false
 }

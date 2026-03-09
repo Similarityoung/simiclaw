@@ -17,6 +17,7 @@ import (
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -49,13 +50,13 @@ type replInput struct {
 func Run(args []string) error {
 	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
 	opts := Options{}
-	baseURL := fs.String("base-url", common.DefaultBaseURL, "gateway base url")
-	apiKey := fs.String("api-key", "", "api key for Authorization header")
-	fs.StringVar(&opts.Conversation, "conversation", "", "conversation id")
-	fs.StringVar(&opts.SessionKey, "session-key", "", "session key")
-	fs.BoolVar(&opts.NewSession, "new", false, "create a new session")
-	fs.BoolVar(&opts.NoStream, "no-stream", false, "disable streaming chat")
-	fs.IntVar(&opts.HistoryLimit, "history-limit", 50, "history items to load")
+	baseURL := fs.String("base-url", common.DefaultBaseURL, messages.Flag.BaseURL)
+	apiKey := fs.String("api-key", "", messages.Flag.APIKey)
+	fs.StringVar(&opts.Conversation, "conversation", "", messages.Flag.ConversationID)
+	fs.StringVar(&opts.SessionKey, "session-key", "", messages.Flag.SessionKey)
+	fs.BoolVar(&opts.NewSession, "new", false, messages.Flag.NewSession)
+	fs.BoolVar(&opts.NoStream, "no-stream", false, messages.Flag.NoStream)
+	fs.IntVar(&opts.HistoryLimit, "history-limit", 50, messages.Flag.HistoryLimit)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -70,10 +71,10 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 	opts := Options{}
 	cmd := &cobra.Command{
 		Use:   "chat",
-		Short: "启动交互式聊天 TUI",
+		Short: messages.Command.ChatShort,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !common.IsInteractive(streams) {
-				return common.WrapExit(1, errors.New("chat requires an interactive terminal"))
+				return common.WrapExit(1, errors.New(messages.InteractiveTerminalRequired("chat")))
 			}
 			runtimeOpts, err := common.ResolveRuntimeOptions(*globals, streams.Out)
 			if err != nil {
@@ -82,11 +83,11 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 			return runTUI(streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Conversation, "conversation", "", "conversation id")
-	cmd.Flags().StringVar(&opts.SessionKey, "session-key", "", "session key")
-	cmd.Flags().BoolVar(&opts.NewSession, "new", false, "create a new session")
-	cmd.Flags().BoolVar(&opts.NoStream, "no-stream", false, "disable streaming chat")
-	cmd.Flags().IntVar(&opts.HistoryLimit, "history-limit", 50, "history items to load")
+	cmd.Flags().StringVar(&opts.Conversation, "conversation", "", messages.Flag.ConversationID)
+	cmd.Flags().StringVar(&opts.SessionKey, "session-key", "", messages.Flag.SessionKey)
+	cmd.Flags().BoolVar(&opts.NewSession, "new", false, messages.Flag.NewSession)
+	cmd.Flags().BoolVar(&opts.NoStream, "no-stream", false, messages.Flag.NoStream)
+	cmd.Flags().IntVar(&opts.HistoryLimit, "history-limit", 50, messages.Flag.HistoryLimit)
 	return cmd
 }
 
@@ -113,7 +114,7 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 	}
 
 	for {
-		if _, err := fmt.Fprint(out, "you> "); err != nil {
+		if _, err := fmt.Fprint(out, messages.Chat.REPLPrompt); err != nil {
 			return err
 		}
 
@@ -153,7 +154,7 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 		rec, err := sendOneTurn(ctx, client, req, useStream, renderer)
 		if err != nil {
 			renderer.Abort()
-			if _, werr := fmt.Fprintf(out, "error> %s\n", formatError(err)); werr != nil {
+			if _, werr := fmt.Fprint(out, messages.Chat.REPLError(formatError(err))); werr != nil {
 				return werr
 			}
 			continue
@@ -163,18 +164,18 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient
 		}
 		if rec.Status == model.EventStatusFailed {
 			if rec.Error != nil {
-				if _, werr := fmt.Fprintf(out, "error> %s: %s\n", rec.Error.Code, rec.Error.Message); werr != nil {
+				if _, werr := fmt.Fprint(out, messages.Chat.REPLErrorCode(rec.Error.Code, rec.Error.Message)); werr != nil {
 					return werr
 				}
 			} else {
-				if _, werr := fmt.Fprintln(out, "error> event failed"); werr != nil {
+				if _, werr := fmt.Fprintln(out, messages.Chat.REPLEventFailed); werr != nil {
 					return werr
 				}
 			}
 			continue
 		}
 		if rec.OutboxStatus == model.OutboxStatusDead && rec.Error != nil {
-			if _, err := fmt.Fprintf(out, "error> %s: %s\n", rec.Error.Code, rec.Error.Message); err != nil {
+			if _, err := fmt.Fprint(out, messages.Chat.REPLErrorCode(rec.Error.Code, rec.Error.Message)); err != nil {
 				return err
 			}
 		}

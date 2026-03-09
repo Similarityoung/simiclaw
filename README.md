@@ -38,23 +38,47 @@
 
 ## Prompt / Skills / Memory
 
-当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前采用单一 `full` prompt 形态，固定包含以下 5 个 section：
+当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前文本资源分为 4 层：
+
+- `pkg/prompt/system/`：给模型看的系统固定 prompt
+- `internal/workspace/templates/`：`init` 使用的 workspace 脚手架模板
+- `workspace/` 根文件：用户/项目可编辑上下文
+- `internal/ui/messages/`：给 CLI 等用户界面使用的可见文案
+
+当前采用分层 prompt，固定 section 顺序如下：
 
 - `Identity & Runtime Rules`
-- `Project Context`
-- `Available Skills`
+- `Tool Contract`
 - `Memory Policy`
+- `Workspace Instructions & Context`
+- `Available Skills`
+- `Heartbeat Policy`（仅 `cron_fire`）
 - `Current Run Context`
 
-### Bootstrap 文件
+### Workspace 提示文件
 
-工作区根目录下这 3 个文件会按顺序注入 `Project Context`：
+`init` 会在 workspace 根目录自动创建缺失的提示模板，但不会覆盖已有文件，也不会自动生成 `AGENTS.md`。
 
-- `AGENTS.md`
+普通交互按顺序注入以下根文件：
+
+- `SOUL.md`
 - `IDENTITY.md`
 - `USER.md`
+- `AGENTS.md`
+- `TOOLS.md`
+- `BOOTSTRAP.md`（存在即注入）
 
-这些文件都是**可选**的，runtime 只会读取，不会自动创建。
+`HEARTBEAT.md` 只会在 `payload.type=cron_fire` 时注入。
+
+其中：
+
+- `SOUL.md`：全局稳定人格与方法论
+- `IDENTITY.md`：agent 身份设定
+- `USER.md`：用户偏好、称呼、时区
+- `AGENTS.md`：当前项目范围内的局部工作约定
+- `TOOLS.md`：环境事实与工具可用性
+- `BOOTSTRAP.md`：短期 onboarding 文件；完成初始化后应手动删除
+- `HEARTBEAT.md`：后台巡检/整理 checklist，仅服务 `cron_fire`
 
 ### Skills
 
@@ -62,11 +86,15 @@
 - prompt 中只注入紧凑的 skill 索引（`name / description / path`），不会注入 skill 正文
 - 需要读取正文时，模型应使用 `context_get`
 
-`context_get` 目前只允许读取：
+`context_get` 目前只允许读取 workspace 根目录固定上下文文件或 skill 正文：
 
-- `AGENTS.md`
+- `SOUL.md`
 - `IDENTITY.md`
 - `USER.md`
+- `AGENTS.md`
+- `TOOLS.md`
+- `BOOTSTRAP.md`
+- `HEARTBEAT.md`
 - `skills/<name>/SKILL.md`
 
 ### Memory
@@ -111,6 +139,7 @@ canonical 路径如下：
 - `internal/runtime`：EventLoop、Supervisor、后台 workers
 - `internal/session`：session key 归一化与计算
 - `internal/store`：SQLite 启动、schema、读写与恢复
+- `internal/ui/messages`：CLI 等用户可见文案资源
 - `pkg/config`：配置模型
 - `pkg/logging`：日志封装
 - `pkg/model`：共享类型
@@ -123,6 +152,8 @@ canonical 路径如下：
 ```bash
 go run ./cmd/simiclaw init --workspace ./workspace
 ```
+
+默认会自动 scaffold 缺失的 `SOUL.md`、`IDENTITY.md`、`USER.md`、`TOOLS.md`、`BOOTSTRAP.md`、`HEARTBEAT.md`，但不会覆盖已有文件，也不会自动创建 `AGENTS.md`。
 
 若检测到旧文件式 runtime 痕迹，默认拒绝；只有显式传入 `--force-new-runtime` 才会清理 legacy 目录并创建新的 SQLite runtime。
 
@@ -195,6 +226,142 @@ make test-e2e-smoke
 make accept-v1-alpha
 make accept-current
 ```
+
+### 手动验收（真实模型）
+
+若本地 `.env` 已配置真实 OpenAI-compatible 模型（例如 `OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=openai/deepseek-chat`），可按下面步骤做一轮手工验收。
+
+#### 1. 验证 `BOOTSTRAP.md` 存在即生效
+
+```bash
+TMP_WS=$(mktemp -d /tmp/simiclaw-ws-XXXXXX)
+go run ./cmd/simiclaw init --workspace "$TMP_WS"
+cat > "$TMP_WS/BOOTSTRAP.md" <<'EOF'
+# Bootstrap Test Rule
+
+For this workspace test only:
+- Start every assistant reply with the exact prefix `BOOTSTRAP_OK:`.
+- Keep the rest of the reply short.
+EOF
+
+go run ./cmd/simiclaw serve --workspace "$TMP_WS" --listen :18080
+```
+
+另开一个终端发送测试消息：
+
+```bash
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+cat > /tmp/bootstrap_req.json <<EOF
+{
+  "source": "cli",
+  "conversation": {
+    "conversation_id": "manual-bootstrap-test",
+    "channel_type": "dm",
+    "participant_id": "local_test_user"
+  },
+  "idempotency_key": "cli:manual-bootstrap-test:1",
+  "timestamp": "$NOW",
+  "payload": {
+    "type": "message",
+    "text": "Give me a short greeting."
+  }
+}
+EOF
+
+curl -sS -X POST "http://127.0.0.1:18080/v1/events:ingest"   -H "Content-Type: application/json"   -d @/tmp/bootstrap_req.json
+```
+
+预期：最终 event 的 `assistant_reply` 带有前缀 `BOOTSTRAP_OK:`。
+
+#### 2. 验证移走 `BOOTSTRAP.md` 后新会话不再受影响
+
+```bash
+mv "$TMP_WS/BOOTSTRAP.md" "$TMP_WS/BOOTSTRAP.md.off"
+```
+
+再次发送消息，但换一个新的 `conversation_id` / `participant_id` / `idempotency_key`。预期：回复不再包含 `BOOTSTRAP_OK:`。
+
+#### 3. 验证 `cron_fire` 的 suppressed LLM + hidden history
+
+```bash
+TMP_CRON_WS=$(mktemp -d /tmp/simiclaw-cron-ws-XXXXXX)
+go run ./cmd/simiclaw init --workspace "$TMP_CRON_WS"
+mv "$TMP_CRON_WS/BOOTSTRAP.md" "$TMP_CRON_WS/BOOTSTRAP.md.off"
+mkdir -p "$TMP_CRON_WS/memory/public/daily"
+echo 'daily cron marker XQJ-CRON-42861' > "$TMP_CRON_WS/memory/public/daily/$(date -u +%F).md"
+cat > "$TMP_CRON_WS/HEARTBEAT.md" <<'EOF'
+# Heartbeat Test Instructions
+
+- This is a cron_fire verification run.
+- Use `memory_search` once to look for the exact token `XQJ-CRON-42861` in daily memory.
+- If found, finish with exactly one sentence that contains `CRON_OK:XQJ-CRON-42861`.
+- If not found, finish with exactly one sentence that contains `CRON_MISS`.
+EOF
+
+go run ./cmd/simiclaw serve --workspace "$TMP_CRON_WS" --listen :18081
+```
+
+发送 `cron_fire`：
+
+```bash
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+cat > /tmp/cron_req.json <<EOF
+{
+  "source": "cli",
+  "conversation": {
+    "conversation_id": "real-cron-check",
+    "channel_type": "dm",
+    "participant_id": "cron_user"
+  },
+  "idempotency_key": "cli:real-cron-check:1",
+  "timestamp": "$NOW",
+  "payload": {
+    "type": "cron_fire",
+    "text": "nightly heartbeat"
+  }
+}
+EOF
+
+curl -sS -X POST "http://127.0.0.1:18081/v1/events:ingest"   -H "Content-Type: application/json"   -d @/tmp/cron_req.json
+```
+
+然后检查：
+
+```bash
+go run ./cmd/simiclaw inspect sessions --base-url http://127.0.0.1:18081 --limit 5
+go run ./cmd/simiclaw inspect trace <run-id> --base-url http://127.0.0.1:18081
+```
+
+也可以直接访问 history：
+
+- `GET /v1/sessions/<session_key>/history?visible=true`
+- `GET /v1/sessions/<session_key>/history?visible=false`
+
+预期：
+
+- event 状态为 `suppressed`
+- run trace 的 `output_text` 包含 `CRON_OK:XQJ-CRON-42861`
+- `visible=true` 的 history 为空
+- `visible=false` 的 history 能看到 hidden `user / assistant / tool / assistant` 链路，且都带 `meta.payload_type=cron_fire`
+
+#### 4. 验证普通消息不会回灌 `cron_fire` hidden 历史
+
+在同一个 cron 会话里继续发送普通 `message`，例如：
+
+```text
+What was the exact text of the most recent assistant message in this conversation? If there was none, reply EXACTLY NONE. Do not use tools.
+```
+
+预期：如果该会话此前只有 `cron_fire` hidden 消息，则普通回复应为 `NONE`，说明后台 hidden 历史没有回灌到正常聊天上下文。
+
+### `cron_fire` 行为
+
+- 对外仍属于 `NO_REPLY`，最终 event 状态为 `suppressed`
+- 内部会走 suppressed LLM + tool loop，而不是直接写 memory 后结束
+- tool 权限显式限制为 `memory_search`、`memory_get`、`context_get`
+- `HEARTBEAT.md` 和已注入的根提示文件默认不应再通过 `context_get` 重读；后台巡检遵循小预算策略：先搜索，必要时再补一次读取，然后立即总结
+- `cron_fire` 产生的入口消息、assistant 中间消息、tool 调用结果、最终 assistant 消息都会持久化为 hidden message
+- 普通 UI 的默认历史查询不会显示这些消息，普通聊天恢复上下文时也不会回灌这些 `cron_fire` 历史
 
 ## 运行时约束
 

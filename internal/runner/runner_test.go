@@ -54,9 +54,10 @@ func TestProviderRunnerPrependsSystemPrompt(t *testing.T) {
 	}
 	if !containsAll(output.AssistantReply,
 		"## Identity & Runtime Rules",
-		"## Project Context",
-		"## Available Skills",
+		"## Tool Contract",
 		"## Memory Policy",
+		"## Workspace Instructions & Context",
+		"## Available Skills",
 		"## Current Run Context",
 	) {
 		t.Fatalf("expected system prompt sections in reply, got %q", output.AssistantReply)
@@ -182,6 +183,176 @@ func TestHistoryToChatMessagesPreservesAssistantToolChain(t *testing.T) {
 	}
 }
 
+func TestHistoryToChatMessagesSkipsCronFireHiddenMessages(t *testing.T) {
+	history := []store.HistoryMessage{
+		{Role: "user", Content: "nightly tick", Meta: map[string]any{"payload_type": "cron_fire"}},
+		{Role: "assistant", ToolCalls: []model.ToolCall{{ToolCallID: "call_1", Name: "memory_search", Args: map[string]any{"query": "nightly tick"}}}, Meta: map[string]any{"payload_type": "cron_fire"}},
+		{Role: "tool", Content: `{"hits":[]}`, ToolCallID: "call_1", ToolName: "memory_search", Meta: map[string]any{"payload_type": "cron_fire"}},
+		{Role: "assistant", Content: "done", Meta: map[string]any{"payload_type": "cron_fire"}},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+	}
+
+	got := historyToChatMessages(history)
+	if len(got) != 2 {
+		t.Fatalf("expected cron_fire hidden history to be skipped, got %+v", got)
+	}
+	if got[0].Role != "user" || got[0].Content != "hello" {
+		t.Fatalf("expected normal user message to remain, got %+v", got)
+	}
+	if got[1].Role != "assistant" || got[1].Content != "world" {
+		t.Fatalf("expected normal assistant message to remain, got %+v", got)
+	}
+}
+
+func TestProviderRunnerCronFireRunsSuppressedLLMWithHiddenMessages(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+		FakeToolName:         "memory_search",
+		FakeToolArgsJSON:     `{"query":"alpha","visibility":"auto","kind":"any","top_k":1}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir memory/public: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "MEMORY.md"), []byte("alpha memory\n"), 0o644); err != nil {
+		t.Fatalf("write public memory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "HEARTBEAT.md"), []byte("- check memory\n"), 0o644); err != nil {
+		t.Fatalf("write HEARTBEAT.md: %v", err)
+	}
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if output.RunMode != model.RunModeNoReply {
+		t.Fatalf("expected NO_REPLY run mode, got %+v", output)
+	}
+	if !output.SuppressOutput {
+		t.Fatalf("expected suppressed output, got %+v", output)
+	}
+	if output.AssistantReply != "" {
+		t.Fatalf("expected empty assistant reply, got %+v", output)
+	}
+	if !strings.Contains(output.Trace.OutputText, "roles=system,user,assistant,tool last=nightly heartbeat") {
+		t.Fatalf("expected second-round fake response in trace output, got %+v", output.Trace)
+	}
+	if len(output.Trace.ToolExecutions) != 1 {
+		t.Fatalf("expected one tool execution, got %+v", output.Trace.ToolExecutions)
+	}
+	if output.Trace.ToolExecutions[0].Name != "memory_search" || output.Trace.ToolExecutions[0].Error != nil {
+		t.Fatalf("expected allowed memory_search execution, got %+v", output.Trace.ToolExecutions)
+	}
+	if len(output.Messages) < 4 {
+		t.Fatalf("expected hidden user/tool/final assistant messages, got %+v", output.Messages)
+	}
+	for _, msg := range output.Messages {
+		if msg.Visible {
+			t.Fatalf("expected all cron_fire messages hidden, got %+v", output.Messages)
+		}
+		if msg.Meta["payload_type"] != "cron_fire" {
+			t.Fatalf("expected cron_fire payload_type meta on all messages, got %+v", output.Messages)
+		}
+	}
+}
+
+func TestProviderRunnerCronFireRejectsNonAllowlistedTool(t *testing.T) {
+	registry := tools.NewRegistry()
+	tools.RegisterBuiltins(registry)
+	registry.Register("echo", tools.Schema{Name: "echo"}, func(_ context.Context, _ tools.Context, args map[string]any) tools.Result {
+		return tools.Result{Output: map[string]any{"echo": args["query"]}}
+	})
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "after {{last_user_message}}",
+		FakeToolName:         "echo",
+		FakeToolArgsJSON:     `{"query":"blocked"}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r := newTestRunner(t, cfg, registry)
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron_forbidden",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron_forbidden",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(output.Trace.ToolExecutions) != 1 {
+		t.Fatalf("expected one tool execution, got %+v", output.Trace.ToolExecutions)
+	}
+	toolExec := output.Trace.ToolExecutions[0]
+	if toolExec.Name != "echo" || toolExec.Error == nil || toolExec.Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden echo tool execution, got %+v", output.Trace.ToolExecutions)
+	}
+	var toolMessage *OutputMessage
+	for i := range output.Messages {
+		if output.Messages[i].Role == "tool" {
+			toolMessage = &output.Messages[i]
+			break
+		}
+	}
+	if toolMessage == nil {
+		t.Fatalf("expected persisted tool result message, got %+v", output.Messages)
+	}
+	if toolMessage.ToolName != "echo" || !strings.Contains(toolMessage.Content, model.ErrorCodeForbidden) {
+		t.Fatalf("expected forbidden tool result message, got %+v", toolMessage)
+	}
+	if toolMessage.Visible {
+		t.Fatalf("expected forbidden cron tool result to stay hidden, got %+v", toolMessage)
+	}
+}
+
+func TestCronFireToolPolicyRejectsInjectedPromptFiles(t *testing.T) {
+	errBlock := cronFireToolPolicyError(model.ToolCall{
+		Name: "context_get",
+		Args: map[string]any{"path": "./HEARTBEAT.md"},
+	}, map[string]int{})
+	if errBlock == nil || errBlock.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden reread guard, got %+v", errBlock)
+	}
+	if !strings.Contains(errBlock.Message, "already injected") {
+		t.Fatalf("expected injected prompt file hint, got %+v", errBlock)
+	}
+}
+
+func TestCronFireToolPolicyRejectsBudgetOverflow(t *testing.T) {
+	errBlock := cronFireToolPolicyError(model.ToolCall{
+		Name: "memory_search",
+		Args: map[string]any{"query": "alpha"},
+	}, map[string]int{"memory_search": 1})
+	if errBlock == nil || errBlock.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden budget guard, got %+v", errBlock)
+	}
+	if !strings.Contains(errBlock.Message, "tool budget exhausted") {
+		t.Fatalf("expected budget hint, got %+v", errBlock)
+	}
+}
+
 func TestProviderRunnerNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	r, workspace := newTestRunnerWithWorkspace(t, config.Default().LLM, nil)
 
@@ -277,8 +448,11 @@ func (panicSink) OnToolStart(string, string, map[string]any, bool) {}
 func (panicSink) OnToolResult(string, string, map[string]any, bool, *model.ErrorBlock) {}
 
 type captureSink struct {
-	starts  []capturedToolStart
-	results []capturedToolResult
+	statusCount    int
+	reasoningCount int
+	textCount      int
+	starts         []capturedToolStart
+	results        []capturedToolResult
 }
 
 type capturedToolStart struct {
@@ -296,11 +470,11 @@ type capturedToolResult struct {
 	Error      *model.ErrorBlock
 }
 
-func (c *captureSink) OnStatus(string, string) {}
+func (c *captureSink) OnStatus(string, string) { c.statusCount++ }
 
-func (c *captureSink) OnReasoningDelta(string) {}
+func (c *captureSink) OnReasoningDelta(string) { c.reasoningCount++ }
 
-func (c *captureSink) OnTextDelta(string) {}
+func (c *captureSink) OnTextDelta(string) { c.textCount++ }
 
 func (c *captureSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
 	c.starts = append(c.starts, capturedToolStart{
@@ -319,6 +493,47 @@ func (c *captureSink) OnToolResult(toolCallID, toolName string, result map[strin
 		Truncated:  truncated,
 		Error:      apiErr,
 	})
+}
+
+func TestProviderRunnerCronFireDoesNotEmitStreamEvents(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+		FakeToolName:         "memory_search",
+		FakeToolArgsJSON:     `{"query":"alpha","visibility":"auto","kind":"any","top_k":1}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir memory/public: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "MEMORY.md"), []byte("alpha memory\n"), 0o644); err != nil {
+		t.Fatalf("write public memory: %v", err)
+	}
+	sink := &captureSink{}
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron_stream_hidden",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron_stream_hidden",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, sink)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if output.AssistantReply != "" || !output.SuppressOutput {
+		t.Fatalf("expected suppressed cron output, got %+v", output)
+	}
+	if sink.statusCount != 0 || sink.reasoningCount != 0 || sink.textCount != 0 || len(sink.starts) != 0 || len(sink.results) != 0 {
+		t.Fatalf("expected cron_fire to emit no stream events, got %+v", sink)
+	}
 }
 
 func containsAll(in string, needles ...string) bool {

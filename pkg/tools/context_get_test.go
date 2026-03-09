@@ -51,6 +51,34 @@ func TestContextGetReadsSkillFileRange(t *testing.T) {
 	}
 }
 
+func TestContextGetReadsNewRootContextFiles(t *testing.T) {
+	workspace := t.TempDir()
+	writeContextFile(t, filepath.Join(workspace, "SOUL.md"), "truth\n")
+	writeContextFile(t, filepath.Join(workspace, "HEARTBEAT.md"), "checklist\n")
+
+	reg := NewRegistry()
+	RegisterBuiltins(reg)
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{path: "SOUL.md", want: "1: truth\n"},
+		{path: "HEARTBEAT.md", want: "1: checklist\n"},
+	} {
+		res := reg.Call(context.Background(), Context{Workspace: workspace}, "context_get", map[string]any{
+			"path": tc.path,
+		})
+		if res.Error != nil {
+			t.Fatalf("unexpected error for %s: %+v", tc.path, res.Error)
+		}
+		content, _ := res.Output["content"].(string)
+		if content != tc.want {
+			t.Fatalf("unexpected content for %s: %q", tc.path, content)
+		}
+	}
+}
+
 func TestContextGetReturnsNotFoundForMissingAllowedFile(t *testing.T) {
 	workspace := t.TempDir()
 

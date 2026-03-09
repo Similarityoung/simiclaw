@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -36,7 +37,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		if err := r.closeBotLine(); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(r.out, "status> %s\n", statusText)
+		_, err := fmt.Fprint(r.out, messages.Chat.StreamStatus(statusText))
 		return err
 	case model.ChatStreamEventReasoningDelta:
 		if strings.TrimSpace(event.Delta) == "" {
@@ -45,7 +46,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		if err := r.closeBotLine(); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(r.out, "think> %s\n", event.Delta)
+		_, err := fmt.Fprint(r.out, messages.Chat.StreamThinking(event.Delta))
 		return err
 	case model.ChatStreamEventTextDelta:
 		if err := r.openBotLine(); err != nil {
@@ -60,7 +61,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		if err := r.closeBotLine(); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(r.out, "tool> [%s] %s %s\n", event.ToolCallID, event.ToolName, formatToolPayload(event.Args, event.Truncated))
+		_, err := fmt.Fprint(r.out, messages.Chat.StreamToolStart(event.ToolCallID, event.ToolName, formatToolPayload(event.Args, event.Truncated)))
 		return err
 	case model.ChatStreamEventToolResult:
 		if err := r.closeBotLine(); err != nil {
@@ -70,7 +71,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		if event.Error != nil {
 			payload = event.Error.Code + ": " + event.Error.Message
 		}
-		_, err := fmt.Fprintf(r.out, "tool< [%s] %s %s\n", event.ToolCallID, event.ToolName, payload)
+		_, err := fmt.Fprint(r.out, messages.Chat.StreamToolResult(event.ToolCallID, event.ToolName, payload))
 		return err
 	default:
 		return nil
@@ -87,7 +88,7 @@ func (r *streamRenderer) Finish(rec model.EventRecord) error {
 			if err := r.openBotLine(); err != nil {
 				return err
 			}
-			if _, err := fmt.Fprint(r.out, "(no reply)"); err != nil {
+			if _, err := fmt.Fprint(r.out, messages.Chat.StreamNoReply); err != nil {
 				return err
 			}
 		}
@@ -97,10 +98,10 @@ func (r *streamRenderer) Finish(rec model.EventRecord) error {
 		return r.closeBotLine()
 	}
 	if !r.lineOpen {
-		_, err := fmt.Fprintf(r.out, "bot> %s\n", reply)
+		_, err := fmt.Fprint(r.out, messages.Chat.StreamBotLine(reply))
 		return err
 	}
-	if _, err := fmt.Fprintf(r.out, "\r\033[2Kbot> %s\n", reply); err != nil {
+	if _, err := fmt.Fprint(r.out, messages.Chat.StreamBotRewrite(reply)); err != nil {
 		return err
 	}
 	r.lineOpen = false
@@ -115,7 +116,7 @@ func (r *streamRenderer) openBotLine() error {
 	if r.lineOpen {
 		return nil
 	}
-	_, err := fmt.Fprint(r.out, "bot> ")
+	_, err := fmt.Fprint(r.out, messages.Chat.StreamBotPrompt)
 	if err == nil {
 		r.lineOpen = true
 	}
