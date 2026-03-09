@@ -2,9 +2,9 @@ package logging_test
 
 import (
 	"bufio"
-	"encoding/json"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -42,7 +42,7 @@ func TestParseLevel(t *testing.T) {
 	}
 }
 
-func TestInitAndJSONOutput(t *testing.T) {
+func TestInitAndConsoleOutput(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
@@ -56,28 +56,27 @@ func TestInitAndJSONOutput(t *testing.T) {
 		t.Fatal("expected log output")
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(line), &got); err != nil {
-		t.Fatalf("invalid json output: %v", err)
+	parts := strings.Split(line, "\t")
+	if len(parts) < 5 {
+		t.Fatalf("unexpected console output: %q", line)
 	}
-	if got["level"] != "info" {
-		t.Fatalf("level=%v", got["level"])
+	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$`).MatchString(parts[0]); !matched {
+		t.Fatalf("unexpected timestamp: %q", parts[0])
 	}
-	if got["msg"] != "ingest accepted" {
-		t.Fatalf("msg=%v", got["msg"])
+	if parts[1] != "INFO" {
+		t.Fatalf("level=%q", parts[1])
 	}
-	if got["module"] != "gateway" {
-		t.Fatalf("module=%v", got["module"])
+	if !strings.Contains(parts[2], "logger_test.go") {
+		t.Fatalf("caller=%q", parts[2])
 	}
-	if got["key"] != "value" {
-		t.Fatalf("key=%v", got["key"])
+	if parts[3] != "ingest accepted" {
+		t.Fatalf("msg=%q", parts[3])
 	}
-	caller, ok := got["caller"].(string)
-	if !ok || !strings.Contains(caller, "logger_test.go") {
-		t.Fatalf("caller=%v", got["caller"])
+	if !strings.Contains(parts[4], `"module": "gateway"`) {
+		t.Fatalf("module fields=%q", parts[4])
 	}
-	if _, ok := got["ts"]; !ok {
-		t.Fatal("missing ts field")
+	if !strings.Contains(parts[4], `"key": "value"`) {
+		t.Fatalf("key fields=%q", parts[4])
 	}
 }
 

@@ -129,17 +129,17 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "ts",
 		LevelKey:       "level",
-		NameKey:        "logger",
+		NameKey:        "",
 		CallerKey:      "caller",
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.RFC3339NanoTimeEncoder,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
-	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), sink, parsed)
+	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), sink, parsed)
 	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
 }
 
