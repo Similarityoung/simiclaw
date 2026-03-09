@@ -181,7 +181,47 @@ go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
 
 `chat` 默认进入 Bubble Tea TUI：启动先选会话，可新建会话、回放历史、发送消息，并优先使用 `POST /v1/chat:stream` 流式展示回复；如果流中断或服务端不支持，会自动回退到 ingest + 轮询。
 
-### 4. Inspect / Completion
+### 4. 使用 Web 端（React + Vite）
+
+仓库内置一个独立的前端工程：`web/`。当前一期提供桌面优先的深色极简聊天工作台，覆盖：
+
+- 会话列表
+- 历史回放
+- 新建会话
+- `POST /v1/chat:stream` 流式聊天
+- 右侧调试流（status / reasoning / tool / terminal）
+
+先启动后端：
+
+```bash
+go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
+```
+
+再启动前端：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+默认情况下，前端通过 Vite dev proxy 把 `/v1`、`/healthz`、`/readyz` 转发到 `http://127.0.0.1:8080`。
+
+若需要显式指定 API 地址，可在 `web/.env.local` 中设置：
+
+```bash
+VITE_API_BASE_URL=
+SIMICLAW_WEB_PROXY_TARGET=http://127.0.0.1:8080
+SIMICLAW_WEB_PROXY_API_KEY=
+```
+
+`VITE_API_BASE_URL` 留空表示走同源/代理；若需要挂在同源路径前缀下，可设置为 `/simiclaw` 这类同源前缀。
+
+`VITE_API_BASE_URL` 不支持跨域 API 直连；跨域开发请保持留空并使用 Vite dev proxy。
+
+若后端启用了 `SIMICLAW_API_KEY` 或 `--api-key`，开发环境请把同一个值写入 `SIMICLAW_WEB_PROXY_API_KEY`，由 Vite dev server 在代理层附带 `Authorization: Bearer ...`，不要把密钥写进浏览器侧 `VITE_*` 变量。
+
+### 5. Inspect / Completion
 
 ```bash
 go run ./cmd/simiclaw inspect health
@@ -190,7 +230,7 @@ go run ./cmd/simiclaw inspect trace <run-id> --output json
 go run ./cmd/simiclaw completion bash
 ```
 
-### 5. 手动 ingest
+### 6. 手动 ingest
 
 ```bash
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
