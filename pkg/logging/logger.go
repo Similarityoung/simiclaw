@@ -68,7 +68,7 @@ func ParseLevel(raw string) (zapcore.Level, error) {
 	}
 }
 
-// Init 初始化全局 logger，输出固定为 JSON 到 stdout。
+// Init 初始化全局 logger，输出固定为 console 文本到 stdout。
 func Init(level string) error {
 	if strings.TrimSpace(level) == "" {
 		level = defaultLogLevel
@@ -81,7 +81,7 @@ func Init(level string) error {
 	return nil
 }
 
-// L 返回附带 module 字段的 logger。
+// L 返回附带 module 消息前缀的 logger。
 func L(module string) *Logger {
 	return &Logger{base: zap.L(), module: strings.TrimSpace(module)}
 }
