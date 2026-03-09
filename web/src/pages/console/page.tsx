@@ -91,7 +91,10 @@ export function ConsolePage(): JSX.Element {
                 <div className="text-[11px] uppercase tracking-[0.3em] text-muted-foreground">Workspace</div>
                 <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight">{activeSession?.conversation_id || chat.conversationID}</h1>
               </div>
-              <div className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{chat.state.statusLabel}</div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" onClick={chat.startDraftSession}>新会话</Button>
+                <div className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{chat.state.statusLabel}</div>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -118,8 +121,8 @@ export function ConsolePage(): JSX.Element {
             </div>
           </div>
 
-          <div className="grid min-h-[560px] grid-rows-[minmax(0,1fr)_auto]">
-            <div className="min-h-0 px-6 py-5">
+          <div className="grid h-[calc(100vh-16rem)] min-h-[620px] grid-rows-[minmax(0,1fr)_auto]">
+            <div className="min-h-0 overflow-hidden px-6 py-5">
               {workspaceTab === 'conversation' ? (
                 <>
                   {historyQuery.isLoading ? (
@@ -171,13 +174,10 @@ export function ConsolePage(): JSX.Element {
             </div>
 
             {workspaceTab === 'conversation' ? (
-              <div className="border-t border-border/70 px-6 py-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-sm text-muted-foreground">{chat.state.errorText || 'Enter 发送，Shift+Enter 换行'}</div>
-                  <Button variant="ghost" onClick={chat.startDraftSession}>新会话</Button>
-                </div>
+              <div className="border-t border-border/70 bg-card px-6 py-4">
+                <div className="mb-3 text-sm text-muted-foreground">{chat.state.errorText || 'Enter 发送，Shift+Enter 换行'}</div>
 
-                <div className="rounded-2xl border border-border bg-background p-3">
+                <div className="rounded-2xl border border-border bg-background p-3 shadow-[0_-10px_30px_rgba(0,0,0,0.08)]">
                   <Textarea
                     className="min-h-[108px] resize-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
                     value={chat.composerText}
