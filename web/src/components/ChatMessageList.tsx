@@ -1,8 +1,10 @@
 import type { RefObject } from 'react';
+import { motion } from 'framer-motion';
 import type { ChatMessageItem } from '../types';
 import { formatDateTime } from '../lib/format';
 import { cn } from '../lib/ui';
 import Notice from './Notice';
+import { Button } from './ui/button';
 
 interface ChatMessageListProps {
   messages: ChatMessageItem[];
@@ -29,9 +31,9 @@ export default function ChatMessageList({
     <div className="ui-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-2" ref={scrollRef}>
       {historyCursor ? (
         <div className="flex justify-center pb-2">
-          <button className="ui-button-secondary" type="button" onClick={onLoadMore} disabled={historyLoadingMore}>
+          <Button variant="secondary" type="button" onClick={onLoadMore} disabled={historyLoadingMore}>
             {historyLoadingMore ? '加载更早消息…' : '加载更早消息'}
-          </button>
+          </Button>
         </div>
       ) : null}
       {historyLoading ? <Notice title="历史同步中" body="正在装载当前会话历史。" /> : null}
@@ -48,8 +50,11 @@ export default function ChatMessageList({
         </div>
       ) : null}
       {messages.map((message) => (
-        <article
+        <motion.article
           key={message.id}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
           className={cn('flex flex-col gap-2', message.role === 'user' ? 'items-end' : 'items-start')}
         >
           <div
@@ -65,8 +70,8 @@ export default function ChatMessageList({
             className={cn(
               'relative w-full max-w-[90%] overflow-hidden rounded-[26px] border px-5 py-4 shadow-[0_20px_50px_rgba(3,6,18,0.18)] sm:max-w-[82%]',
               message.role === 'user'
-                ? 'border-[rgba(124,147,255,0.22)] bg-[linear-gradient(180deg,rgba(124,147,255,0.22),rgba(69,87,196,0.18))] text-white'
-                : 'border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] text-[var(--color-ink)]',
+                ? 'border-[rgba(59,130,246,0.16)] bg-[linear-gradient(180deg,rgba(219,234,254,0.95),rgba(191,219,254,0.88))] text-[var(--color-ink-strong)] shadow-[0_16px_36px_rgba(59,130,246,0.12)]'
+                : 'border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] text-[var(--color-ink)] shadow-[0_16px_32px_rgba(148,163,184,0.12)]',
             )}
           >
             <div className="whitespace-pre-wrap break-words text-[15px] leading-7 tracking-[-0.011em]">{message.content || ' '}</div>
@@ -74,7 +79,7 @@ export default function ChatMessageList({
               <span className="ml-1 inline-block h-5 w-2 animate-pulse rounded-full bg-[var(--color-accent)] align-middle" aria-hidden="true" />
             ) : null}
           </div>
-        </article>
+        </motion.article>
       ))}
     </div>
   );

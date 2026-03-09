@@ -92,8 +92,8 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
 
   const currentConversationID = activeConversationID || activeSessionMeta?.conversation_id || '';
   const topbarStatus = sending ? runState.statusLabel || '处理中' : runState.errorText || runState.statusLabel;
-  const sidebarPersistent = viewportWidth >= 960;
-  const debugPersistent = viewportWidth >= 1280;
+  const desktopShell = viewportWidth >= 1280;
+  const shellHeight = viewportWidth >= 1280 ? 'calc(100dvh - 3rem)' : viewportWidth >= 640 ? 'calc(100dvh - 2.5rem)' : 'calc(100dvh - 2rem)';
 
   useEffect(() => {
     activeSessionKeyRef.current = activeSessionKey;
@@ -270,7 +270,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         setRunState(createInitialRunState(messages));
         setHistoryCursor(page.next_cursor);
         setDebugOpen(false);
-        if (window.innerWidth < 960) {
+        if (window.innerWidth < 1280) {
           setSidebarOpen(false);
         }
       } catch (error) {
@@ -337,7 +337,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
     setComposerText('');
     setNewSessionOpen(false);
     setNewConversationInput('');
-    if (window.innerWidth < 960) {
+    if (window.innerWidth < 1280) {
       setSidebarOpen(false);
     }
   }, []);
@@ -446,48 +446,55 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         aria-hidden="true"
         style={{
           background:
-            'radial-gradient(circle at 10% 16%, rgba(124, 147, 255, 0.18), transparent 22%), radial-gradient(circle at 88% 10%, rgba(255,255,255,0.05), transparent 18%), radial-gradient(circle at 72% 86%, rgba(80,208,160,0.08), transparent 18%)',
+            'radial-gradient(circle at 10% 16%, rgba(96,165,250,0.14), transparent 22%), radial-gradient(circle at 88% 10%, rgba(255,255,255,0.72), transparent 18%), radial-gradient(circle at 72% 86%, rgba(125,211,252,0.12), transparent 18%)',
         }}
       />
-      <main className="ui-panel-strong relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col overflow-hidden p-5 md:min-h-[calc(100vh-2.5rem)] md:p-6 xl:grid xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(21rem,24rem)] xl:items-stretch xl:gap-6 xl:p-6">
-        <SessionSidebar
-          sessions={sessions}
-          filteredSessions={filteredSessions}
-          activeSessionKey={activeSessionKey}
-          searchText={searchText}
-          sessionsCursor={sessionsCursor}
-          sessionsLoading={sessionsLoading}
-          sessionsBusy={sessionsBusy}
-          sessionsError={sessionsError}
-          sending={sending}
-          open={sidebarPersistent || sidebarOpen}
-          persistent={sidebarPersistent}
-          onOpenNewSession={() => setNewSessionOpen(true)}
-          onRefresh={() => void refreshSessions()}
-          onSearchChange={setSearchText}
-          onOpenSession={(session) => void openSession(session)}
-          onLoadMore={() => void loadMoreSessions()}
-        />
+      <main
+        className={cn(
+          'ui-panel-strong relative mx-auto flex w-full max-w-[1800px] min-w-0 flex-col overflow-hidden p-4 sm:p-5',
+          desktopShell && 'xl:grid xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(21rem,24rem)] xl:items-stretch xl:gap-6 xl:p-6',
+        )}
+        style={{ height: shellHeight }}
+      >
+        {desktopShell ? (
+          <SessionSidebar
+            className="min-h-0"
+            sessions={sessions}
+            filteredSessions={filteredSessions}
+            activeSessionKey={activeSessionKey}
+            searchText={searchText}
+            sessionsCursor={sessionsCursor}
+            sessionsLoading={sessionsLoading}
+            sessionsBusy={sessionsBusy}
+            sessionsError={sessionsError}
+            sending={sending}
+            onOpenNewSession={() => setNewSessionOpen(true)}
+            onRefresh={() => void refreshSessions()}
+            onSearchChange={setSearchText}
+            onOpenSession={(session) => void openSession(session)}
+            onLoadMore={() => void loadMoreSessions()}
+          />
+        ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,13,20,0.52),rgba(6,8,13,0.24))] px-4 py-5 sm:px-5 sm:py-6 xl:h-[calc(100vh-3rem)] xl:px-7 xl:py-7">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] px-4 py-5 sm:px-5 sm:py-6 xl:px-6 xl:py-6">
         <ChatHeader
           conversation={activeSummary.conversation}
           status={topbarStatus}
           lastActivity={activeSummary.lastActivity}
           model={activeSummary.model}
           onToggleSidebar={() => {
-            if (!sidebarPersistent) {
+            if (!desktopShell) {
               setSidebarOpen((current) => !current);
             }
           }}
           onToggleDebug={() => {
-            if (!debugPersistent) {
+            if (!desktopShell) {
               setDebugOpen((current) => !current);
             }
           }}
         />
 
-        <section className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden pt-6 xl:pt-7">
+        <section className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-4 overflow-hidden pt-5 xl:pt-6">
           <ChatMessageList
             messages={runState.messages}
             historyCursor={historyCursor}
@@ -512,39 +519,66 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         </section>
         </div>
 
-        <DebugPanel
-          debugEntries={runState.debugEntries.map((entry) => ({
-            ...entry,
-            at: formatDateTime(entry.at),
-          }))}
-          sessionKey={runState.sessionKey}
-          open={debugPersistent || debugOpen}
-          persistent={debugPersistent}
-          scrollRef={debugViewportRef}
-          onToggle={() => {
-            if (!debugPersistent) {
-              setDebugOpen((current) => !current);
-            }
-          }}
-        />
+        {desktopShell ? (
+          <DebugPanel
+            className="min-h-0"
+            debugEntries={runState.debugEntries.map((entry) => ({
+              ...entry,
+              at: formatDateTime(entry.at),
+            }))}
+            sessionKey={runState.sessionKey}
+            scrollRef={debugViewportRef}
+            onToggle={() => undefined}
+          />
+        ) : null}
       </main>
 
-      {!sidebarPersistent && sidebarOpen ? (
-        <div
-          className="fixed inset-0 z-20 bg-[rgba(4,6,10,0.66)] backdrop-blur-lg md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
+      {!desktopShell && sidebarOpen ? (
+        <>
+          <div
+            className="fixed inset-0 z-20 bg-[rgba(4,6,10,0.66)] backdrop-blur-lg"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <SessionSidebar
+            className="fixed inset-y-4 left-4 z-30 w-[min(22rem,calc(100vw-2rem))]"
+            sessions={sessions}
+            filteredSessions={filteredSessions}
+            activeSessionKey={activeSessionKey}
+            searchText={searchText}
+            sessionsCursor={sessionsCursor}
+            sessionsLoading={sessionsLoading}
+            sessionsBusy={sessionsBusy}
+            sessionsError={sessionsError}
+            sending={sending}
+            onOpenNewSession={() => setNewSessionOpen(true)}
+            onRefresh={() => void refreshSessions()}
+            onSearchChange={setSearchText}
+            onOpenSession={(session) => {
+              void openSession(session);
+            }}
+            onLoadMore={() => void loadMoreSessions()}
+          />
+        </>
       ) : null}
-      {!debugPersistent && debugOpen ? (
-        <div
-          className={cn(
-            'fixed inset-0 z-10 bg-[rgba(4,6,10,0.58)] backdrop-blur-lg',
-            'hidden max-xl:block',
-          )}
-          onClick={() => setDebugOpen(false)}
-          aria-hidden="true"
-        />
+      {!desktopShell && debugOpen ? (
+        <>
+          <div
+            className="fixed inset-0 z-20 bg-[rgba(4,6,10,0.58)] backdrop-blur-lg"
+            onClick={() => setDebugOpen(false)}
+            aria-hidden="true"
+          />
+          <DebugPanel
+            className="fixed inset-y-4 right-4 z-30 w-[min(24rem,calc(100vw-2rem))]"
+            debugEntries={runState.debugEntries.map((entry) => ({
+              ...entry,
+              at: formatDateTime(entry.at),
+            }))}
+            sessionKey={runState.sessionKey}
+            scrollRef={debugViewportRef}
+            onToggle={() => setDebugOpen(false)}
+          />
+        </>
       ) : null}
 
       <NewSessionModal

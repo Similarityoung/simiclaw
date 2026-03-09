@@ -1,7 +1,12 @@
+import { motion } from 'framer-motion';
+import { Plus, RefreshCw, Search, Sparkles } from 'lucide-react';
+
 import type { SessionRecord } from '../types';
 import { formatConversationLabel, formatCount, formatRelativeTime } from '../lib/format';
 import { cn } from '../lib/ui';
 import Notice from './Notice';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 interface SessionSidebarProps {
   sessions: SessionRecord[];
@@ -13,8 +18,7 @@ interface SessionSidebarProps {
   sessionsBusy: boolean;
   sessionsError?: string;
   sending: boolean;
-  open: boolean;
-  persistent: boolean;
+  className?: string;
   onOpenNewSession: () => void;
   onRefresh: () => void;
   onSearchChange: (value: string) => void;
@@ -32,8 +36,7 @@ export default function SessionSidebar({
   sessionsBusy,
   sessionsError,
   sending,
-  open,
-  persistent,
+  className,
   onOpenNewSession,
   onRefresh,
   onSearchChange,
@@ -41,18 +44,19 @@ export default function SessionSidebar({
   onLoadMore,
 }: SessionSidebarProps) {
   return (
-    <aside
-      hidden={!open && !persistent}
-      aria-hidden={!open && !persistent}
+    <motion.aside
+      initial={{ x: -24, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
       className={cn(
-        'ui-panel-strong fixed inset-y-4 left-4 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden p-3 transition-transform duration-300 ease-out md:sticky md:top-0 md:left-auto md:inset-y-auto md:z-auto md:block md:h-[calc(100vh-3rem)] md:w-auto md:min-w-[18rem] md:max-w-[22rem]',
-        open ? 'translate-x-0' : '-translate-x-[110%] md:translate-x-0',
+        'ui-panel-strong flex h-full min-h-0 flex-col overflow-hidden p-3',
+        className,
       )}
     >
       <div className="flex h-full flex-col gap-4">
         <header className="ui-panel flex items-center gap-3 rounded-[22px] px-4 py-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-white/14 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),rgba(124,147,255,0.16))] text-[15px] font-semibold tracking-[0.18em] text-white shadow-[0_10px_30px_rgba(87,110,255,0.18)]">
-            SC
+          <div className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(219,234,254,0.8))] text-[15px] font-semibold tracking-[0.18em] text-[var(--color-accent-strong)] shadow-[0_10px_30px_rgba(59,130,246,0.12)]">
+            <Sparkles className="h-5 w-5" />
           </div>
           <div>
             <div className="text-[18px] font-semibold tracking-[-0.02em] text-[var(--color-ink-strong)]">SimiClaw Web</div>
@@ -61,19 +65,22 @@ export default function SessionSidebar({
         </header>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-          <button className="ui-button-primary w-full" type="button" onClick={onOpenNewSession} disabled={sending}>
+          <Button className="w-full" type="button" onClick={onOpenNewSession} disabled={sending}>
+            <Plus className="h-4 w-4" />
             新建会话
-          </button>
-          <button className="ui-button-secondary w-full" type="button" onClick={onRefresh} disabled={sessionsBusy || sending}>
+          </Button>
+          <Button className="w-full" variant="secondary" type="button" onClick={onRefresh} disabled={sessionsBusy || sending}>
+            <RefreshCw className={cn('h-4 w-4', sessionsBusy && 'animate-spin')} />
             {sessionsBusy ? '刷新中…' : '刷新'}
-          </button>
+          </Button>
         </div>
 
         <label className="block">
           <span className="ui-kicker mb-2 block">会话检索</span>
-          <div className="ui-input-shell">
-            <input
-              className="ui-input"
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-ink-muted)]" />
+            <Input
+              className="pl-10"
               value={searchText}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="搜索 conversation / session / model"
@@ -100,10 +107,10 @@ export default function SessionSidebar({
                 type="button"
                 className={cn(
                   'group rounded-[22px] border px-4 py-4 text-left transition-all duration-200 ease-out',
-                  'bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:-translate-y-0.5',
+                  'bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_12px_24px_rgba(148,163,184,0.12)] hover:-translate-y-0.5',
                   selected
-                    ? 'border-[rgba(124,147,255,0.42)] bg-[linear-gradient(180deg,rgba(124,147,255,0.2),rgba(255,255,255,0.06))] shadow-[0_10px_28px_rgba(92,110,255,0.18)]'
-                    : 'border-white/8 hover:border-white/14 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))]',
+                    ? 'border-[rgba(59,130,246,0.24)] bg-[linear-gradient(180deg,rgba(219,234,254,0.95),rgba(255,255,255,0.98))] shadow-[0_14px_28px_rgba(59,130,246,0.12)]'
+                    : 'border-[rgba(15,23,42,0.08)] hover:border-[rgba(15,23,42,0.12)] hover:bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(248,250,252,0.96))]',
                 )}
                 onClick={() => onOpenSession(session)}
                 disabled={sending}
@@ -129,11 +136,11 @@ export default function SessionSidebar({
         </div>
 
         {sessionsCursor ? (
-          <button className="ui-button-secondary w-full" type="button" onClick={onLoadMore} disabled={sessionsBusy || sending}>
+          <Button className="w-full" variant="secondary" type="button" onClick={onLoadMore} disabled={sessionsBusy || sending}>
             {sessionsBusy ? '加载中…' : '加载更多会话'}
-          </button>
+          </Button>
         ) : null}
       </div>
-    </aside>
+    </motion.aside>
   );
 }

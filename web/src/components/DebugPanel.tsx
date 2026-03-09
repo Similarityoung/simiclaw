@@ -7,31 +7,26 @@ import Notice from './Notice';
 interface DebugPanelProps {
   debugEntries: DebugEntry[];
   sessionKey?: string;
-  open: boolean;
-  persistent: boolean;
+  className?: string;
   scrollRef: RefObject<HTMLDivElement>;
   onToggle: () => void;
 }
 
-export default function DebugPanel({ debugEntries, sessionKey, open, persistent, scrollRef, onToggle }: DebugPanelProps) {
+export default function DebugPanel({ debugEntries, sessionKey, className, scrollRef, onToggle }: DebugPanelProps) {
   return (
     <aside
-      hidden={!open && !persistent}
-      aria-hidden={!open && !persistent}
       className={cn(
-        'ui-panel-strong fixed inset-y-4 right-4 z-20 flex w-[min(24rem,calc(100vw-2rem))] flex-col p-4 transition-transform duration-300 ease-out xl:sticky xl:top-0 xl:right-auto xl:inset-y-auto xl:h-[calc(100vh-3rem)] xl:w-auto xl:min-w-[21rem] xl:max-w-[24rem]',
-        open ? 'translate-x-0' : 'translate-x-[110%] xl:translate-x-0',
+        'ui-panel-strong flex h-full min-h-0 flex-col p-4',
+        className,
       )}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-white/8 pb-4">
+      <div className="flex items-start justify-between gap-3 border-b border-[rgba(15,23,42,0.08)] pb-4">
         <div>
           <div className="ui-kicker mb-2">Runtime trace</div>
           <div className="text-[20px] font-semibold tracking-[-0.02em] text-[var(--color-ink-strong)]">运行流</div>
           <div className="mt-1 text-[13px] tracking-[-0.011em] text-[var(--color-ink-soft)]">status / reasoning / tools / terminal</div>
         </div>
-        <button className="ui-button-chrome" type="button" onClick={onToggle}>
-          收起
-        </button>
+        <button className="ui-button-chrome" type="button" onClick={onToggle}>收起</button>
       </div>
       <div className="mt-4 flex items-center justify-between gap-3 text-[12px] tracking-[-0.01em] text-[var(--color-ink-muted)]">
         <span>{formatCount(debugEntries.length)} 个流事件</span>
@@ -49,7 +44,7 @@ export default function DebugPanel({ debugEntries, sessionKey, open, persistent,
             </div>
             {entry.body ? <div className="mt-2 whitespace-pre-wrap text-[13px] leading-6 tracking-[-0.01em] text-[var(--color-ink-soft)]">{entry.body}</div> : null}
             {entry.payload ? (
-              <pre className="ui-scrollbar mt-3 max-h-72 overflow-auto rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-[12px] leading-6 tracking-[-0.01em] text-[var(--color-ink-soft)]">
+              <pre className="ui-scrollbar mt-3 max-h-72 overflow-auto rounded-[18px] border border-[rgba(15,23,42,0.08)] bg-[rgba(248,250,252,0.92)] px-4 py-3 text-[12px] leading-6 tracking-[-0.01em] text-[var(--color-ink-soft)]">
                 {entry.payload}
               </pre>
             ) : null}
@@ -69,6 +64,6 @@ function cardClassName(entry: DebugEntry): string {
     case 'warning':
       return 'rounded-[22px] border border-amber-300/20 bg-[linear-gradient(180deg,rgba(56,41,18,0.7),rgba(28,18,10,0.92))] px-4 py-4 shadow-[0_14px_30px_rgba(20,14,6,0.2)]';
     default:
-      return 'rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] px-4 py-4 shadow-[0_16px_32px_rgba(3,6,18,0.16)]';
+      return 'rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] px-4 py-4 shadow-[0_16px_32px_rgba(148,163,184,0.14)]';
   }
 }
