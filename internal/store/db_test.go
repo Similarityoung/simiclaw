@@ -450,3 +450,50 @@ func newTestDB(t *testing.T) *DB {
 	})
 	return db
 }
+
+func TestOpenAddsOutboxRoutingColumns(t *testing.T) {
+	workspace := t.TempDir()
+	path := DBPath(workspace)
+	db, err := openSQLite(path, DefaultBusyTimeout())
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE outbox (
+			outbox_id TEXT PRIMARY KEY,
+			event_id TEXT NOT NULL,
+			session_key TEXT NOT NULL,
+			body TEXT NOT NULL,
+			status TEXT NOT NULL,
+			next_attempt_at TEXT NOT NULL,
+			locked_at TEXT NOT NULL DEFAULT '',
+			lock_owner TEXT NOT NULL DEFAULT '',
+			attempt_count INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			sent_at TEXT NOT NULL DEFAULT ''
+		);
+		PRAGMA user_version = 1;
+	`); err != nil {
+		t.Fatalf("seed old schema: %v", err)
+	}
+	_ = db.Close()
+
+	opened, err := Open(workspace, DefaultBusyTimeout())
+	if err != nil {
+		t.Fatalf("open db with migration: %v", err)
+	}
+	defer opened.Close()
+
+	for _, column := range []string{"channel", "target_id"} {
+		exists, err := tableColumnExists(opened.writer, "outbox", column)
+		if err != nil {
+			t.Fatalf("tableColumnExists(%s): %v", column, err)
+		}
+		if !exists {
+			t.Fatalf("expected outbox.%s to exist after migration", column)
+		}
+	}
+}

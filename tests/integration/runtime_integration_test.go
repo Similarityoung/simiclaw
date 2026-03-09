@@ -313,7 +313,9 @@ func newTestAppWithConfig(t *testing.T, mutate func(*config.Config)) *bootstrap.
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.Start()
+	if err := app.Start(); err != nil {
+		t.Fatalf("start app: %v", err)
+	}
 	t.Cleanup(app.Stop)
 	return app
 }

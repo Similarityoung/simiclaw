@@ -169,6 +169,26 @@ LLM_MODEL=openai/deepseek-chat
 
 兼容旧环境变量名 `LLM_API_KEY` / `LLM_BASE_URL`。若配置非法，`serve` 会直接启动失败，而不是静默退回 `fake/default`。
 
+若要启用 Telegram（当前仅支持**私聊文本消息**入站与回发），可在配置文件里加入：
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "<telegram-bot-token>",
+      "allowed_user_ids": [123456789],
+      "long_poll_timeout": "30s"
+    }
+  }
+}
+```
+
+也可以只通过环境变量覆盖 token：`TELEGRAM_TOKEN=<telegram-bot-token>`。
+
+- `allowed_user_ids` 为空时会按 fail-closed 处理：Telegram 入站全部拒绝。
+- 当前不支持群聊 mention、callback query、webhook、媒体消息。
+
 ```bash
 go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ```

@@ -4,12 +4,23 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDefaultLogLevel(t *testing.T) {
 	cfg := Default()
 	if cfg.LogLevel != "info" {
 		t.Fatalf("unexpected default log level: %s", cfg.LogLevel)
+	}
+}
+
+func TestDefaultTelegramConfig(t *testing.T) {
+	cfg := Default()
+	if cfg.Channels.Telegram.Enabled {
+		t.Fatal("telegram should be disabled by default")
+	}
+	if cfg.Channels.Telegram.LongPollTimeout.Duration != 30*time.Second {
+		t.Fatalf("unexpected telegram long poll timeout: %v", cfg.Channels.Telegram.LongPollTimeout.Duration)
 	}
 }
 
@@ -43,6 +54,27 @@ func TestLoadInvalidLogLevel(t *testing.T) {
 	}
 }
 
+func TestLoadTelegramEnabledWithoutTokenFails(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "cfg.json")
+	data := []byte(`{
+		"workspace": ".",
+		"channels": {
+			"telegram": {
+				"enabled": true,
+				"allowed_user_ids": [1001]
+			}
+		}
+	}`)
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("expected telegram token validation error")
+	}
+}
+
 func TestLoadEnvOpenAIAliases(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_BASE_URL", "")
@@ -50,6 +82,7 @@ func TestLoadEnvOpenAIAliases(t *testing.T) {
 	t.Setenv("LLM_API_KEY", "test-key")
 	t.Setenv("LLM_BASE_URL", "https://api.deepseek.com")
 	t.Setenv("LLM_MODEL", "openai/deepseek-chat")
+	t.Setenv("TELEGRAM_TOKEN", "")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -70,5 +103,39 @@ func TestLoadEnvOpenAIAliases(t *testing.T) {
 	}
 	if provider.BaseURL != "https://api.deepseek.com" {
 		t.Fatalf("unexpected base url: %s", provider.BaseURL)
+	}
+}
+
+func TestLoadTelegramTokenFromEnv(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("SIMICLAW_LLM_DEFAULT_MODEL", "")
+	t.Setenv("LLM_API_KEY", "")
+	t.Setenv("LLM_BASE_URL", "")
+	t.Setenv("LLM_MODEL", "")
+	t.Setenv("TELEGRAM_TOKEN", "env-telegram-token")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "cfg.json")
+	data := []byte(`{
+		"workspace": ".",
+		"channels": {
+			"telegram": {
+				"enabled": true,
+				"allowed_user_ids": [1001],
+				"token": "json-token"
+			}
+		}
+	}`)
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Channels.Telegram.Token != "env-telegram-token" {
+		t.Fatalf("unexpected telegram token: %s", cfg.Channels.Telegram.Token)
 	}
 }

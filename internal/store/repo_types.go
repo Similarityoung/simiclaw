@@ -59,6 +59,8 @@ type RunFinalize struct {
 	Error             *model.ErrorBlock
 	AssistantReply    string
 	Messages          []StoredMessage
+	OutboxChannel     string
+	OutboxTargetID    string
 	OutboxBody        string
 	Now               time.Time
 }
@@ -91,6 +93,8 @@ type ClaimedOutbox struct {
 	OutboxID     string
 	EventID      string
 	SessionKey   string
+	Channel      string
+	TargetID     string
 	Body         string
 	AttemptCount int
 	CreatedAt    time.Time

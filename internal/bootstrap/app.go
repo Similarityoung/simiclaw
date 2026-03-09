@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
@@ -23,6 +24,7 @@ type App struct {
 	Gateway    *gateway.Service
 	EventLoop  *runtime.EventLoop
 	Supervisor *runtime.Supervisor
+	Telegram   *telegramchannel.Runtime
 	StreamHub  *streaming.Hub
 	Handler    http.Handler
 }
@@ -42,8 +44,19 @@ func NewApp(cfg config.Config) (*App, error) {
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
 	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
-	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, outbound.StdoutSender{})
 	gatewayService := gateway.NewService(cfg, db, eventLoop)
+
+	var telegramRuntime *telegramchannel.Runtime
+	if cfg.Channels.Telegram.Enabled {
+		telegramRuntime, err = telegramchannel.NewRuntime(cfg.Channels.Telegram, db, gatewayService)
+		if err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+
+	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
+	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, sender)
 	server := httpapi.New(cfg, db, gatewayService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
@@ -51,22 +64,35 @@ func NewApp(cfg config.Config) (*App, error) {
 		Gateway:    gatewayService,
 		EventLoop:  eventLoop,
 		Supervisor: supervisor,
+		Telegram:   telegramRuntime,
 		StreamHub:  streamHub,
 		Handler:    server.Handler(),
 	}, nil
 }
 
-func (a *App) Start() {
+func (a *App) Start() error {
 	a.Supervisor.Start()
+	if a.Telegram != nil {
+		if err := a.Telegram.Start(); err != nil {
+			a.Supervisor.Stop()
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) Stop() {
+	if a.Telegram != nil {
+		a.Telegram.Stop()
+	}
 	a.Supervisor.Stop()
 	_ = a.DB.Close()
 }
 
 func (a *App) RunHTTPServer(ctx context.Context) error {
-	a.Start()
+	if err := a.Start(); err != nil {
+		return err
+	}
 	defer a.Stop()
 
 	srv := &http.Server{Addr: a.Cfg.ListenAddr, Handler: a.Handler}

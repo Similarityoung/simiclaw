@@ -72,15 +72,19 @@ func Open(workspace string, busyTimeout time.Duration) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	reader, err := openSQLite(path, busyTimeout)
-	if err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
 	writer.SetMaxOpenConns(1)
 	if err := validateSchemaVersion(writer); err != nil {
 		_ = writer.Close()
-		_ = reader.Close()
+		return nil, err
+	}
+	if err := ensureSchemaFeatures(writer); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+
+	reader, err := openSQLite(path, busyTimeout)
+	if err != nil {
+		_ = writer.Close()
 		return nil, err
 	}
 	return &DB{path: path, writer: writer, reader: reader}, nil
@@ -166,7 +170,10 @@ func applySchema(db *sql.DB) error {
 	if _, err := db.Exec(string(schema)); err != nil {
 		return err
 	}
-	return validateSchemaVersion(db)
+	if err := validateSchemaVersion(db); err != nil {
+		return err
+	}
+	return ensureSchemaFeatures(db)
 }
 
 func validateSchemaVersion(db *sql.DB) error {
@@ -178,6 +185,55 @@ func validateSchemaVersion(db *sql.DB) error {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
 	return nil
+}
+
+func ensureSchemaFeatures(db *sql.DB) error {
+	features := []struct {
+		table  string
+		column string
+		ddl    string
+	}{
+		{table: "outbox", column: "channel", ddl: "ALTER TABLE outbox ADD COLUMN channel TEXT NOT NULL DEFAULT ''"},
+		{table: "outbox", column: "target_id", ddl: "ALTER TABLE outbox ADD COLUMN target_id TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, feature := range features {
+		exists, err := tableColumnExists(db, feature.table, feature.column)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if _, err := db.Exec(feature.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tableColumnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal any
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(name, column) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func rejectLegacyWorkspace(workspace string, forceNewRuntime bool) error {

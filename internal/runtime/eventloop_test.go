@@ -94,3 +94,82 @@ type panicRunner struct{}
 func (panicRunner) Run(context.Context, model.InternalEvent, int, runner.StreamSink) (runner.RunOutput, error) {
 	panic("boom")
 }
+
+type fixedOutputRunner struct {
+	output runner.RunOutput
+	err    error
+}
+
+func (r fixedOutputRunner) Run(context.Context, model.InternalEvent, int, runner.StreamSink) (runner.RunOutput, error) {
+	return r.output, r.err
+}
+
+func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.Default()
+	cfg.Workspace = workspace
+	if err := store.InitWorkspace(workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
+		t.Fatalf("InitWorkspace: %v", err)
+	}
+	db, err := store.Open(workspace, cfg.DBBusyTimeout.Duration)
+	if err != nil {
+		t.Fatalf("Open DB: %v", err)
+	}
+	defer db.Close()
+
+	conversation := model.Conversation{ConversationID: "tg_chat_42", ChannelType: "dm", ParticipantID: "1001"}
+	sessionKey, err := session.ComputeKey(cfg.TenantID, conversation, "default")
+	if err != nil {
+		t.Fatalf("ComputeKey: %v", err)
+	}
+	now := time.Now().UTC()
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, model.IngestRequest{
+		Source:         "telegram",
+		Conversation:   conversation,
+		IdempotencyKey: "telegram:update:1",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload: model.EventPayload{
+			Type:  "message",
+			Text:  "hello",
+			Extra: map[string]string{},
+		},
+	}, "payload-hash", now)
+	if err != nil {
+		t.Fatalf("IngestEvent: %v", err)
+	}
+	if err := db.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
+		t.Fatalf("MarkEventQueued: %v", err)
+	}
+
+	loop := NewEventLoop(db, fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, streaming.NewHub(), 8, 1)
+	loop.Start()
+	defer loop.Stop()
+	if !loop.TryEnqueue(result.EventID) {
+		t.Fatal("failed to enqueue event")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		rec, ok, err := db.GetEvent(context.Background(), result.EventID)
+		if err != nil {
+			t.Fatalf("GetEvent: %v", err)
+		}
+		if !ok {
+			t.Fatal("event not found")
+		}
+		if rec.Status == model.EventStatusFailed {
+			if rec.OutboxStatus != "" {
+				t.Fatalf("expected no outbox status, got %+v", rec)
+			}
+			if rec.AssistantReply != "" {
+				t.Fatalf("expected assistant reply to be cleared, got %+v", rec)
+			}
+			if rec.Error == nil || rec.Error.Message == "" {
+				t.Fatalf("expected terminal error, got %+v", rec)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("timeout waiting for failed telegram event")
+}

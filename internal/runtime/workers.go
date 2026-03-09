@@ -86,7 +86,11 @@ func (s *Supervisor) ReadyState(ctx context.Context) (map[string]any, error) {
 		state["event_loop"] = "down"
 		return state, fmt.Errorf("event loop down")
 	}
-	for _, worker := range []string{"heartbeat", "processing_sweeper", "outbox_retry", "delayed_jobs", "cron"} {
+	workers := []string{"heartbeat", "processing_sweeper", "outbox_retry", "delayed_jobs", "cron"}
+	if s.cfg.Channels.Telegram.Enabled {
+		workers = append(workers, "telegram_polling")
+	}
+	for _, worker := range workers {
 		beatAt, ok, err := s.db.HeartbeatAt(ctx, worker)
 		if err != nil {
 			state[worker] = "error"
@@ -161,6 +165,8 @@ func (s *Supervisor) outboxWorker() {
 				OutboxID:   msg.OutboxID,
 				EventID:    msg.EventID,
 				SessionKey: msg.SessionKey,
+				Channel:    msg.Channel,
+				TargetID:   msg.TargetID,
 				Body:       msg.Body,
 				CreatedAt:  msg.CreatedAt,
 				Attempts:   msg.AttemptCount,
