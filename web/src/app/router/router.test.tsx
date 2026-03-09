@@ -152,8 +152,8 @@ describe('router shell', () => {
     renderWithProviders(<ConsolePage />);
 
     expect(await screen.findByRole('heading', { name: 'Console', level: 1 })).toBeInTheDocument();
-    expect(await screen.findByText('授权等待队列')).toBeInTheDocument();
-    expect(await screen.findByText('当前没有可展示的审批队列')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Conversation' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Runtime' })).toBeInTheDocument();
 
     const input = await screen.findByPlaceholderText('输入消息，开始一次新的 agent run…');
     await user.type(input, 'hello');

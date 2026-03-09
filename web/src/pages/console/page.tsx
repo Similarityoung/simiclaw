@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, MessagesSquare, SendHorizontal, ShieldEllipsis, SplitSquareVertical, Waves } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronRight, MessagesSquare, PanelLeftClose, PanelLeftOpen, SendHorizontal, TerminalSquare } from 'lucide-react';
 
 import { EmptyState } from '@/components/shared/empty-state';
 import { ErrorState } from '@/components/shared/error-state';
 import { LoadingState } from '@/components/shared/loading-state';
 import { SectionHeader } from '@/components/shared/section-header';
+import { motionTokens } from '@/app/motion/tokens';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,7 +25,8 @@ export function ConsolePage(): JSX.Element {
   const [searchText, setSearchText] = useState('');
   const [activeSessionKey, setActiveSessionKey] = useState<string | undefined>();
   const [selectedRunID, setSelectedRunID] = useState<string | undefined>();
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<'conversation' | 'runtime'>('conversation');
+  const [sessionRailCollapsed, setSessionRailCollapsed] = useState(false);
 
   const sessions = sessionsQuery.data?.items ?? [];
   const activeSession = sessions.find((item) => item.session_key === activeSessionKey) ?? sessions[0];
@@ -67,97 +70,116 @@ export function ConsolePage(): JSX.Element {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <SectionHeader
         eyebrow="Primary Workspace"
         title="Console"
-        body="这是唯一主操作区：左侧负责会话、对话与运行快照，右侧负责通道摘要与授权等待队列。拿不到数据的部分会明确显示空状态。"
+        body="只保留必要结构，把注意力集中到会话、对话与按需查看的 runtime。"
         action={
-          <Button variant="outline" onClick={() => setRightPanelCollapsed((current) => !current)}>
-            <SplitSquareVertical className="mr-2 h-4 w-4" />
-            {rightPanelCollapsed ? '展开右侧' : '折叠右侧'}
+          <Button variant="outline" onClick={() => setSessionRailCollapsed((current) => !current)}>
+            {sessionRailCollapsed ? <PanelLeftOpen className="mr-2 h-4 w-4" /> : <PanelLeftClose className="mr-2 h-4 w-4" />}
+            {sessionRailCollapsed ? '展开会话列表' : '折叠会话列表'}
           </Button>
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
-        <div className="grid min-w-0 gap-6">
-          <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-            <Card>
-              <CardHeader>
-                <CardTitle>会话列表</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="搜索 conversation / session / model" />
-                <ScrollArea className="h-[420px] pr-3">
-                  <div className="space-y-2">
-                    {filteredSessions.length ? (
-                      filteredSessions.map((session) => {
-                        const view = toSessionListItem(session);
-                        return (
-                          <button
-                            key={view.key}
-                            type="button"
-                            onClick={() => setActiveSessionKey(view.key)}
-                            className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-                              activeSession?.session_key === view.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background hover:bg-accent'
-                            }`}
-                          >
-                            <div className="text-sm font-medium">{view.conversation}</div>
-                            <div className="mt-1 text-xs opacity-80">{view.model}</div>
-                            <div className="mt-2 text-[11px] uppercase tracking-[0.24em] opacity-70">{view.channelLabel}</div>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <EmptyState title="暂无匹配会话" body="这是基于真实 session 数据过滤后的结果。" eyebrow="Sessions" />
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="surface-card min-w-0 overflow-hidden bg-card p-0 backdrop-blur-none">
+          <div className="flex flex-col gap-4 border-b border-border/70 px-6 py-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-[0.3em] text-muted-foreground">Workspace</div>
+                <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight">{activeSession?.conversation_id || chat.conversationID}</h1>
+              </div>
+              <div className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{chat.state.statusLabel}</div>
+            </div>
 
-            <Card className="min-w-0">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.28em] text-muted-foreground">Conversation</div>
-                    <CardTitle className="mt-2">{activeSession?.conversation_id || chat.conversationID}</CardTitle>
-                  </div>
-                  <div className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{chat.state.statusLabel}</div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {historyQuery.isLoading ? <LoadingState title="同步会话历史" body="仅为当前选中的 session 读取可见历史。" className="border-0 shadow-none" /> : null}
-                {historyQuery.error ? <ErrorState body="会话历史读取失败。" /> : null}
-                <ScrollArea className="h-[420px] pr-3">
-                  <div className="space-y-4">
-                    {messages.length ? (
-                      messages.map((message) => (
-                        <article key={message.id} className={`rounded-2xl border p-4 ${message.role === 'user' ? 'border-primary/30 bg-primary/5' : 'border-border bg-background/70'}`}>
-                          <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                            <span>{message.role === 'user' ? 'User' : 'SimiClaw'}</span>
-                            <ChevronRight className="h-3 w-3" />
-                            <span>{new Date(message.createdAt).toLocaleString('zh-CN')}</span>
-                          </div>
-                          <div className="whitespace-pre-wrap text-sm leading-7">{message.content || ' '}</div>
-                        </article>
-                      ))
-                    ) : (
-                      <EmptyState title="当前会话还没有消息" body="发送第一条消息后，对话区会展示真实历史与流式回复。" eyebrow="Chat" icon={MessagesSquare} />
-                    )}
-                  </div>
-                </ScrollArea>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('conversation')}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${
+                  workspaceTab === 'conversation' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <MessagesSquare className="h-4 w-4" />
+                Conversation
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('runtime')}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${
+                  workspaceTab === 'runtime' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <TerminalSquare className="h-4 w-4" />
+                Runtime
+              </button>
+            </div>
+          </div>
 
-                <div className="rounded-[1.5rem] border border-border bg-background/80 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.28em] text-muted-foreground">Composer</div>
-                      <div className="mt-1 text-sm text-muted-foreground">在 Console 内沿用现有 `chat:stream` 接口发送消息。</div>
+          <div className="grid min-h-[560px] grid-rows-[minmax(0,1fr)_auto]">
+            <div className="min-h-0 px-6 py-5">
+              {workspaceTab === 'conversation' ? (
+                <>
+                  {historyQuery.isLoading ? (
+                    <LoadingState title="同步会话历史" body="仅为当前选中的 session 读取可见历史。" className="border-0 p-0 shadow-none" />
+                  ) : null}
+                  {historyQuery.error ? <ErrorState body="会话历史读取失败。" className="border-0 p-0 shadow-none" /> : null}
+
+                  <ScrollArea className="h-full pr-3">
+                        <div className="space-y-4">
+                          {messages.length ? (
+                            messages.map((message) => (
+                              <div key={message.id} className={`flex w-full ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <article
+                                  className={`max-w-[85%] rounded-2xl border p-4 ${
+                                    message.role === 'user' ? 'border-primary/25 bg-card' : 'border-border bg-card'
+                                  }`}
+                                >
+                                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+                                    <span>{message.role === 'user' ? 'User' : 'SimiClaw'}</span>
+                                    <ChevronRight className="h-3 w-3" />
+                                    <span>{new Date(message.createdAt).toLocaleString('zh-CN')}</span>
+                                  </div>
+                                  <div className="whitespace-pre-wrap break-words text-sm leading-7">{message.content || ' '}</div>
+                                </article>
+                              </div>
+                            ))
+                          ) : (
+                        <EmptyState
+                          title="当前会话还没有消息"
+                          body="发送第一条消息后，对话会直接铺满这里，不再被多余说明占用。"
+                          eyebrow="Chat"
+                          icon={MessagesSquare}
+                          className="border-dashed"
+                        />
+                      )}
                     </div>
-                    <Button variant="ghost" onClick={chat.startDraftSession}>新会话</Button>
-                  </div>
+                  </ScrollArea>
+                </>
+              ) : (
+                <ConsoleRuntime
+                  compact
+                  runs={runsQuery.data?.items ?? []}
+                  selectedRunID={selectedRunID}
+                  trace={runTraceQuery.data}
+                  loadingTrace={runTraceQuery.isLoading}
+                  onSelectRun={setSelectedRunID}
+                />
+              )}
+            </div>
+
+            {workspaceTab === 'conversation' ? (
+              <div className="border-t border-border/70 px-6 py-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-sm text-muted-foreground">{chat.state.errorText || 'Enter 发送，Shift+Enter 换行'}</div>
+                  <Button variant="ghost" onClick={chat.startDraftSession}>新会话</Button>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-background p-3">
                   <Textarea
+                    className="min-h-[108px] resize-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
                     value={chat.composerText}
                     onChange={(event) => chat.setComposerText(event.target.value)}
                     placeholder="输入消息，开始一次新的 agent run…"
@@ -168,68 +190,87 @@ export function ConsolePage(): JSX.Element {
                       }
                     }}
                   />
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="text-sm text-muted-foreground">{chat.state.errorText || 'Enter 发送，Shift+Enter 换行'}</div>
+                  <div className="mt-3 flex items-center justify-end gap-3">
                     <Button onClick={() => void chat.send()} disabled={chat.sending || !chat.composerText.trim()}>
                       <SendHorizontal className="mr-2 h-4 w-4" />
                       {chat.sending ? '发送中…' : '发送消息'}
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            ) : null}
           </div>
-
-          <ConsoleRuntime
-            runs={runsQuery.data?.items ?? []}
-            selectedRunID={selectedRunID}
-            trace={runTraceQuery.data}
-            loadingTrace={runTraceQuery.isLoading}
-            onSelectRun={setSelectedRunID}
-          />
         </div>
 
-        {!rightPanelCollapsed ? (
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-muted-foreground">
-                  <Waves className="h-4 w-4" />
-                  Active Channels
-                </div>
-                <CardTitle className="mt-2">活跃通道卡片</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {activeSession ? (
-                  <div className="rounded-2xl border border-border bg-background/70 p-4">
-                    <div className="text-sm font-medium">{activeSession.channel_type || 'unknown'}</div>
-                    <div className="mt-2 text-sm text-muted-foreground">session_key：{activeSession.session_key}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">participant：{activeSession.participant_id || '-'}</div>
-                  </div>
-                ) : (
-                  <EmptyState title="暂无可观测通道" body="没有管理 API 时，这里仅显示已观测到的真实通道摘要。" eyebrow="Channels" />
-                )}
-              </CardContent>
-            </Card>
+        <motion.div animate={{ width: sessionRailCollapsed ? 76 : 248 }} transition={motionTokens.transition} className="min-w-0 overflow-hidden">
+          <Card className="h-full overflow-hidden bg-card backdrop-blur-none">
+            <CardHeader className={sessionRailCollapsed ? 'px-3' : undefined}>
+              <CardTitle className={sessionRailCollapsed ? 'text-center text-sm' : undefined}>会话</CardTitle>
+            </CardHeader>
+            <CardContent className={`space-y-3 ${sessionRailCollapsed ? 'px-2' : ''}`}>
+              <AnimatePresence initial={false} mode="wait">
+                {!sessionRailCollapsed ? (
+                  <motion.div
+                    key="session-search"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={motionTokens.transition}
+                  >
+                    <Input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="搜索 conversation / session / model" />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-muted-foreground">
-                  <ShieldEllipsis className="h-4 w-4" />
-                  Approval Queue
+              <ScrollArea className="h-[560px]">
+                <div className={`space-y-2 ${sessionRailCollapsed ? '' : 'pr-3'}`}>
+                  {filteredSessions.length ? (
+                    filteredSessions.map((session) => {
+                      const view = toSessionListItem(session);
+                      const isActive = activeSession?.session_key === view.key;
+
+                      return (
+                        <button
+                          key={view.key}
+                          type="button"
+                          onClick={() => setActiveSessionKey(view.key)}
+                          title={view.conversation}
+                          className={`w-full overflow-hidden rounded-xl border text-left transition-colors duration-150 ease-shell ${
+                            sessionRailCollapsed ? 'px-2 py-3 text-center' : 'px-3 py-3'
+                          } ${
+                            isActive
+                              ? 'border-foreground/20 bg-background text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]'
+                              : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent'
+                          }`}
+                        >
+                          {sessionRailCollapsed ? (
+                            <div className={`text-xs uppercase tracking-[0.2em] ${isActive ? 'font-semibold text-foreground' : 'font-medium'}`}>
+                              {view.conversation.slice(0, 2)}
+                            </div>
+                          ) : (
+                            <div className="min-w-0">
+                              <div className={`truncate text-sm ${isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>
+                                {view.conversation}
+                              </div>
+                              <div className={`mt-1 truncate text-[11px] ${isActive ? 'text-muted-foreground' : 'opacity-80'}`}>{view.model}</div>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <EmptyState
+                      title="暂无匹配会话"
+                      body={sessionRailCollapsed ? '无结果' : '这是基于真实 session 数据过滤后的结果。'}
+                      eyebrow="Sessions"
+                      className={sessionRailCollapsed ? 'p-3 text-center' : undefined}
+                    />
+                  )}
                 </div>
-                <CardTitle className="mt-2">授权等待队列</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <EmptyState
-                  title="当前没有可展示的审批队列"
-                  body="本阶段不伪造审批流；没有后端能力时，这里始终保持清晰的高亮空状态。"
-                  eyebrow="Empty Queue"
-                />
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     </div>
   );
