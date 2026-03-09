@@ -71,21 +71,20 @@ func NewApp(cfg config.Config) (*App, error) {
 }
 
 func (a *App) Start() error {
-	a.Supervisor.Start()
 	if a.Telegram != nil {
 		if err := a.Telegram.Start(); err != nil {
-			a.Supervisor.Stop()
 			return err
 		}
 	}
+	a.Supervisor.Start()
 	return nil
 }
 
 func (a *App) Stop() {
+	a.Supervisor.Stop()
 	if a.Telegram != nil {
 		a.Telegram.Stop()
 	}
-	a.Supervisor.Stop()
 	_ = a.DB.Close()
 }
 

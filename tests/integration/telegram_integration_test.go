@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -15,7 +16,10 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
+	"github.com/similarityyoung/simiclaw/internal/session"
+	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -122,6 +126,99 @@ func (f *fakeTelegramAPIServer) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": messageID, "date": time.Now().UTC().Unix(), "text": payload["text"], "chat": map[string]any{"id": chatID, "type": "private"}}})
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
+	const token = "telegram-test-token-pending"
+	api := newFakeTelegramAPIServer(t, token)
+	restore := telegramchannel.SetRuntimeTestHooksForTesting(api.URL(), api.Client())
+	defer restore()
+
+	workspace := t.TempDir()
+	cfg := config.Default()
+	cfg.Workspace = workspace
+	cfg.Channels.Telegram.Enabled = true
+	cfg.Channels.Telegram.Token = token
+	cfg.Channels.Telegram.AllowedUserIDs = []int64{1001}
+	cfg.Channels.Telegram.LongPollTimeout = config.Duration{Duration: 50 * time.Millisecond}
+	if err := store.InitWorkspace(workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
+		t.Fatalf("InitWorkspace: %v", err)
+	}
+	db, err := store.Open(workspace, cfg.DBBusyTimeout.Duration)
+	if err != nil {
+		t.Fatalf("Open DB: %v", err)
+	}
+	conversation := model.Conversation{ConversationID: "tg_chat_3003", ChannelType: "dm", ParticipantID: "1001"}
+	sessionKey, err := session.ComputeKey(cfg.TenantID, conversation, "default")
+	if err != nil {
+		t.Fatalf("ComputeKey: %v", err)
+	}
+	now := time.Now().UTC()
+	req := model.IngestRequest{
+		Source:         "telegram",
+		Conversation:   conversation,
+		IdempotencyKey: "telegram:update:301",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload: model.EventPayload{
+			Type: "message",
+			Text: "seed inbound",
+			Extra: map[string]string{
+				"telegram_chat_id":        "3003",
+				"telegram_message_id":     "401",
+				"telegram_update_id":      "301",
+				"telegram_participant_id": "1001",
+			},
+		},
+	}
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, req, fmt.Sprintf("seed:%d", now.UnixNano()), now)
+	if err != nil {
+		t.Fatalf("IngestEvent: %v", err)
+	}
+	if err := db.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
+		t.Fatalf("MarkEventQueued: %v", err)
+	}
+	claimed, ok, err := db.ClaimEvent(context.Background(), result.EventID, "run_seed_1", now)
+	if err != nil || !ok {
+		t.Fatalf("ClaimEvent ok=%v err=%v", ok, err)
+	}
+	if err := db.FinalizeRun(context.Background(), store.RunFinalize{
+		RunID:          claimed.RunID,
+		EventID:        claimed.Event.EventID,
+		SessionKey:     claimed.Event.SessionKey,
+		SessionID:      claimed.Event.ActiveSessionID,
+		RunMode:        model.RunModeNormal,
+		RunStatus:      model.RunStatusCompleted,
+		EventStatus:    model.EventStatusProcessed,
+		AssistantReply: "queued telegram reply",
+		OutboxChannel:  "telegram",
+		OutboxTargetID: "3003",
+		OutboxBody:     "queued telegram reply",
+		Now:            now,
+	}); err != nil {
+		t.Fatalf("FinalizeRun: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close DB: %v", err)
+	}
+
+	app, err := bootstrap.NewApp(cfg)
+	if err != nil {
+		t.Fatalf("NewApp: %v", err)
+	}
+	if err := app.Start(); err != nil {
+		t.Fatalf("Start app: %v", err)
+	}
+	t.Cleanup(app.Stop)
+
+	waitReadyzTelegram(t, app)
+	msg := api.WaitSent(t, 1)
+	if msg.ChatID != "3003" || msg.Text != "queued telegram reply" {
+		t.Fatalf("unexpected delivered startup outbox: %+v", msg)
+	}
+	event := pollEvent(t, app, result.EventID)
+	if event.OutboxStatus != model.OutboxStatusSent {
+		t.Fatalf("expected sent outbox after startup recovery, got %+v", event)
 	}
 }
 
