@@ -181,7 +181,41 @@ go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
 
 `chat` 默认进入 Bubble Tea TUI：启动先选会话，可新建会话、回放历史、发送消息，并优先使用 `POST /v1/chat:stream` 流式展示回复；如果流中断或服务端不支持，会自动回退到 ingest + 轮询。
 
-### 4. Inspect / Completion
+### 4. 使用 Web 端（React + Vite）
+
+仓库内置一个独立的前端工程：`web/`。当前一期提供桌面优先的深色极简聊天工作台，覆盖：
+
+- 会话列表
+- 历史回放
+- 新建会话
+- `POST /v1/chat:stream` 流式聊天
+- 右侧调试流（status / reasoning / tool / terminal）
+
+先启动后端：
+
+```bash
+go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
+```
+
+再启动前端：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+默认情况下，前端通过 Vite dev proxy 把 `/v1`、`/healthz`、`/readyz` 转发到 `http://127.0.0.1:8080`。
+
+若需要显式指定 API 地址，可在 `web/.env.local` 中设置：
+
+```bash
+VITE_API_BASE_URL=
+```
+
+留空表示走同源/代理；设置为绝对地址时，浏览器会直接请求该地址。
+
+### 5. Inspect / Completion
 
 ```bash
 go run ./cmd/simiclaw inspect health
@@ -190,7 +224,7 @@ go run ./cmd/simiclaw inspect trace <run-id> --output json
 go run ./cmd/simiclaw completion bash
 ```
 
-### 5. 手动 ingest
+### 6. 手动 ingest
 
 ```bash
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

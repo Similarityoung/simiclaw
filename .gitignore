@@ -32,3 +32,8 @@
 coverage.out
 *.cover
 *.coverprofile
+
+# Web frontend
+/web/node_modules/
+/web/dist/
+/web/coverage/
