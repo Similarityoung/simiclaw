@@ -1,99 +1,117 @@
-:root {
-  color-scheme: dark;
-  --font-sans: 'SF Pro Display', 'SF Pro Text', 'Avenir Next', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  --bg-canvas: #06070a;
-  --bg-elevated: rgba(15, 18, 25, 0.88);
-  --bg-elevated-strong: rgba(12, 15, 21, 0.96);
-  --bg-soft: rgba(255, 255, 255, 0.04);
-  --surface-1: linear-gradient(180deg, rgba(18, 22, 30, 0.88), rgba(10, 12, 17, 0.96));
-  --surface-2: linear-gradient(180deg, rgba(22, 27, 37, 0.92), rgba(13, 16, 23, 0.96));
-  --surface-3: linear-gradient(180deg, rgba(20, 25, 35, 0.84), rgba(11, 14, 20, 0.94));
-  --text-primary: rgba(244, 247, 251, 0.96);
-  --text-secondary: rgba(221, 227, 238, 0.72);
-  --text-tertiary: rgba(175, 184, 200, 0.56);
-  --text-quaternary: rgba(148, 159, 179, 0.42);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --accent: #8ea0ff;
-  --accent-strong: #6f84ff;
-  --accent-soft: rgba(142, 160, 255, 0.16);
-  --success-soft: rgba(80, 208, 160, 0.16);
-  --danger-soft: rgba(251, 113, 133, 0.14);
-  --shadow-panel: 0 30px 80px rgba(0, 0, 0, 0.34);
-  --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.2);
-  font-family: var(--font-sans);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-canvas);
-  color: var(--text-primary);
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 0 0% 100%;
+    --foreground: 240 10% 8%;
+    --muted: 240 5% 95%;
+    --muted-foreground: 240 4% 40%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 8%;
+    --primary: 240 10% 8%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 94%;
+    --secondary-foreground: 240 10% 12%;
+    --accent: 240 6% 92%;
+    --accent-foreground: 240 10% 12%;
+    --destructive: 0 74% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 7% 84%;
+    --input: 240 7% 84%;
+    --ring: 240 6% 22%;
+    --radius: 1rem;
+    --header-height: 4.25rem;
+    --sidebar-width: 18rem;
+    --sidebar-collapsed-width: 5.5rem;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 240 7% 6%;
+    --foreground: 0 0% 96%;
+    --muted: 240 5% 12%;
+    --muted-foreground: 240 5% 68%;
+    --card: 240 6% 8%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 6% 8%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 240 7% 7%;
+    --secondary: 240 5% 13%;
+    --secondary-foreground: 0 0% 96%;
+    --accent: 240 4% 14%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 0 0% 88%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+    background-image:
+      linear-gradient(to right, rgba(127, 127, 127, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(127, 127, 127, 0.08) 1px, transparent 1px),
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.04), transparent 24%);
+    background-size: 64px 64px, 64px 64px, auto, auto;
+    letter-spacing: -0.015em;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 24%, transparent 74%, rgba(255, 255, 255, 0.04));
+    opacity: 0.4;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  code,
+  pre,
+  kbd {
+    @apply font-mono;
+  }
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer utilities {
+  .surface-shell {
+    @apply border bg-card/90 shadow-shell backdrop-blur-xl;
+  }
 
-html,
-body,
-#root {
-  min-height: 100%;
-  margin: 0;
-}
+  .surface-card {
+    @apply rounded-3xl border bg-card/90 shadow-card backdrop-blur-md;
+  }
 
-body {
-  min-height: 100vh;
-  font-family: var(--font-sans);
-  letter-spacing: -0.01em;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(142, 160, 255, 0.2), transparent 26%),
-    radial-gradient(circle at 82% 14%, rgba(255, 255, 255, 0.06), transparent 22%),
-    radial-gradient(circle at 74% 78%, rgba(80, 208, 160, 0.08), transparent 20%),
-    linear-gradient(180deg, #090b10 0%, #06070a 100%);
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.015), transparent 34%),
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.025), transparent 56%);
-  opacity: 0.9;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.14;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 120px 120px;
-  -webkit-mask-image: radial-gradient(circle at center, black, transparent 82%);
-  mask-image: radial-gradient(circle at center, black, transparent 82%);
-}
-
-button,
-input,
-textarea {
-  font: inherit;
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: var(--text-quaternary);
-}
-
-button {
-  cursor: pointer;
-}
-
-code,
-pre {
-  font-family: var(--font-mono);
+  .grid-noise {
+    background-image:
+      radial-gradient(circle at center, rgba(255, 255, 255, 0.08) 0.5px, transparent 0.5px),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+    background-size: 16px 16px, auto;
+  }
 }
