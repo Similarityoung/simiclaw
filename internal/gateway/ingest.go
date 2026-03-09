@@ -45,7 +45,15 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 			Message:    err.Error(),
 		}
 	}
-	if !s.tenantLimiter.Allow(s.cfg.TenantID, start) || !s.sessionLimiter.Allow(sessionKey, start) {
+	sessionLimitKey, err := sessionRateLimitKey(s.cfg.TenantID, req)
+	if err != nil {
+		return AcceptedIngest{}, &APIError{
+			StatusCode: http.StatusBadRequest,
+			Code:       model.ErrorCodeInvalidArgument,
+			Message:    err.Error(),
+		}
+	}
+	if !s.tenantLimiter.Allow(s.cfg.TenantID, start) || !s.sessionLimiter.Allow(sessionLimitKey, start) {
 		return AcceptedIngest{}, &APIError{
 			StatusCode: http.StatusTooManyRequests,
 			Code:       model.ErrorCodeRateLimited,

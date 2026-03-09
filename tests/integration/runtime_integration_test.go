@@ -382,6 +382,37 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 	if afterEvent.AssistantReply != "roles=system,user last=hello after new" {
 		t.Fatalf("expected follow-up reply without leaked history, got %+v", afterEvent)
 	}
+
+	newer := ingest(t, app, model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-new-session:4",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello second after new"},
+	}, http.StatusAccepted)
+	newerEvent := pollEvent(t, app, newer.EventID)
+	if newerEvent.SessionKey != resetEvent.SessionKey {
+		t.Fatalf("expected second follow-up to stay in reset session, got reset=%+v newer=%+v", resetEvent, newerEvent)
+	}
+	if newerEvent.AssistantReply != "roles=system,user,assistant,user last=hello second after new" {
+		t.Fatalf("expected second follow-up to see reset-session history, got %+v", newerEvent)
+	}
+
+	backToFirst := ingest(t, app, model.IngestRequest{
+		Source:         "web",
+		Conversation:   conversation,
+		SessionKeyHint: first.SessionKey,
+		IdempotencyKey: "web:integration-new-session:5",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "back to first"},
+	}, http.StatusAccepted)
+	backToFirstEvent := pollEvent(t, app, backToFirst.EventID)
+	if backToFirstEvent.SessionKey != first.SessionKey {
+		t.Fatalf("expected session_key hint to route back to first session, got first=%+v back=%+v", firstEvent, backToFirstEvent)
+	}
+	if backToFirstEvent.AssistantReply != "roles=system,user,assistant,user last=back to first" {
+		t.Fatalf("expected hinted request to use first-session history only, got %+v", backToFirstEvent)
+	}
 }
 
 func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
