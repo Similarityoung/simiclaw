@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -133,12 +134,16 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeTime:     encodeOffsetTime,
 		EncodeDuration: zapcore.StringDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), sink, parsed)
 	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
+}
+
+func encodeOffsetTime(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+	enc.AppendString(t.Local().Format("2006-01-02T15:04:05.000-0700"))
 }
 
 func (l *Logger) unwrap() *zap.Logger {
