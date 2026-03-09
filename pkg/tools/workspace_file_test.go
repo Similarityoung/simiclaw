@@ -97,8 +97,35 @@ func TestWorkspacePatchCreatesNewTextFile(t *testing.T) {
 	if string(data) != "hello\nworld" {
 		t.Fatalf("unexpected created content: %q", string(data))
 	}
+	if mode := statPerm(t, filepath.Join(workspace, "notes", "today.md")); mode != 0o644 {
+		t.Fatalf("expected created file mode 0644, got %o", mode)
+	}
 	if res.Output["operation"] != "created" {
 		t.Fatalf("unexpected output: %+v", res.Output)
+	}
+}
+
+func TestWorkspacePatchPreservesExistingFileMode(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "IDENTITY.md")
+	writeContextFile(t, path, "- Name: SimiClaw\n")
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatalf("chmod IDENTITY.md: %v", err)
+	}
+
+	reg := NewRegistry()
+	RegisterBuiltins(reg)
+	res := reg.Call(context.Background(), Context{Workspace: workspace, Conversation: model.Conversation{ChannelType: "dm"}}, "workspace_patch", map[string]any{
+		"path":     "IDENTITY.md",
+		"old_text": "SimiClaw",
+		"new_text": "Simi 龙虾",
+	})
+
+	if res.Error != nil {
+		fatalToolError(t, res.Error)
+	}
+	if mode := statPerm(t, path); mode != 0o755 {
+		t.Fatalf("expected patched file mode 0755, got %o", mode)
 	}
 }
 
@@ -237,6 +264,7 @@ func TestWorkspaceToolsPrivateMemoryRequiresDM(t *testing.T) {
 func TestWorkspaceToolsRejectNonTextAndTooLargeContent(t *testing.T) {
 	workspace := t.TempDir()
 	writeContextFile(t, filepath.Join(workspace, "binary.txt"), string([]byte{'a', 0, 'b'}))
+	writeContextFile(t, filepath.Join(workspace, "too-large.txt"), strings.Repeat("x", 256*1024+1))
 	tooLarge := strings.Repeat("x", 256*1024+1)
 
 	reg := NewRegistry()
@@ -259,6 +287,29 @@ func TestWorkspaceToolsRejectNonTextAndTooLargeContent(t *testing.T) {
 	if largeCreate.Error == nil || largeCreate.Error.Code != model.ErrorCodeForbidden {
 		t.Fatalf("expected FORBIDDEN for oversized create, got %+v", largeCreate.Error)
 	}
+
+	binaryDelete := reg.Call(context.Background(), Context{Workspace: workspace, Conversation: model.Conversation{ChannelType: "dm"}}, "workspace_delete", map[string]any{
+		"path": "binary.txt",
+	})
+	if binaryDelete.Error == nil || binaryDelete.Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected FORBIDDEN for deleting non-text file, got %+v", binaryDelete.Error)
+	}
+
+	tooLargeDelete := reg.Call(context.Background(), Context{Workspace: workspace, Conversation: model.Conversation{ChannelType: "dm"}}, "workspace_delete", map[string]any{
+		"path": "too-large.txt",
+	})
+	if tooLargeDelete.Error == nil || tooLargeDelete.Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected FORBIDDEN for deleting oversized file, got %+v", tooLargeDelete.Error)
+	}
+}
+
+func statPerm(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	return info.Mode().Perm()
 }
 
 func fatalToolError(t *testing.T, err *model.ErrorBlock) {
