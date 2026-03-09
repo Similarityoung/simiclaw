@@ -81,8 +81,8 @@ export function applyStreamEvent(state: LiveRunState, event: ChatStreamEvent): L
     }
     case 'reasoning_delta': {
       nextState.statusLabel = '模型思考中';
-      const delta = event.delta?.trim();
-      if (!delta) {
+      const delta = event.delta;
+      if (delta === undefined || delta === '') {
         return nextState;
       }
       const entries = [...nextState.debugEntries];
