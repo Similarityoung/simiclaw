@@ -211,9 +211,12 @@ npm run dev
 
 ```bash
 VITE_API_BASE_URL=
+VITE_API_KEY=
 ```
 
-留空表示走同源/代理；设置为绝对地址时，浏览器会直接请求该地址。
+`VITE_API_BASE_URL` 留空表示走同源/代理；设置为绝对地址时，浏览器会直接请求该地址，也支持带路径前缀的部署地址。
+
+若后端启用了 `SIMICLAW_API_KEY` 或 `--api-key`，请把同一个值写入 `VITE_API_KEY`，前端会自动附带 `Authorization: Bearer ...`。
 
 ### 5. Inspect / Completion
 

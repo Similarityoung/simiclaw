@@ -12,12 +12,20 @@ import type {
 import { APIError, StreamRecoverableError, consumeChatStream, eventFromRecord, waitForTerminalEvent } from './stream';
 
 const configuredBaseURL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '';
+const configuredAPIKey = (import.meta.env.VITE_API_KEY as string | undefined)?.trim() || '';
 
-function apiURL(path: string): string {
-  if (!configuredBaseURL) {
+interface RuntimeClientConfig {
+  baseURL?: string;
+  apiKey?: string;
+}
+
+function apiURL(path: string, baseURL: string): string {
+  if (!baseURL) {
     return path;
   }
-  return new URL(path, configuredBaseURL).toString();
+  const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+  return new URL(normalizedPath, normalizedBaseURL).toString();
 }
 
 async function decodeJSON<T>(response: Response): Promise<T> {
@@ -42,8 +50,8 @@ async function decodeAPIError(response: Response): Promise<APIError> {
   return new APIError(response.status, text.trim());
 }
 
-function withQuery(path: string, query: URLSearchParams): string {
-  const full = apiURL(path);
+function withQuery(path: string, query: URLSearchParams, baseURL: string): string {
+  const full = apiURL(path, baseURL);
   const rendered = query.toString();
   if (!rendered) {
     return full;
@@ -51,7 +59,20 @@ function withQuery(path: string, query: URLSearchParams): string {
   return `${full}?${rendered}`;
 }
 
-export function createRuntimeClient(fetcher: typeof fetch = fetch): RuntimeClient {
+function authHeaders(apiKey: string, extra: HeadersInit = {}): HeadersInit {
+  if (!apiKey) {
+    return extra;
+  }
+  return {
+    ...extra,
+    Authorization: `Bearer ${apiKey}`,
+  };
+}
+
+export function createRuntimeClient(fetcher: typeof fetch = fetch, config: RuntimeClientConfig = {}): RuntimeClient {
+  const baseURL = typeof config.baseURL === 'string' ? config.baseURL.trim() : configuredBaseURL;
+  const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : configuredAPIKey;
+
   return {
     async listSessions(params = {}): Promise<SessionPage> {
       const query = new URLSearchParams();
@@ -61,12 +82,16 @@ export function createRuntimeClient(fetcher: typeof fetch = fetch): RuntimeClien
       if (params.limit) {
         query.set('limit', String(params.limit));
       }
-      const response = await fetcher(withQuery('/v1/sessions', query));
+      const response = await fetcher(withQuery('/v1/sessions', query, baseURL), {
+        headers: authHeaders(apiKey),
+      });
       return decodeJSON<SessionPage>(response);
     },
 
     async getSession(sessionKey: string): Promise<SessionRecord> {
-      const response = await fetcher(apiURL(`/v1/sessions/${encodeURIComponent(sessionKey)}`));
+      const response = await fetcher(apiURL(`/v1/sessions/${encodeURIComponent(sessionKey)}`, baseURL), {
+        headers: authHeaders(apiKey),
+      });
       return decodeJSON<SessionRecord>(response);
     },
 
@@ -82,22 +107,27 @@ export function createRuntimeClient(fetcher: typeof fetch = fetch): RuntimeClien
         query.set('visible', 'false');
       }
       const response = await fetcher(
-        withQuery(`/v1/sessions/${encodeURIComponent(params.sessionKey)}/history`, query),
+        withQuery(`/v1/sessions/${encodeURIComponent(params.sessionKey)}/history`, query, baseURL),
+        {
+          headers: authHeaders(apiKey),
+        },
       );
       return decodeJSON<MessagePage>(response);
     },
 
     async getEvent(eventID: string): Promise<EventRecord> {
-      const response = await fetcher(apiURL(`/v1/events/${encodeURIComponent(eventID)}`));
+      const response = await fetcher(apiURL(`/v1/events/${encodeURIComponent(eventID)}`, baseURL), {
+        headers: authHeaders(apiKey),
+      });
       return decodeJSON<EventRecord>(response);
     },
 
     async sendChat(request: IngestRequest, options?: SendChatOptions): Promise<EventRecord> {
-      const response = await fetcher(apiURL('/v1/chat:stream'), {
+      const response = await fetcher(apiURL('/v1/chat:stream', baseURL), {
         method: 'POST',
-        headers: {
+        headers: authHeaders(apiKey, {
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify(request),
         signal: options?.signal,
       });
