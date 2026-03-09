@@ -88,6 +88,9 @@ func L(module string) *Logger {
 }
 
 func (l *Logger) With(fields ...Field) *Logger {
+	if l == nil {
+		return &Logger{base: zap.L().With(toZapFields(fields)...)}
+	}
 	return &Logger{base: l.unwrap().With(toZapFields(fields)...), module: l.module}
 }
 

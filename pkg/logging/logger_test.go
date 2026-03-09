@@ -51,7 +51,7 @@ func TestInitAndConsoleOutput(t *testing.T) {
 		logging.Sync()
 	})
 
-	parts := splitConsoleLine(t, out)
+	parts := splitConsoleLine(t, out, 5)
 	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$`).MatchString(parts[0]); !matched {
 		t.Fatalf("unexpected timestamp: %q", parts[0])
 	}
@@ -81,9 +81,28 @@ func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
 		logging.Sync()
 	})
 
-	parts := splitConsoleLine(t, out)
+	parts := splitConsoleLine(t, out, 4)
 	if parts[3] != "plain message" {
 		t.Fatalf("msg=%q", parts[3])
+	}
+}
+
+func TestNilLoggerWithDoesNotPanic(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		var logger *logging.Logger
+		logger.With(logging.String("key", "value")).Info("plain message")
+		logging.Sync()
+	})
+
+	parts := splitConsoleLine(t, out, 5)
+	if parts[3] != "plain message" {
+		t.Fatalf("msg=%q", parts[3])
+	}
+	if !strings.Contains(parts[4], `"key": "value"`) {
+		t.Fatalf("key fields=%q", parts[4])
 	}
 }
 
@@ -120,7 +139,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return out
 }
 
-func splitConsoleLine(t *testing.T, out string) []string {
+func splitConsoleLine(t *testing.T, out string, minParts int) []string {
 	t.Helper()
 
 	line := firstNonEmptyLine(out)
@@ -128,8 +147,8 @@ func splitConsoleLine(t *testing.T, out string) []string {
 		t.Fatal("expected log output")
 	}
 	parts := strings.Split(line, "\t")
-	if len(parts) < 4 {
-		t.Fatalf("unexpected console output: %q", line)
+	if len(parts) < minParts {
+		t.Fatalf("unexpected console output parts=%d want>=%d: %q", len(parts), minParts, line)
 	}
 	return parts
 }
