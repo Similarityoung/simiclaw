@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -157,7 +158,9 @@ func Default() Config {
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path == "" {
-		applyEnvOverrides(&cfg)
+		if err := applyEnvOverrides(&cfg); err != nil {
+			return cfg, err
+		}
 		return validate(cfg)
 	}
 	b, err := os.ReadFile(path)
@@ -168,7 +171,9 @@ func Load(path string) (Config, error) {
 		return cfg, err
 	}
 	applyDefaults(&cfg)
-	applyEnvOverrides(&cfg)
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return cfg, err
+	}
 	return validate(cfg)
 }
 
@@ -333,7 +338,7 @@ func LoadDotEnv(path string) error {
 	return scanner.Err()
 }
 
-func applyEnvOverrides(cfg *Config) {
+func applyEnvOverrides(cfg *Config) error {
 	if v := strings.TrimSpace(os.Getenv("SIMICLAW_LLM_DEFAULT_MODEL")); v != "" {
 		cfg.LLM.DefaultModel = v
 	}
@@ -358,9 +363,48 @@ func applyEnvOverrides(cfg *Config) {
 	if model := strings.TrimSpace(os.Getenv("LLM_MODEL")); model != "" {
 		cfg.LLM.DefaultModel = model
 	}
+	if enabled := strings.TrimSpace(os.Getenv("TELEGRAM_ENABLED")); enabled != "" {
+		parsed, err := strconv.ParseBool(enabled)
+		if err != nil {
+			return fmt.Errorf("invalid TELEGRAM_ENABLED %q: %w", enabled, err)
+		}
+		cfg.Channels.Telegram.Enabled = parsed
+	}
 	if token := strings.TrimSpace(os.Getenv("TELEGRAM_TOKEN")); token != "" {
 		cfg.Channels.Telegram.Token = token
 	}
+	if allowed := strings.TrimSpace(os.Getenv("TELEGRAM_ALLOWED_USER_IDS")); allowed != "" {
+		parsed, err := parseTelegramAllowedUserIDs(allowed)
+		if err != nil {
+			return err
+		}
+		cfg.Channels.Telegram.AllowedUserIDs = parsed
+	}
+	if rawTimeout := strings.TrimSpace(os.Getenv("TELEGRAM_LONG_POLL_TIMEOUT")); rawTimeout != "" {
+		parsed, err := time.ParseDuration(rawTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid TELEGRAM_LONG_POLL_TIMEOUT %q: %w", rawTimeout, err)
+		}
+		cfg.Channels.Telegram.LongPollTimeout = Duration{parsed}
+	}
+	return nil
+}
+
+func parseTelegramAllowedUserIDs(raw string) ([]int64, error) {
+	parts := strings.Split(raw, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(trimmed, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TELEGRAM_ALLOWED_USER_IDS entry %q: %w", trimmed, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func firstEnv(keys ...string) string {
