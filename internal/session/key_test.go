@@ -29,3 +29,28 @@ func TestComputeKeyDMRequiresParticipant(t *testing.T) {
 		t.Fatalf("expected error for missing participant_id")
 	}
 }
+
+func TestIsNewSessionCommand(t *testing.T) {
+	for _, input := range []string{"/new", "  /new  ", "/new@simiclaw_bot"} {
+		if !IsNewSessionCommand(input) {
+			t.Fatalf("expected %q to be treated as /new", input)
+		}
+	}
+	for _, input := range []string{"/new later", "hello /new", "/news"} {
+		if IsNewSessionCommand(input) {
+			t.Fatalf("expected %q not to be treated as /new", input)
+		}
+	}
+}
+
+func TestNewScopeFromIDStable(t *testing.T) {
+	a := NewScopeFromID("telegram:update:123")
+	b := NewScopeFromID("telegram:update:123")
+	c := NewScopeFromID("telegram:update:124")
+	if a != b {
+		t.Fatalf("expected stable scope, got %q and %q", a, b)
+	}
+	if a == c {
+		t.Fatalf("expected different scope ids, got %q and %q", a, c)
+	}
+}

@@ -71,3 +71,29 @@ func TestCanonicalPayloadHashStable(t *testing.T) {
 		t.Fatalf("hash not stable: %s vs %s", h1, h2)
 	}
 }
+
+func TestCanonicalPayloadHashIgnoresDMScope(t *testing.T) {
+	req := model.IngestRequest{
+		Source: "cli",
+		Conversation: model.Conversation{
+			ConversationID: "conv_1",
+			ChannelType:    "dm",
+			ParticipantID:  "u1",
+		},
+		IdempotencyKey: "cli:conv_1:1",
+		Timestamp:      "2026-03-03T12:00:00Z",
+		Payload:        model.EventPayload{Type: "message", Text: "hello"},
+	}
+	base, err := canonicalPayloadHash(req)
+	if err != nil {
+		t.Fatalf("hash error: %v", err)
+	}
+	req.DMScope = "scope_123"
+	withScope, err := canonicalPayloadHash(req)
+	if err != nil {
+		t.Fatalf("hash error: %v", err)
+	}
+	if base != withScope {
+		t.Fatalf("expected dm_scope to be ignored, got %s vs %s", base, withScope)
+	}
+}

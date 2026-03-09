@@ -19,9 +19,7 @@ func ComputeKey(tenantID string, conv model.Conversation, dmScope string) (strin
 	if conv.ChannelType == "" {
 		return "", errors.New("channel_type is required")
 	}
-	if dmScope == "" {
-		dmScope = "default"
-	}
+	dmScope = NormalizeScope(dmScope)
 	participant := "-"
 	if conv.ChannelType == "dm" {
 		if conv.ParticipantID == "" {

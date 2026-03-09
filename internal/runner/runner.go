@@ -79,6 +79,17 @@ func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry,
 
 func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int, sink StreamSink) (RunOutput, error) {
 	start := time.Now().UTC()
+	if event.Payload.Type == payloadTypeNewSession {
+		trace := model.RunTrace{
+			EventID:    event.EventID,
+			SessionKey: event.SessionKey,
+			SessionID:  event.ActiveSessionID,
+			RunMode:    model.RunModeNormal,
+			Status:     model.RunStatusCompleted,
+			StartedAt:  start,
+		}
+		return runNewSession(event, start, &trace), nil
+	}
 	runMode := model.RunModeNormal
 	if isNoReplyPayload(event.Payload.Type) {
 		runMode = model.RunModeNoReply
@@ -164,6 +175,7 @@ type llmRunOptions struct {
 }
 
 const payloadTypeMetaKey = "payload_type"
+const payloadTypeNewSession = "new_session"
 
 var cronFireAllowedTools = map[string]struct{}{
 	"memory_search": {},
@@ -444,7 +456,7 @@ func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessag
 	out := make([]provider.ChatMessage, 0, len(history))
 	pendingToolCalls := map[string]bool{}
 	for _, msg := range history {
-		if msg.Meta[payloadTypeMetaKey] == "cron_fire" {
+		if shouldSkipPromptHistoryPayloadType(msg.Meta[payloadTypeMetaKey]) {
 			continue
 		}
 		switch msg.Role {
@@ -478,6 +490,28 @@ func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessag
 		}
 	}
 	return out
+}
+
+func runNewSession(event model.InternalEvent, now time.Time, trace *model.RunTrace) RunOutput {
+	const reply = "已开始新会话。"
+	meta := map[string]any{payloadTypeMetaKey: event.Payload.Type}
+	trace.OutputText = reply
+	trace.FinishedAt = time.Now().UTC()
+	trace.LatencyMS = time.Since(now).Milliseconds()
+	return RunOutput{
+		RunMode: model.RunModeNormal,
+		Messages: []OutputMessage{
+			{Role: "user", Content: strings.TrimSpace(event.Payload.Text), Visible: true, Meta: cloneMap(meta)},
+			{Role: "assistant", Content: reply, Visible: true, Meta: cloneMap(meta)},
+		},
+		Trace:          *trace,
+		AssistantReply: reply,
+	}
+}
+
+func shouldSkipPromptHistoryPayloadType(payloadType any) bool {
+	value, _ := payloadType.(string)
+	return value == "cron_fire" || value == payloadTypeNewSession
 }
 
 func cloneToolCalls(in []model.ToolCall) []model.ToolCall {

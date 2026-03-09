@@ -18,6 +18,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS conversation_scopes (
+    tenant_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    channel_type TEXT NOT NULL,
+    participant_id TEXT NOT NULL DEFAULT '',
+    dm_scope TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, conversation_id, channel_type, participant_id)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     fts_rowid INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id TEXT NOT NULL UNIQUE,

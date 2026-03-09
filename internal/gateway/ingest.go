@@ -32,8 +32,12 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 	if apiErr != nil {
 		return AcceptedIngest{}, apiErr
 	}
+	req, dmScope, apiErr := s.resolveRequestScope(ctx, req)
+	if apiErr != nil {
+		return AcceptedIngest{}, apiErr
+	}
 
-	sessionKey, err := session.ComputeKey(s.cfg.TenantID, req.Conversation, "default")
+	sessionKey, err := session.ComputeKey(s.cfg.TenantID, req.Conversation, dmScope)
 	if err != nil {
 		return AcceptedIngest{}, &APIError{
 			StatusCode: http.StatusBadRequest,
