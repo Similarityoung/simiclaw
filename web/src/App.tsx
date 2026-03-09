@@ -65,6 +65,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   const sendAbortRef = useRef<AbortController | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const debugViewportRef = useRef<HTMLDivElement | null>(null);
+  const messageScrollRestoreRef = useRef<{ top: number; height: number } | null>(null);
 
   const filteredSessions = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -104,6 +105,14 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   useEffect(() => {
     const viewport = messagesViewportRef.current;
     if (!viewport || historyLoadingMore) {
+      return;
+    }
+    const restore = messageScrollRestoreRef.current;
+    if (restore) {
+      messageScrollRestoreRef.current = null;
+      window.requestAnimationFrame(() => {
+        viewport.scrollTop = restore.top + (viewport.scrollHeight - restore.height);
+      });
       return;
     }
     window.requestAnimationFrame(() => {
@@ -216,6 +225,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
     async (session: SessionRecord) => {
       historyRequestRef.current += 1;
       const requestID = historyRequestRef.current;
+      messageScrollRestoreRef.current = null;
       try {
         setHistoryLoading(true);
         setHistoryError(undefined);
@@ -259,6 +269,10 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
       return;
     }
     const sessionKey = activeSessionKeyRef.current;
+    const viewport = messagesViewportRef.current;
+    messageScrollRestoreRef.current = viewport
+      ? { top: viewport.scrollTop, height: viewport.scrollHeight }
+      : null;
     try {
       setHistoryLoadingMore(true);
       const page = await client.getSessionHistory({
@@ -268,6 +282,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         visibleOnly: true,
       });
       if (sessionKey !== activeSessionKeyRef.current) {
+        messageScrollRestoreRef.current = null;
         return;
       }
       const olderMessages = page.items
@@ -288,6 +303,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   const startDraftSession = useCallback((conversationID?: string) => {
     const nextConversation = conversationID?.trim() || generateDefaultConversationID();
     historyRequestRef.current += 1;
+    messageScrollRestoreRef.current = null;
     setActiveSessionKey('');
     setActiveSessionMeta(null);
     setActiveConversationID(nextConversation);
@@ -320,7 +336,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
       setActiveConversationID(conversationID);
     }
 
-    const request = buildIngestRequest(conversationID, sequenceRef.current, text);
+    const request = buildIngestRequest(conversationID, sequenceRef.current, text, activeSessionMeta);
     sequenceRef.current += 1;
 
     sendAbortRef.current?.abort();
@@ -387,7 +403,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
       sendAbortRef.current = null;
       setSending(false);
     }
-  }, [client, composerText, currentConversationID, refreshSessions, sending]);
+  }, [activeSessionMeta, client, composerText, currentConversationID, refreshSessions, sending]);
 
   const activeSummary = useMemo(() => {
     const conversation = formatConversationLabel(currentConversationID);
@@ -684,14 +700,23 @@ function DebugCard({ entry }: { entry: DebugEntry }) {
   );
 }
 
-function buildIngestRequest(conversationID: string, seq: number, text: string): IngestRequest {
+function buildIngestRequest(
+  conversationID: string,
+  seq: number,
+  text: string,
+  session: SessionRecord | null,
+): IngestRequest {
+  const channelType = session?.channel_type?.trim() || 'dm';
+  const participantID = channelType === 'dm' ? session?.participant_id?.trim() || 'web_user' : undefined;
+
   return {
     source: 'web',
     conversation: {
       conversation_id: conversationID,
-      channel_type: 'dm',
-      participant_id: 'web_user',
+      channel_type: channelType,
+      ...(participantID ? { participant_id: participantID } : {}),
     },
+    ...(session?.session_key ? { session_key: session.session_key } : {}),
     idempotency_key: `web:${conversationID}:${seq}`,
     timestamp: new Date().toISOString(),
     payload: {

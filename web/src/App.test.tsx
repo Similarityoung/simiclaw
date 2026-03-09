@@ -149,4 +149,49 @@ describe('App', () => {
       expect(window.location.search).toContain('session_key=session-new');
     });
   });
+
+  it('现有会话发送消息时复用该会话的 channel 与 participant', async () => {
+    const session = buildSession({
+      session_key: 'session-existing',
+      active_session_id: 'sid-existing',
+      conversation_id: 'existing-conversation',
+      participant_id: 'alice',
+    });
+    const sendChat = vi.fn().mockResolvedValue({
+      event_id: 'evt-existing',
+      status: 'processed',
+      session_key: 'session-existing',
+      session_id: 'sid-existing',
+      received_at: '2026-03-09T12:30:00Z',
+      created_at: '2026-03-09T12:30:00Z',
+      updated_at: '2026-03-09T12:30:00Z',
+      payload_hash: 'hash-existing',
+    });
+    const client = buildClient({
+      listSessions: vi.fn().mockResolvedValue({ items: [session], next_cursor: '' }),
+      getSessionHistory: vi.fn().mockResolvedValue({ items: [], next_cursor: '' }),
+      sendChat,
+    });
+
+    render(<App client={client} />);
+
+    const input = await screen.findByPlaceholderText('输入消息，开始一次新的 agent run…');
+    await userEvent.type(input, 'follow up');
+    await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(sendChat).toHaveBeenCalled();
+    });
+    expect(sendChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_key: 'session-existing',
+        conversation: {
+          conversation_id: 'existing-conversation',
+          channel_type: 'dm',
+          participant_id: 'alice',
+        },
+      }),
+      expect.anything(),
+    );
+  });
 });
