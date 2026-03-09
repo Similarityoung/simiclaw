@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import styles from './App.module.css';
 import ChatHeader from './components/ChatHeader';
 import ChatMessageList from './components/ChatMessageList';
 import Composer from './components/Composer';
@@ -21,6 +20,7 @@ import {
   formatDateTime,
   formatRelativeTime,
 } from './lib/format';
+import { cn } from './lib/ui';
 import type {
   ChatMessageItem,
   IngestRequest,
@@ -60,6 +60,9 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   const [newConversationInput, setNewConversationInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  );
 
   const activeSessionKeyRef = useRef(activeSessionKey);
   const activeConversationRef = useRef(activeConversationID);
@@ -89,6 +92,8 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
 
   const currentConversationID = activeConversationID || activeSessionMeta?.conversation_id || '';
   const topbarStatus = sending ? runState.statusLabel || '处理中' : runState.errorText || runState.statusLabel;
+  const sidebarPersistent = viewportWidth >= 960;
+  const debugPersistent = viewportWidth >= 1280;
 
   useEffect(() => {
     activeSessionKeyRef.current = activeSessionKey;
@@ -105,6 +110,20 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   useEffect(() => {
     syncSessionKeyToURL(activeSessionKey);
   }, [activeSessionKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const viewport = messagesViewportRef.current;
@@ -421,8 +440,15 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
   }, [activeSessionMeta, currentConversationID, runState.messages]);
 
   return (
-    <div className={styles.appShell}>
-      <div className={styles.backdropGlow} aria-hidden="true" />
+    <div className="relative min-h-screen overflow-hidden px-4 py-4 text-[var(--color-ink)] sm:px-5 sm:py-5 xl:px-6 xl:py-6">
+      <div
+        className="pointer-events-none fixed inset-0"
+        aria-hidden="true"
+        style={{
+          background:
+            'radial-gradient(circle at 10% 16%, rgba(124, 147, 255, 0.18), transparent 22%), radial-gradient(circle at 88% 10%, rgba(255,255,255,0.05), transparent 18%), radial-gradient(circle at 72% 86%, rgba(80,208,160,0.08), transparent 18%)',
+        }}
+      />
       <SessionSidebar
         sessions={sessions}
         filteredSessions={filteredSessions}
@@ -433,7 +459,8 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         sessionsBusy={sessionsBusy}
         sessionsError={sessionsError}
         sending={sending}
-        open={sidebarOpen}
+        open={sidebarPersistent || sidebarOpen}
+        persistent={sidebarPersistent}
         onOpenNewSession={() => setNewSessionOpen(true)}
         onRefresh={() => void refreshSessions()}
         onSearchChange={setSearchText}
@@ -441,17 +468,28 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
         onLoadMore={() => void loadMoreSessions()}
       />
 
-      <main className={styles.mainColumn}>
+      <main className="ui-panel-strong relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col overflow-hidden p-5 md:min-h-[calc(100vh-2.5rem)] md:p-6 xl:grid xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(21rem,24rem)] xl:gap-6 xl:p-6">
+        <div className="hidden xl:block" aria-hidden="true" />
+
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,13,20,0.52),rgba(6,8,13,0.24))] px-4 py-5 sm:px-5 sm:py-6 xl:px-7 xl:py-7">
         <ChatHeader
           conversation={activeSummary.conversation}
           status={topbarStatus}
           lastActivity={activeSummary.lastActivity}
           model={activeSummary.model}
-          onToggleSidebar={() => setSidebarOpen((current) => !current)}
-          onToggleDebug={() => setDebugOpen((current) => !current)}
+          onToggleSidebar={() => {
+            if (!sidebarPersistent) {
+              setSidebarOpen((current) => !current);
+            }
+          }}
+          onToggleDebug={() => {
+            if (!debugPersistent) {
+              setDebugOpen((current) => !current);
+            }
+          }}
         />
 
-        <section className={styles.chatStage}>
+        <section className="flex min-h-0 flex-1 flex-col gap-5 pt-6 xl:pt-7">
           <ChatMessageList
             messages={runState.messages}
             historyCursor={historyCursor}
@@ -474,21 +512,42 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
             onOpenNewSession={() => setNewSessionOpen(true)}
           />
         </section>
+        </div>
+
+        <DebugPanel
+          debugEntries={runState.debugEntries.map((entry) => ({
+            ...entry,
+            at: formatDateTime(entry.at),
+          }))}
+          sessionKey={runState.sessionKey}
+          open={debugPersistent || debugOpen}
+          persistent={debugPersistent}
+          scrollRef={debugViewportRef}
+          onToggle={() => {
+            if (!debugPersistent) {
+              setDebugOpen((current) => !current);
+            }
+          }}
+        />
       </main>
 
-      <DebugPanel
-        debugEntries={runState.debugEntries.map((entry) => ({
-          ...entry,
-          at: formatDateTime(entry.at),
-        }))}
-        sessionKey={runState.sessionKey}
-        open={debugOpen}
-        scrollRef={debugViewportRef}
-        onToggle={() => setDebugOpen((current) => !current)}
-      />
-
-      {sidebarOpen ? <div className={styles.overlay} onClick={() => setSidebarOpen(false)} aria-hidden="true" /> : null}
-      {debugOpen ? <div className={styles.debugOverlay} onClick={() => setDebugOpen(false)} aria-hidden="true" /> : null}
+      {!sidebarPersistent && sidebarOpen ? (
+        <div
+          className="fixed inset-0 z-20 bg-[rgba(4,6,10,0.66)] backdrop-blur-lg md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+      {!debugPersistent && debugOpen ? (
+        <div
+          className={cn(
+            'fixed inset-0 z-10 bg-[rgba(4,6,10,0.58)] backdrop-blur-lg',
+            'hidden max-xl:block',
+          )}
+          onClick={() => setDebugOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
 
       <NewSessionModal
         open={newSessionOpen}
