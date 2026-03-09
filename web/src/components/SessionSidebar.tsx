@@ -45,7 +45,7 @@ export default function SessionSidebar({
       hidden={!open && !persistent}
       aria-hidden={!open && !persistent}
       className={cn(
-        'ui-panel-strong fixed inset-y-4 left-4 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden p-3 transition-transform duration-300 ease-out md:sticky md:top-6 md:left-auto md:inset-y-auto md:z-auto md:block md:w-auto md:min-w-[18rem] md:max-w-[22rem]',
+        'ui-panel-strong fixed inset-y-4 left-4 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden p-3 transition-transform duration-300 ease-out md:sticky md:top-0 md:left-auto md:inset-y-auto md:z-auto md:block md:h-[calc(100vh-3rem)] md:w-auto md:min-w-[18rem] md:max-w-[22rem]',
         open ? 'translate-x-0' : '-translate-x-[110%] md:translate-x-0',
       )}
     >

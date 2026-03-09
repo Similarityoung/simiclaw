@@ -19,7 +19,7 @@ export default function DebugPanel({ debugEntries, sessionKey, open, persistent,
       hidden={!open && !persistent}
       aria-hidden={!open && !persistent}
       className={cn(
-        'ui-panel-strong fixed inset-y-4 right-4 z-20 flex w-[min(24rem,calc(100vw-2rem))] flex-col p-4 transition-transform duration-300 ease-out xl:sticky xl:top-6 xl:right-auto xl:inset-y-auto xl:w-auto xl:min-w-[21rem] xl:max-w-[24rem]',
+        'ui-panel-strong fixed inset-y-4 right-4 z-20 flex w-[min(24rem,calc(100vw-2rem))] flex-col p-4 transition-transform duration-300 ease-out xl:sticky xl:top-0 xl:right-auto xl:inset-y-auto xl:h-[calc(100vh-3rem)] xl:w-auto xl:min-w-[21rem] xl:max-w-[24rem]',
         open ? 'translate-x-0' : 'translate-x-[110%] xl:translate-x-0',
       )}
     >

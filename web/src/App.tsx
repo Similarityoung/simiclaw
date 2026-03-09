@@ -449,29 +449,27 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
             'radial-gradient(circle at 10% 16%, rgba(124, 147, 255, 0.18), transparent 22%), radial-gradient(circle at 88% 10%, rgba(255,255,255,0.05), transparent 18%), radial-gradient(circle at 72% 86%, rgba(80,208,160,0.08), transparent 18%)',
         }}
       />
-      <SessionSidebar
-        sessions={sessions}
-        filteredSessions={filteredSessions}
-        activeSessionKey={activeSessionKey}
-        searchText={searchText}
-        sessionsCursor={sessionsCursor}
-        sessionsLoading={sessionsLoading}
-        sessionsBusy={sessionsBusy}
-        sessionsError={sessionsError}
-        sending={sending}
-        open={sidebarPersistent || sidebarOpen}
-        persistent={sidebarPersistent}
-        onOpenNewSession={() => setNewSessionOpen(true)}
-        onRefresh={() => void refreshSessions()}
-        onSearchChange={setSearchText}
-        onOpenSession={(session) => void openSession(session)}
-        onLoadMore={() => void loadMoreSessions()}
-      />
+      <main className="ui-panel-strong relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col overflow-hidden p-5 md:min-h-[calc(100vh-2.5rem)] md:p-6 xl:grid xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(21rem,24rem)] xl:items-stretch xl:gap-6 xl:p-6">
+        <SessionSidebar
+          sessions={sessions}
+          filteredSessions={filteredSessions}
+          activeSessionKey={activeSessionKey}
+          searchText={searchText}
+          sessionsCursor={sessionsCursor}
+          sessionsLoading={sessionsLoading}
+          sessionsBusy={sessionsBusy}
+          sessionsError={sessionsError}
+          sending={sending}
+          open={sidebarPersistent || sidebarOpen}
+          persistent={sidebarPersistent}
+          onOpenNewSession={() => setNewSessionOpen(true)}
+          onRefresh={() => void refreshSessions()}
+          onSearchChange={setSearchText}
+          onOpenSession={(session) => void openSession(session)}
+          onLoadMore={() => void loadMoreSessions()}
+        />
 
-      <main className="ui-panel-strong relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col overflow-hidden p-5 md:min-h-[calc(100vh-2.5rem)] md:p-6 xl:grid xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(21rem,24rem)] xl:gap-6 xl:p-6">
-        <div className="hidden xl:block" aria-hidden="true" />
-
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,13,20,0.52),rgba(6,8,13,0.24))] px-4 py-5 sm:px-5 sm:py-6 xl:px-7 xl:py-7">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,13,20,0.52),rgba(6,8,13,0.24))] px-4 py-5 sm:px-5 sm:py-6 xl:h-[calc(100vh-3rem)] xl:px-7 xl:py-7">
         <ChatHeader
           conversation={activeSummary.conversation}
           status={topbarStatus}
@@ -489,7 +487,7 @@ export default function App({ client = runtimeClient, initialSessionKey }: AppPr
           }}
         />
 
-        <section className="flex min-h-0 flex-1 flex-col gap-5 pt-6 xl:pt-7">
+        <section className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden pt-6 xl:pt-7">
           <ChatMessageList
             messages={runState.messages}
             historyCursor={historyCursor}
