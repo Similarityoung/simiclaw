@@ -11,6 +11,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
@@ -24,9 +25,9 @@ type Options struct {
 // Run 解析启动参数并运行网关 HTTP 服务，处理进程退出信号。
 func Run(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	configPath := fs.String("config", "", "config json file")
-	workspaceOverride := fs.String("workspace", "", "workspace override")
-	listenOverride := fs.String("listen", "", "listen address override")
+	configPath := fs.String("config", "", messages.Flag.ConfigJSON)
+	workspaceOverride := fs.String("workspace", "", messages.Flag.WorkspaceOverride)
+	listenOverride := fs.String("listen", "", messages.Flag.ListenOverride)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -38,14 +39,14 @@ func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"gateway"},
-		Short:   "启动 HTTP 服务",
+		Short:   messages.Command.GatewayShort,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.ConfigPath, "config", "", "config json file")
-	cmd.Flags().StringVar(&opts.Workspace, "workspace", "", "workspace override")
-	cmd.Flags().StringVar(&opts.Listen, "listen", "", "listen address override")
+	cmd.Flags().StringVar(&opts.ConfigPath, "config", "", messages.Flag.ConfigJSON)
+	cmd.Flags().StringVar(&opts.Workspace, "workspace", "", messages.Flag.WorkspaceOverride)
+	cmd.Flags().StringVar(&opts.Listen, "listen", "", messages.Flag.ListenOverride)
 	return cmd
 }
 

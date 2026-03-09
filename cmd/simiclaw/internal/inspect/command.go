@@ -13,13 +13,14 @@ import (
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "inspect",
-		Short: "查询服务运行状态与数据",
+		Short: messages.Command.InspectShort,
 	}
 	cmd.AddCommand(newHealthCommand(streams, globals))
 	cmd.AddCommand(newSessionsCommand(streams, globals))
@@ -32,7 +33,7 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 func newHealthCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *cobra.Command {
 	return &cobra.Command{
 		Use:   "health",
-		Short: "查询 healthz 与 readyz",
+		Short: messages.Command.InspectHealth,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
@@ -46,7 +47,7 @@ func newHealthCommand(streams common.IOStreams, globals *common.RuntimeFlagValue
 			}
 			return render(streams.Out, opts.Output, report, func(w io.Writer) {
 				tw := newTabWriter(w)
-				fmt.Fprintln(tw, "endpoint\tstatus")
+				fmt.Fprintln(tw, messages.Inspect.HealthHeader)
 				fmt.Fprintf(tw, "healthz\t%v\n", report.Health["status"])
 				fmt.Fprintf(tw, "readyz\t%v\n", report.Ready["status"])
 				_ = tw.Flush()
@@ -64,7 +65,7 @@ func newSessionsCommand(streams common.IOStreams, globals *common.RuntimeFlagVal
 	)
 	cmd := &cobra.Command{
 		Use:   "sessions",
-		Short: "列出会话",
+		Short: messages.Command.InspectSessions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
@@ -78,21 +79,21 @@ func newSessionsCommand(streams common.IOStreams, globals *common.RuntimeFlagVal
 			}
 			return render(streams.Out, opts.Output, page, func(w io.Writer) {
 				tw := newTabWriter(w)
-				fmt.Fprintln(tw, "conversation_id\tsession_key\tmessage_count\tlast_model\tlast_activity_at")
+				fmt.Fprintln(tw, messages.Inspect.SessionsHeader)
 				for _, item := range page.Items {
 					fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", item.ConversationID, item.SessionKey, item.MessageCount, item.LastModel, item.LastActivityAt.Format(time.RFC3339))
 				}
 				_ = tw.Flush()
 				if page.NextCursor != "" {
-					fmt.Fprintf(w, "\nnext_cursor: %s\n", page.NextCursor)
+					fmt.Fprint(w, messages.Inspect.NextCursorLine(page.NextCursor))
 				}
 			})
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 20, "返回条数")
-	cmd.Flags().StringVar(&cursor, "cursor", "", "分页游标")
-	cmd.Flags().StringVar(&sessionKey, "session-key", "", "按 session_key 过滤")
-	cmd.Flags().StringVar(&conversationID, "conversation", "", "按 conversation_id 过滤")
+	cmd.Flags().IntVar(&limit, "limit", 20, messages.Flag.ItemsToReturn)
+	cmd.Flags().StringVar(&cursor, "cursor", "", messages.Flag.PaginationCursor)
+	cmd.Flags().StringVar(&sessionKey, "session-key", "", messages.Flag.FilterBySessionKey)
+	cmd.Flags().StringVar(&conversationID, "conversation", "", messages.Flag.FilterByConversation)
 	return cmd
 }
 
@@ -105,7 +106,7 @@ func newEventsCommand(streams common.IOStreams, globals *common.RuntimeFlagValue
 	)
 	cmd := &cobra.Command{
 		Use:   "events",
-		Short: "列出事件",
+		Short: messages.Command.InspectEvents,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
@@ -119,21 +120,21 @@ func newEventsCommand(streams common.IOStreams, globals *common.RuntimeFlagValue
 			}
 			return render(streams.Out, opts.Output, page, func(w io.Writer) {
 				tw := newTabWriter(w)
-				fmt.Fprintln(tw, "event_id\tstatus\trun_id\tsession_key\tupdated_at")
+				fmt.Fprintln(tw, messages.Inspect.EventsHeader)
 				for _, item := range page.Items {
 					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", item.EventID, item.Status, item.RunID, item.SessionKey, item.UpdatedAt.Format(time.RFC3339))
 				}
 				_ = tw.Flush()
 				if page.NextCursor != "" {
-					fmt.Fprintf(w, "\nnext_cursor: %s\n", page.NextCursor)
+					fmt.Fprint(w, messages.Inspect.NextCursorLine(page.NextCursor))
 				}
 			})
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 20, "返回条数")
-	cmd.Flags().StringVar(&cursor, "cursor", "", "分页游标")
-	cmd.Flags().StringVar(&sessionKey, "session-key", "", "按 session_key 过滤")
-	cmd.Flags().StringVar(&status, "status", "", "按状态过滤")
+	cmd.Flags().IntVar(&limit, "limit", 20, messages.Flag.ItemsToReturn)
+	cmd.Flags().StringVar(&cursor, "cursor", "", messages.Flag.PaginationCursor)
+	cmd.Flags().StringVar(&sessionKey, "session-key", "", messages.Flag.FilterBySessionKey)
+	cmd.Flags().StringVar(&status, "status", "", messages.Flag.FilterByStatus)
 	return cmd
 }
 
@@ -145,7 +146,7 @@ func newRunsCommand(streams common.IOStreams, globals *common.RuntimeFlagValues)
 	)
 	cmd := &cobra.Command{
 		Use:   "runs",
-		Short: "列出运行记录",
+		Short: messages.Command.InspectRuns,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
@@ -159,27 +160,27 @@ func newRunsCommand(streams common.IOStreams, globals *common.RuntimeFlagValues)
 			}
 			return render(streams.Out, opts.Output, page, func(w io.Writer) {
 				tw := newTabWriter(w)
-				fmt.Fprintln(tw, "run_id\tstatus\trun_mode\tevent_id\tstarted_at")
+				fmt.Fprintln(tw, messages.Inspect.RunsHeader)
 				for _, item := range page.Items {
 					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", item.RunID, item.Status, item.RunMode, item.EventID, item.StartedAt.Format(time.RFC3339))
 				}
 				_ = tw.Flush()
 				if page.NextCursor != "" {
-					fmt.Fprintf(w, "\nnext_cursor: %s\n", page.NextCursor)
+					fmt.Fprint(w, messages.Inspect.NextCursorLine(page.NextCursor))
 				}
 			})
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 20, "返回条数")
-	cmd.Flags().StringVar(&cursor, "cursor", "", "分页游标")
-	cmd.Flags().StringVar(&sessionKey, "session-key", "", "按 session_key 过滤")
+	cmd.Flags().IntVar(&limit, "limit", 20, messages.Flag.ItemsToReturn)
+	cmd.Flags().StringVar(&cursor, "cursor", "", messages.Flag.PaginationCursor)
+	cmd.Flags().StringVar(&sessionKey, "session-key", "", messages.Flag.FilterBySessionKey)
 	return cmd
 }
 
 func newTraceCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trace <run-id>",
-		Short: "查看单个 run trace",
+		Short: messages.Command.InspectTrace,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
@@ -206,10 +207,10 @@ func newTraceCommand(streams common.IOStreams, globals *common.RuntimeFlagValues
 				fmt.Fprintf(tw, "output_text\t%s\n", trace.OutputText)
 				_ = tw.Flush()
 				if len(trace.ToolExecutions) > 0 {
-					fmt.Fprintf(w, "\n工具调用: %d\n", len(trace.ToolExecutions))
+					fmt.Fprint(w, messages.Inspect.ToolExecutionsLine(len(trace.ToolExecutions)))
 				}
 				if trace.Error != nil {
-					fmt.Fprintf(w, "错误: %s: %s\n", trace.Error.Code, trace.Error.Message)
+					fmt.Fprint(w, messages.Inspect.Error(trace.Error.Code, trace.Error.Message))
 				}
 			})
 		},

@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
 
 const AppVersion = "v0.4"
@@ -20,7 +22,7 @@ func NewCommand(out io.Writer) *cobra.Command {
 	}
 	return &cobra.Command{
 		Use:   "version",
-		Short: "输出版本号",
+		Short: messages.Command.VersionShort,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintln(out, AppVersion)
 			return err

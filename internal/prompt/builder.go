@@ -15,6 +15,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/contextfile"
 	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	promptpkg "github.com/similarityyoung/simiclaw/pkg/prompt"
 )
 
 var workspaceContextFiles = []string{"SOUL.md", "IDENTITY.md", "USER.md", "AGENTS.md", "TOOLS.md"}
@@ -145,35 +146,18 @@ func (b *Builder) identitySection() string {
 	if err != nil {
 		workspacePath = b.workspace
 	}
-	return strings.TrimSpace(fmt.Sprintf(`## Identity & Runtime Rules
-
-你是 SimiClaw，一个运行在本地工作区内的 Go Agent Runtime 助手。
-
-- 当前工作区：%s
-- 回答默认跟随用户语言；若用户未指定，则优先使用用户消息的语言。
-- 涉及执行动作、读取记忆或使用扩展能力时，优先使用工具，不要假装已经执行。
-- 规则优先级：runtime 固定规则 > 用户显式指令 > AGENTS.md > SOUL.md / 其他上下文文件。`, workspacePath))
+	return promptpkg.Render(promptpkg.SystemText.IdentityRuntime, map[string]string{"workspace_path": workspacePath})
 }
 
 func (b *Builder) toolContractSection() string {
-	return strings.TrimSpace(`## Tool Contract
-
-- 需要读取工作区上下文时，优先使用 context_get；它只允许读取 workspace 根目录约定文件与 skills/<name>/SKILL.md。
-- 需要读取记忆时，优先使用 memory_search，再按需使用 memory_get。
-- 只有在工具真正执行并返回结果后，才能把结果当作事实引用。
-- 若上下文文件和工具结果冲突，以更新、更具体且已验证的事实为准。`)
+	return promptpkg.SystemText.ToolContract
 }
 
 func (b *Builder) memoryPolicySection(memoryMode string) string {
-	parts := []string{strings.TrimSpace(`## Memory Policy
-
-- 记忆应通过显式 recall 获取，不要声称自己“天然记得”工作区事实。
-- 当问题可能依赖历史偏好、长期事实或日常记录时，优先使用 memory_search，再按需使用 memory_get。
-- 当前 prompt 只注入 curated memory；daily memory 默认不直注入。
-- 近似上下文仅供参考；若与显式指令冲突，以显式指令为准。`)}
+	parts := []string{promptpkg.SystemText.MemoryPolicy}
 	blocks := b.curatedMemoryBlocks(memoryMode)
 	if len(blocks) == 0 {
-		parts = append(parts, "### Injected Curated Memory\n\n当前轮次未注入 curated memory。")
+		parts = append(parts, "### Injected Curated Memory\n\nNo curated memory is injected for this run.")
 		return strings.Join(parts, "\n\n")
 	}
 	parts = append(parts, "### Injected Curated Memory")
@@ -193,7 +177,7 @@ func (b *Builder) workspaceContextSection() string {
 		loaded++
 	}
 	if loaded == 0 {
-		parts = append(parts, "当前轮次未注入额外的工作区上下文文件。")
+		parts = append(parts, "No extra workspace context files are injected for this run.")
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -202,10 +186,10 @@ func (b *Builder) availableSkillsSection() string {
 	skills := b.loadSkillSummaries()
 	parts := []string{"## Available Skills"}
 	if len(skills) == 0 {
-		parts = append(parts, "当前工作区未发现可用 skill。")
+		parts = append(parts, "No skills were found in the current workspace.")
 		return strings.Join(parts, "\n\n")
 	}
-	parts = append(parts, "需要 skill 正文时，先使用 context_get 读取对应的 `skills/<name>/SKILL.md`。")
+	parts = append(parts, "To read a skill body, use context_get on `skills/<name>/SKILL.md` first.")
 	for _, skill := range skills {
 		parts = append(parts, fmt.Sprintf("- %s — %s (%s)", skill.Name, skill.Description, skill.Path))
 	}
@@ -213,18 +197,10 @@ func (b *Builder) availableSkillsSection() string {
 }
 
 func (b *Builder) heartbeatPolicySection() string {
-	parts := []string{strings.TrimSpace(`## Heartbeat Policy
-
-- 当前 payload_type=cron_fire，属于后台巡检执行。
-- 本轮只允许读取工作区上下文与已有记忆，不允许写入或整理长期记忆。
-- HEARTBEAT.md 的内容已经直接注入本节；不要再对 HEARTBEAT.md 调用 context_get。
-- SOUL.md、IDENTITY.md、USER.md、AGENTS.md、TOOLS.md、BOOTSTRAP.md 若已出现在 prompt 中，默认不要重复读取，除非确实需要精确行号。
-- 默认先做一次 memory_search；若命中，再最多做一次后续读取（memory_get 或 context_get）补证据；拿到足够证据后立即总结。
-- 不要为了“再确认一次”重复调用工具，不要枚举无关文件，不要扩张任务范围。
-- 若 HEARTBEAT.md 存在，按其中 checklist 执行；若不存在，则只做保守检查，不要扩张任务范围。`)}
+	parts := []string{promptpkg.SystemText.HeartbeatPolicy}
 	entry, ok := b.readContextText(heartbeatContextFile)
 	if !ok {
-		parts = append(parts, "### HEARTBEAT.md\n\n当前工作区未提供 HEARTBEAT.md，按保守默认策略执行。")
+		parts = append(parts, "### HEARTBEAT.md\n\nThe current workspace does not provide HEARTBEAT.md. Follow the conservative default policy.")
 		return strings.Join(parts, "\n\n")
 	}
 	parts = append(parts, fmt.Sprintf("### %s\n\n%s", entry.DisplayPath, entry.Content))
@@ -379,7 +355,7 @@ func parseSkillSummary(workspace, absPath, raw string) (SkillSummary, bool) {
 		description = summarizeMarkdown(body)
 	}
 	if description == "" {
-		description = "无描述"
+		description = "No description"
 	}
 	return SkillSummary{Name: name, Description: description, Path: rel}, true
 }

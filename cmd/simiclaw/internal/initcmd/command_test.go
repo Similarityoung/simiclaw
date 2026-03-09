@@ -8,7 +8,24 @@ import (
 	"testing"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
+
+func TestEmbeddedWorkspaceTemplatesContainExpectedFiles(t *testing.T) {
+	got := sortedWorkspaceTemplateNames()
+	want := []string{"BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected template count got=%v want=%v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected template order got=%v want=%v", got, want)
+		}
+	}
+	if !strings.Contains(workspaceTemplates["BOOTSTRAP.md"], "Please delete this file manually") {
+		t.Fatalf("expected embedded bootstrap template warning, got %q", workspaceTemplates["BOOTSTRAP.md"])
+	}
+}
 
 func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
@@ -17,8 +34,8 @@ func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	if err := run(Options{Workspace: workspace}, common.IOStreams{Out: &out}); err != nil {
 		t.Fatalf("run init: %v", err)
 	}
-	if !strings.Contains(out.String(), "workspace initialized at") {
-		t.Fatalf("expected init output, got %q", out.String())
+	if out.String() != messages.WorkspaceInitialized(workspace) {
+		t.Fatalf("expected init output %q, got %q", messages.WorkspaceInitialized(workspace), out.String())
 	}
 
 	for _, name := range []string{"SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "BOOTSTRAP.md", "HEARTBEAT.md"} {
@@ -35,7 +52,7 @@ func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read BOOTSTRAP.md: %v", err)
 	}
-	if !strings.Contains(string(bootstrap), "请手动删除本文件") {
+	if !strings.Contains(string(bootstrap), "Please delete this file manually") {
 		t.Fatalf("expected bootstrap warning, got %q", string(bootstrap))
 	}
 }

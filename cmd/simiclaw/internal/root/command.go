@@ -1,7 +1,7 @@
 package root
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/spf13/cobra"
 
@@ -11,24 +11,25 @@ import (
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/initcmd"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/inspect"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
 
 func NewCommand(streams common.IOStreams) *cobra.Command {
 	globals := &common.RuntimeFlagValues{}
 	cmd := &cobra.Command{
 		Use:           "simiclaw",
-		Short:         "SimiClaw CLI v2",
+		Short:         messages.Command.RootShort,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
 	cmd.SetOut(streams.Out)
 	cmd.SetErr(streams.ErrOut)
-	cmd.PersistentFlags().StringVar(&globals.BaseURL, "base-url", "", "gateway base URL")
-	cmd.PersistentFlags().StringVar(&globals.APIKey, "api-key", "", "API key for Authorization header")
-	cmd.PersistentFlags().DurationVar(&globals.Timeout, "timeout", 0, "request timeout")
-	cmd.PersistentFlags().StringVar(&globals.Output, "output", "", "output format: table or json")
-	cmd.PersistentFlags().BoolVar(&globals.NoColor, "no-color", false, "disable color output")
-	cmd.PersistentFlags().BoolVar(&globals.Verbose, "verbose", false, "verbose output")
+	cmd.PersistentFlags().StringVar(&globals.BaseURL, "base-url", "", messages.Flag.BaseURL)
+	cmd.PersistentFlags().StringVar(&globals.APIKey, "api-key", "", messages.Flag.APIKey)
+	cmd.PersistentFlags().DurationVar(&globals.Timeout, "timeout", 0, messages.Flag.RequestTimeout)
+	cmd.PersistentFlags().StringVar(&globals.Output, "output", "", messages.Flag.OutputFormat)
+	cmd.PersistentFlags().BoolVar(&globals.NoColor, "no-color", false, messages.Flag.NoColor)
+	cmd.PersistentFlags().BoolVar(&globals.Verbose, "verbose", false, messages.Flag.Verbose)
 
 	cmd.AddCommand(initcmd.NewCommand(streams))
 	cmd.AddCommand(gateway.NewCommand())
@@ -55,7 +56,7 @@ func Execute(args []string, streams common.IOStreams) error {
 func newCompletionCommand(streams common.IOStreams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "completion [bash|zsh|fish|powershell]",
-		Short:     "生成 shell completion",
+		Short:     messages.Command.CompletionShort,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +70,7 @@ func newCompletionCommand(streams common.IOStreams) *cobra.Command {
 			case "powershell":
 				return cmd.Root().GenPowerShellCompletionWithDesc(streams.Out)
 			default:
-				return fmt.Errorf("unsupported shell %q", args[0])
+				return errors.New(messages.UnsupportedShell(args[0]))
 			}
 		},
 	}

@@ -12,6 +12,7 @@ import (
 
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -102,7 +103,7 @@ func TestHandleNamingKeyRejectsExistingConversationID(t *testing.T) {
 	if got.nameInput.Value() != "dup-conversation" {
 		t.Fatalf("name input = %q want %q", got.nameInput.Value(), "dup-conversation")
 	}
-	if !strings.Contains(got.status, "已存在") {
+	if got.status != messages.Chat.ConversationExists("dup-conversation") {
 		t.Fatalf("status = %q, want duplicate warning", got.status)
 	}
 }
@@ -137,7 +138,7 @@ func TestModelInitWithNewConversationRejectsExistingConversationID(t *testing.T)
 	if got.nameInput.Value() != "dup-conversation" {
 		t.Fatalf("name input = %q want %q", got.nameInput.Value(), "dup-conversation")
 	}
-	if !strings.Contains(got.status, "已存在") {
+	if got.status != messages.Chat.ConversationExists("dup-conversation") {
 		t.Fatalf("status = %q, want duplicate warning", got.status)
 	}
 }

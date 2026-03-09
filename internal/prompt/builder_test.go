@@ -8,7 +8,17 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	promptpkg "github.com/similarityyoung/simiclaw/pkg/prompt"
 )
+
+func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
+	if promptpkg.SystemText.IdentityRuntime == "" || promptpkg.SystemText.ToolContract == "" || promptpkg.SystemText.MemoryPolicy == "" || promptpkg.SystemText.HeartbeatPolicy == "" {
+		t.Fatalf("expected embedded system prompt text to be loaded, got %+v", promptpkg.SystemText)
+	}
+	if !strings.Contains(promptpkg.SystemText.IdentityRuntime, "{{workspace_path}}") {
+		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", promptpkg.SystemText.IdentityRuntime)
+	}
+}
 
 func TestBuilderBuildIncludesSectionsInOrder(t *testing.T) {
 	b := NewBuilder(t.TempDir())
@@ -163,10 +173,10 @@ func TestBuilderHeartbeatSectionOnlyForCronFire(t *testing.T) {
 func TestBuilderHeartbeatPolicyIncludesCronToolBudgetGuidance(t *testing.T) {
 	b := NewBuilder(t.TempDir())
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "cron_fire"}})
-	if !strings.Contains(got, "不要再对 HEARTBEAT.md 调用 context_get") {
+	if !strings.Contains(got, "Do not reread it with `context_get`") {
 		t.Fatalf("expected heartbeat policy to forbid rereading HEARTBEAT.md, got: %s", got)
 	}
-	if !strings.Contains(got, "默认先做一次 memory_search") || !strings.Contains(got, "拿到足够证据后立即总结") {
+	if !strings.Contains(got, "Default rhythm: do one `memory_search` first") || !strings.Contains(got, "then summarize") {
 		t.Fatalf("expected heartbeat policy to include small cron tool budget guidance, got: %s", got)
 	}
 }
@@ -174,7 +184,7 @@ func TestBuilderHeartbeatPolicyIncludesCronToolBudgetGuidance(t *testing.T) {
 func TestBuilderHeartbeatPolicyFallsBackWithoutHeartbeatFile(t *testing.T) {
 	b := NewBuilder(t.TempDir())
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), PayloadType: "cron_fire"}})
-	if !strings.Contains(got, "当前工作区未提供 HEARTBEAT.md") {
+	if !strings.Contains(got, "The current workspace does not provide HEARTBEAT.md") {
 		t.Fatalf("expected heartbeat fallback, got: %s", got)
 	}
 }
@@ -188,7 +198,7 @@ func TestBuilderReusesCacheAndInvalidatesOnContextPresenceAndContentChange(t *te
 	if b.staticBuilds != 1 {
 		t.Fatalf("expected cached static prefix to be reused, got=%d", b.staticBuilds)
 	}
-	if !strings.Contains(first, "当前轮次未注入额外的工作区上下文文件。") || !strings.Contains(second, "当前轮次未注入额外的工作区上下文文件。") {
+	if !strings.Contains(first, "No extra workspace context files are injected for this run.") || !strings.Contains(second, "No extra workspace context files are injected for this run.") {
 		t.Fatalf("expected cached static context section before context change, first=%q second=%q", first, second)
 	}
 
@@ -354,7 +364,7 @@ func TestBuilderFallsBackWhenNoCuratedMemoryInjected(t *testing.T) {
 	workspace := t.TempDir()
 	b := NewBuilder(workspace)
 	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
-	if !strings.Contains(got, "当前轮次未注入 curated memory。") {
+	if !strings.Contains(got, "No curated memory is injected for this run.") {
 		t.Fatalf("expected no-curated-memory fallback, got: %s", got)
 	}
 }

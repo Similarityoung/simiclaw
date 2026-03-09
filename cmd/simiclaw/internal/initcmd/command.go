@@ -9,6 +9,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 )
 
@@ -19,8 +20,8 @@ type Options struct {
 
 func Run(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	workspace := fs.String("workspace", ".", "workspace path")
-	forceNewRuntime := fs.Bool("force-new-runtime", false, "remove legacy runtime traces and create a fresh SQLite runtime")
+	workspace := fs.String("workspace", ".", messages.Flag.WorkspacePath)
+	forceNewRuntime := fs.Bool("force-new-runtime", false, messages.Flag.ForceNewRuntime)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -31,13 +32,13 @@ func NewCommand(streams common.IOStreams) *cobra.Command {
 	opts := Options{}
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "初始化 workspace",
+		Short: messages.Command.InitShort,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(opts, streams)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Workspace, "workspace", ".", "workspace path")
-	cmd.Flags().BoolVar(&opts.ForceNewRuntime, "force-new-runtime", false, "remove legacy runtime traces and create a fresh SQLite runtime")
+	cmd.Flags().StringVar(&opts.Workspace, "workspace", ".", messages.Flag.WorkspacePath)
+	cmd.Flags().BoolVar(&opts.ForceNewRuntime, "force-new-runtime", false, messages.Flag.ForceNewRuntime)
 	return cmd
 }
 
@@ -55,6 +56,6 @@ func run(opts Options, streams common.IOStreams) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	_, err := fmt.Fprintf(out, "workspace initialized at %s\n", opts.Workspace)
+	_, err := fmt.Fprint(out, messages.WorkspaceInitialized(opts.Workspace))
 	return err
 }

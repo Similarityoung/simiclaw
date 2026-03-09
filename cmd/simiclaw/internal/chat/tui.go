@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	clichannel "github.com/similarityyoung/simiclaw/internal/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
@@ -95,7 +96,7 @@ type streamErrorMsg struct {
 
 func newModel(streams common.IOStreams, cli *client.Client, opts Options) *modelState {
 	input := textarea.New()
-	input.Placeholder = "输入消息，Enter 发送，Ctrl+J 换行"
+	input.Placeholder = messages.Chat.InputPlaceholder
 	input.ShowLineNumbers = false
 	input.SetHeight(4)
 	input.Focus()
@@ -117,7 +118,7 @@ func newModel(streams common.IOStreams, cli *client.Client, opts Options) *model
 		input:        input,
 		nameInput:    nameInput,
 		viewport:     vp,
-		status:       "加载会话中…",
+		status:       messages.Chat.StatusLoadingSessions,
 		seq:          time.Now().UTC().UnixMilli(),
 		conversation: strings.TrimSpace(opts.Conversation),
 		sessionKey:   strings.TrimSpace(opts.SessionKey),
@@ -127,7 +128,7 @@ func newModel(streams common.IOStreams, cli *client.Client, opts Options) *model
 		if m.conversation == "" {
 			m.conversation = defaultConversationID()
 		}
-		m.status = "新会话，发送第一条消息后会创建远端 session"
+		m.status = messages.Chat.StatusNewSessionPending
 	}
 	return m
 }
@@ -136,7 +137,7 @@ func (m *modelState) Init() tea.Cmd {
 	if m.opts.NewSession {
 		if m.conversation != "" {
 			m.loading = true
-			m.status = "检查 conversation_id 中…"
+			m.status = messages.Chat.StatusCheckingConversation
 			return checkConversationAvailableCmd(m.client, m.conversation)
 		}
 		m.syncViewport()
@@ -144,12 +145,12 @@ func (m *modelState) Init() tea.Cmd {
 	}
 	if m.sessionKey != "" {
 		m.loading = true
-		m.status = "加载会话历史中…"
+		m.status = messages.Chat.StatusLoadingHistory
 		return openSessionCmd(m.client, m.sessionKey, m.opts.HistoryLimit)
 	}
 	if m.conversation != "" {
 		m.loading = true
-		m.status = "加载会话历史中…"
+		m.status = messages.Chat.StatusLoadingHistory
 		return openConversationCmd(m.client, m.conversation, m.opts.HistoryLimit)
 	}
 	m.selectorBusy = true
@@ -170,14 +171,14 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.Err != nil {
 			m.lastError = msg.Err.Error()
-			m.status = "加载会话失败"
+			m.status = messages.Chat.StatusLoadFailed
 			return m, nil
 		}
 		m.sessions = msg.Items
 		if len(m.sessions) == 0 {
-			m.status = "暂无会话，按 Ctrl+N 新建"
+			m.status = messages.Chat.StatusNoSessions
 		} else {
-			m.status = fmt.Sprintf("已加载 %d 个会话", len(m.sessions))
+			m.status = messages.Chat.LoadedSessions(len(m.sessions))
 			if m.selectorIdx >= len(m.sessions) {
 				m.selectorIdx = len(m.sessions) - 1
 			}
@@ -187,7 +188,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.Err != nil {
 			m.lastError = msg.Err.Error()
-			m.status = "加载会话失败"
+			m.status = messages.Chat.StatusLoadFailed
 			return m, nil
 		}
 		m.mode = modeChat
@@ -196,12 +197,12 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.conversation = msg.Session.ConversationID
 			m.sessionKey = msg.Session.SessionKey
 			m.sessionID = msg.Session.ActiveSessionID
-			m.status = fmt.Sprintf("已打开会话 %s", msg.Session.ConversationID)
+			m.status = messages.Chat.OpenedSession(msg.Session.ConversationID)
 		} else {
 			m.conversation = msg.Conversation
 			m.sessionKey = ""
 			m.sessionID = ""
-			m.status = fmt.Sprintf("新会话 %s", msg.Conversation)
+			m.status = messages.Chat.NewSession(msg.Conversation)
 		}
 		for _, item := range msg.Messages {
 			if !item.Visible {
@@ -216,7 +217,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.Err != nil {
 			m.lastError = msg.Err.Error()
-			m.status = "检查 conversation_id 失败"
+			m.status = messages.Chat.StatusCheckConversationFailed
 			return m, nil
 		}
 		if !msg.Available {
@@ -226,7 +227,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessionID = ""
 			m.nameInput.SetValue(msg.Conversation)
 			m.lastError = ""
-			m.status = fmt.Sprintf("conversation_id %s 已存在，请换一个", msg.Conversation)
+			m.status = messages.Chat.ConversationExists(msg.Conversation)
 			return m, m.nameInput.Focus()
 		}
 		m.mode = modeChat
@@ -235,7 +236,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionKey = ""
 		m.sessionID = ""
 		m.lastError = ""
-		m.status = fmt.Sprintf("新会话 %s", msg.Conversation)
+		m.status = messages.Chat.NewSession(msg.Conversation)
 		m.syncViewport()
 		return m, m.input.Focus()
 	case streamStartedMsg:
@@ -243,7 +244,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamCh = msg.Updates
 		m.cancelStream = msg.Cancel
 		m.sending = true
-		m.status = "消息已发送，等待回复…"
+		m.status = messages.Chat.StatusMessageSentWait
 		return m, waitForAsyncMsg(m.streamCh)
 	case streamFrameMsg:
 		m.applyStreamFrame(msg.Frame)
@@ -257,7 +258,7 @@ func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sending = false
 		m.cancelActiveStream()
 		m.lastError = msg.Err.Error()
-		m.status = "发送失败"
+		m.status = messages.Chat.StatusSendFailed
 		return m, nil
 	case streamDoneMsg:
 		m.sending = false
@@ -306,14 +307,14 @@ func (m *modelState) handleSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.nameInput.Focus()
 	case "r":
 		m.selectorBusy = true
-		m.status = "刷新会话中…"
+		m.status = messages.Chat.StatusRefreshingSessions
 		return m, loadSessionsCmd(m.client)
 	case "enter":
 		if len(m.sessions) == 0 {
 			return m, nil
 		}
 		m.loading = true
-		m.status = "加载会话历史中…"
+		m.status = messages.Chat.StatusLoadingHistory
 		return m, openSessionCmd(m.client, m.sessions[m.selectorIdx].SessionKey, m.opts.HistoryLimit)
 	}
 	return m, nil
@@ -336,7 +337,7 @@ func (m *modelState) handleNamingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = true
 		m.lastError = ""
-		m.status = "检查 conversation_id 中…"
+		m.status = messages.Chat.StatusCheckingConversation
 		return m, checkConversationAvailableCmd(m.client, conversation)
 	}
 	var cmd tea.Cmd
@@ -355,7 +356,7 @@ func (m *modelState) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeSelector
 		m.selectorBusy = true
-		m.status = "加载会话列表中…"
+		m.status = messages.Chat.StatusLoadingSessionList
 		return m, loadSessionsCmd(m.client)
 	case "ctrl+n":
 		if m.sending {
@@ -420,28 +421,28 @@ func (m *modelState) applyStreamFrame(frame model.ChatStreamEvent) {
 
 	switch frame.Type {
 	case model.ChatStreamEventAccepted:
-		m.status = "请求已接收"
+		m.status = messages.Chat.StatusRequestAccepted
 	case model.ChatStreamEventStatus:
 		statusText := strings.TrimSpace(frame.Message)
 		if statusText == "" {
 			statusText = strings.TrimSpace(frame.Status)
 		}
 		if statusText == "" {
-			statusText = "处理中…"
+			statusText = messages.Chat.StatusProcessing
 		}
 		m.status = statusText
 	case model.ChatStreamEventReasoningDelta:
-		m.status = "推理中…"
+		m.status = messages.Chat.StatusReasoning
 	case model.ChatStreamEventTextDelta:
-		m.status = "回复流式输出中…"
+		m.status = messages.Chat.StatusStreamingReply
 		m.appendAssistantDelta(frame.Delta)
 	case model.ChatStreamEventToolStart:
-		m.status = fmt.Sprintf("执行工具：%s", nonEmpty(frame.ToolName, frame.ToolCallID))
+		m.status = messages.Chat.RunningTool(nonEmpty(frame.ToolName, frame.ToolCallID))
 	case model.ChatStreamEventToolResult:
 		if frame.Error != nil {
-			m.status = fmt.Sprintf("工具失败：%s", nonEmpty(frame.ToolName, frame.ToolCallID))
+			m.status = messages.Chat.ToolFailed(nonEmpty(frame.ToolName, frame.ToolCallID))
 		} else {
-			m.status = fmt.Sprintf("工具完成：%s", nonEmpty(frame.ToolName, frame.ToolCallID))
+			m.status = messages.Chat.ToolCompleted(nonEmpty(frame.ToolName, frame.ToolCallID))
 		}
 	case model.ChatStreamEventDone, model.ChatStreamEventError:
 		m.applyTerminalRecord(frame)
@@ -456,9 +457,9 @@ func (m *modelState) applyTerminalRecord(frame model.ChatStreamEvent) {
 			m.lastError = frame.Error.Code + ": " + frame.Error.Message
 		}
 		if frame.Type == model.ChatStreamEventError {
-			m.status = "运行失败"
+			m.status = messages.Chat.StatusRunFailed
 		} else {
-			m.status = "完成"
+			m.status = messages.Chat.StatusDone
 		}
 		return
 	}
@@ -472,12 +473,12 @@ func (m *modelState) applyTerminalRecord(frame model.ChatStreamEvent) {
 	m.finalizeAssistant(rec.AssistantReply)
 	switch rec.Status {
 	case model.EventStatusFailed:
-		m.status = "运行失败"
+		m.status = messages.Chat.StatusRunFailed
 		if rec.Error != nil {
 			m.lastError = rec.Error.Code + ": " + rec.Error.Message
 		}
 	default:
-		m.status = "完成"
+		m.status = messages.Chat.StatusDone
 		m.lastError = ""
 	}
 }
@@ -551,19 +552,19 @@ func (m *modelState) View() string {
 
 func (m *modelState) renderSelector() string {
 	var b strings.Builder
-	b.WriteString("SimiClaw Chat\n")
-	b.WriteString("选择会话（↑/↓ 或 j/k，Enter 打开，Ctrl+N 新建，r 刷新，Ctrl+C 退出）\n\n")
+	b.WriteString(messages.Chat.SelectorTitle)
+	b.WriteString(messages.Chat.SelectorHelp)
 	if m.selectorBusy {
-		b.WriteString("加载中…\n")
+		b.WriteString(messages.Chat.SelectorLoading)
 	} else if len(m.sessions) == 0 {
-		b.WriteString("暂无会话\n")
+		b.WriteString(messages.Chat.SelectorEmpty)
 	} else {
 		for i, item := range m.sessions {
 			cursor := "  "
 			if i == m.selectorIdx {
 				cursor = "> "
 			}
-			b.WriteString(fmt.Sprintf("%s%s  ·  %d 条消息  ·  %s  ·  %s\n", cursor, item.ConversationID, item.MessageCount, item.LastModel, item.LastActivityAt.Format(time.RFC3339)))
+			b.WriteString(messages.Chat.SelectorItem(cursor, item.ConversationID, item.MessageCount, item.LastModel, item.LastActivityAt.Format(time.RFC3339)))
 		}
 	}
 	b.WriteString("\n")
@@ -572,16 +573,12 @@ func (m *modelState) renderSelector() string {
 }
 
 func (m *modelState) renderNaming() string {
-	return fmt.Sprintf(
-		"新建会话\n\n输入 conversation_id（留空使用默认值）\n\n%s\n\nEnter 确认，Esc 返回，Ctrl+C 退出\n\n%s",
-		m.nameInput.View(),
-		m.renderStatus(),
-	)
+	return messages.Chat.NamingView(m.nameInput.View(), m.renderStatus())
 }
 
 func (m *modelState) renderChat() string {
-	header := fmt.Sprintf("SimiClaw Chat  ·  conversation=%s  ·  session=%s", nonEmpty(m.conversation, "(未创建)"), nonEmpty(m.sessionKey, "(待首条消息创建)"))
-	help := "Enter 发送  ·  Ctrl+J 换行  ·  Ctrl+R 重发  ·  Ctrl+O 会话列表  ·  Ctrl+N 新会话  ·  Ctrl+C 退出"
+	header := messages.Chat.Header(nonEmpty(m.conversation, messages.Chat.ConversationMissing), nonEmpty(m.sessionKey, messages.Chat.SessionPending))
+	help := messages.Chat.Help
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -597,23 +594,23 @@ func (m *modelState) renderChat() string {
 func (m *modelState) renderStatus() string {
 	parts := []string{m.status}
 	if m.lastError != "" {
-		parts = append(parts, "error="+m.lastError)
+		parts = append(parts, messages.Chat.StatusErrorPrefix+m.lastError)
 	}
 	return strings.Join(parts, "  |  ")
 }
 
-func renderMessages(messages []chatMessage) string {
-	if len(messages) == 0 {
-		return "还没有消息，输入第一条开始对话。"
+func renderMessages(items []chatMessage) string {
+	if len(items) == 0 {
+		return messages.Chat.NoMessages
 	}
 	var parts []string
-	for _, msg := range messages {
-		prefix := "bot"
+	for _, msg := range items {
+		prefix := messages.Chat.MessagePrefixAssistant
 		switch msg.Role {
 		case "user":
-			prefix = "you"
+			prefix = messages.Chat.MessagePrefixUser
 		case "assistant":
-			prefix = "bot"
+			prefix = messages.Chat.MessagePrefixAssistant
 		default:
 			prefix = msg.Role
 		}
