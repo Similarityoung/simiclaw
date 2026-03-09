@@ -18,7 +18,7 @@ func TestEmbeddedTemplatesContainExpectedFiles(t *testing.T) {
 			t.Fatalf("unexpected template order got=%v want=%v", got, want)
 		}
 	}
-	if !strings.Contains(templates["BOOTSTRAP.md"], "Please delete this file manually") {
+	if !strings.Contains(templates["BOOTSTRAP.md"], "If file-write tools are unavailable") {
 		t.Fatalf("expected embedded bootstrap template warning, got %q", templates["BOOTSTRAP.md"])
 	}
 }

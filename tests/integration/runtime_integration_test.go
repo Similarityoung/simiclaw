@@ -227,6 +227,104 @@ func TestCronFireSuppressedLLMHiddenAndNoLeakToVisibleHistory(t *testing.T) {
 	}
 }
 
+func TestWorkspacePatchToolUpdatesIdentityFile(t *testing.T) {
+	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "done: {{last_user_message}}",
+			FakeToolName:         "workspace_patch",
+			FakeToolArgsJSON:     `{"path":"IDENTITY.md","old_text":"SimiClaw","new_text":"Simi 龙虾"}`,
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-workspace-patch",
+		}
+	})
+	if err := os.WriteFile(filepath.Join(app.Cfg.Workspace, "IDENTITY.md"), []byte("- Name: SimiClaw\n"), 0o644); err != nil {
+		t.Fatalf("write IDENTITY.md: %v", err)
+	}
+
+	req := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "integration-workspace-patch", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:integration-workspace-patch:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "rename"},
+	}
+	resp := ingest(t, app, req, http.StatusAccepted)
+	event := pollEvent(t, app, resp.EventID)
+	if event.Status != model.EventStatusProcessed {
+		t.Fatalf("expected processed event, got %+v", event)
+	}
+	data, err := os.ReadFile(filepath.Join(app.Cfg.Workspace, "IDENTITY.md"))
+	if err != nil {
+		t.Fatalf("read IDENTITY.md: %v", err)
+	}
+	if !strings.Contains(string(data), "Simi 龙虾") {
+		t.Fatalf("expected patched IDENTITY.md, got %q", string(data))
+	}
+	history := fetchSessionHistory(t, app, resp.SessionKey, true)
+	foundTool := false
+	for _, item := range history.Items {
+		if item.Role == "tool" && item.ToolName == "workspace_patch" {
+			foundTool = true
+		}
+	}
+	if !foundTool {
+		t.Fatalf("expected workspace_patch tool message in history, got %+v", history.Items)
+	}
+}
+
+func TestWorkspaceDeleteToolRemovesBootstrapFile(t *testing.T) {
+	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "done: {{last_user_message}}",
+			FakeToolName:         "workspace_delete",
+			FakeToolArgsJSON:     `{"path":"BOOTSTRAP.md"}`,
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-workspace-delete",
+		}
+	})
+	if err := os.WriteFile(filepath.Join(app.Cfg.Workspace, "BOOTSTRAP.md"), []byte("cleanup me\n"), 0o644); err != nil {
+		t.Fatalf("write BOOTSTRAP.md: %v", err)
+	}
+
+	req := model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "integration-workspace-delete", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:integration-workspace-delete:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "cleanup"},
+	}
+	resp := ingest(t, app, req, http.StatusAccepted)
+	event := pollEvent(t, app, resp.EventID)
+	if event.Status != model.EventStatusProcessed {
+		t.Fatalf("expected processed event, got %+v", event)
+	}
+	if _, err := os.Stat(filepath.Join(app.Cfg.Workspace, "BOOTSTRAP.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected BOOTSTRAP.md deleted, err=%v", err)
+	}
+	history := fetchSessionHistory(t, app, resp.SessionKey, true)
+	foundTool := false
+	for _, item := range history.Items {
+		if item.Role == "tool" && item.ToolName == "workspace_delete" {
+			foundTool = true
+		}
+	}
+	if !foundTool {
+		t.Fatalf("expected workspace_delete tool message in history, got %+v", history.Items)
+	}
+}
+
 func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
 	app := newTestApp(t)
 	body, code := doRequest(t, app, http.MethodGet, "/readyz", nil)
