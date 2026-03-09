@@ -211,12 +211,15 @@ npm run dev
 
 ```bash
 VITE_API_BASE_URL=
-VITE_API_KEY=
+SIMICLAW_WEB_PROXY_TARGET=http://127.0.0.1:8080
+SIMICLAW_WEB_PROXY_API_KEY=
 ```
 
-`VITE_API_BASE_URL` 留空表示走同源/代理；设置为绝对地址时，浏览器会直接请求该地址，也支持带路径前缀的部署地址。
+`VITE_API_BASE_URL` 留空表示走同源/代理；若需要挂在同源路径前缀下，可设置为 `/simiclaw` 这类同源前缀。
 
-若后端启用了 `SIMICLAW_API_KEY` 或 `--api-key`，请把同一个值写入 `VITE_API_KEY`，前端会自动附带 `Authorization: Bearer ...`。
+`VITE_API_BASE_URL` 不支持跨域 API 直连；跨域开发请保持留空并使用 Vite dev proxy。
+
+若后端启用了 `SIMICLAW_API_KEY` 或 `--api-key`，开发环境请把同一个值写入 `SIMICLAW_WEB_PROXY_API_KEY`，由 Vite dev server 在代理层附带 `Authorization: Bearer ...`，不要把密钥写进浏览器侧 `VITE_*` 变量。
 
 ### 5. Inspect / Completion
 
