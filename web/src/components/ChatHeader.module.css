@@ -8,8 +8,8 @@
 }
 
 .header {
-  padding-bottom: 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .left {
@@ -17,34 +17,38 @@
 }
 
 .title {
-  font-size: 30px;
-  line-height: 36px;
-  letter-spacing: -0.03em;
-  font-weight: 700;
-  color: #f5f7fa;
+  font-size: 34px;
+  line-height: 1.08;
+  letter-spacing: -0.05em;
+  font-weight: 650;
+  color: var(--text-primary);
+  text-wrap: balance;
 }
 
 .subtitle {
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
   line-height: 18px;
-  color: rgba(245, 247, 250, 0.5);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
 }
 
 .modelBadge {
   display: inline-flex;
   align-items: center;
-  height: 34px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(23, 27, 36, 0.9);
+  border: 1px solid rgba(142, 160, 255, 0.22);
+  background: linear-gradient(180deg, rgba(142, 160, 255, 0.14), rgba(15, 19, 28, 0.84));
   font-size: 12px;
   line-height: 18px;
-  color: rgba(245, 247, 250, 0.72);
+  color: rgba(233, 238, 255, 0.84);
+  letter-spacing: 0.03em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .chromeButton {
@@ -52,16 +56,18 @@
   align-items: center;
   justify-content: center;
   height: 40px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(17, 20, 27, 0.82);
-  color: rgba(245, 247, 250, 0.78);
+  padding: 0 15px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(16, 20, 28, 0.82);
+  color: var(--text-secondary);
   transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, opacity 180ms ease;
 }
 
 .chromeButton:hover {
   transform: translateY(-1px);
+  background: rgba(20, 25, 34, 0.92);
+  border-color: var(--border-strong);
 }
 
 .chromeButton:disabled {
@@ -84,7 +90,7 @@
   }
 
   .title {
-    font-size: 24px;
-    line-height: 30px;
+    font-size: 28px;
+    line-height: 1.12;
   }
 }

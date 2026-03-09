@@ -3,33 +3,44 @@
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 340px;
-  gap: 20px;
-  padding: 20px;
-  color: #f5f7fa;
+  gap: 24px;
+  padding: 24px;
+  color: var(--text-primary);
 }
 
 .backdropGlow {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(circle at 12% 18%, rgba(124, 140, 255, 0.12), transparent 24%),
-    radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.04), transparent 24%),
-    radial-gradient(circle at 76% 88%, rgba(52, 211, 153, 0.06), transparent 22%);
+    radial-gradient(circle at 10% 16%, rgba(142, 160, 255, 0.16), transparent 22%),
+    radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.05), transparent 22%),
+    radial-gradient(circle at 72% 86%, rgba(80, 208, 160, 0.08), transparent 20%);
   pointer-events: none;
 }
 
 .mainColumn {
   position: relative;
   min-width: 0;
-  min-height: calc(100vh - 40px);
+  min-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
-  padding: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(16, 19, 27, 0.82), rgba(11, 14, 20, 0.96));
-  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
+  padding: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 28px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+.mainColumn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 22%);
+  pointer-events: none;
 }
 
 .chatStage {
@@ -37,7 +48,7 @@
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  padding-top: 22px;
+  padding-top: 26px;
 }
 
 .overlay,
@@ -45,7 +56,7 @@
   position: fixed;
   inset: 0;
   display: none;
-  background: rgba(4, 5, 8, 0.44);
+  background: rgba(5, 7, 10, 0.56);
 }
 
 @media (max-width: 1279px) {
