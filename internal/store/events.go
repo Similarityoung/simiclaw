@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -43,7 +44,14 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 			return err
 		}
 
-		sessionID, err := resolveSessionTx(ctx, tx, sessionKey, req.Conversation, now)
+		dmScope := sessionpkg.ScopeFromRequest(req)
+		if req.DMScope != "" {
+			if err := upsertConversationDMScopeTx(ctx, tx, tenantID, req.Conversation, dmScope, now); err != nil {
+				return err
+			}
+		}
+
+		sessionID, err := resolveSessionTx(ctx, tx, sessionKey, req.Conversation, dmScope, now)
 		if err != nil {
 			return err
 		}

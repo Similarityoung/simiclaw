@@ -43,7 +43,7 @@ func (db *DB) ListSessions(ctx context.Context) ([]model.SessionRecord, error) {
 	return out, rows.Err()
 }
 
-func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv model.Conversation, now time.Time) (string, error) {
+func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv model.Conversation, dmScope string, now time.Time) (string, error) {
 	var sessionID string
 	err := tx.QueryRowContext(ctx, `SELECT active_session_id FROM sessions WHERE session_key = ?`, sessionKey).Scan(&sessionID)
 	if err == nil {
@@ -65,7 +65,7 @@ func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv m
 		conv.ConversationID,
 		conv.ChannelType,
 		conv.ParticipantID,
-		"default",
+		dmScope,
 		nowText,
 		nowText,
 		nowText,

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -342,6 +344,102 @@ func TestRecentMessagesForPromptSkipsCronFireWithoutShrinkingWindow(t *testing.T
 	}
 }
 
+func TestRecentMessagesForPromptSkipsNewSessionWithoutShrinkingWindow(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	sessionKey := "local:dm:u1"
+	activeSessionID := ""
+
+	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
+		result, err := db.IngestEvent(ctx, "local", sessionKey, model.IngestRequest{
+			Source:         "cli",
+			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+			IdempotencyKey: fmt.Sprintf("cli:new:%d", index),
+			Timestamp:      at.Format(time.RFC3339Nano),
+			Payload:        model.EventPayload{Type: payloadType, Text: text},
+		}, fmt.Sprintf("sha256:new:%d", index), at)
+		if err != nil {
+			t.Fatalf("ingest event %d: %v", index, err)
+		}
+		if err := db.MarkEventQueued(ctx, result.EventID, at); err != nil {
+			t.Fatalf("mark queued %d: %v", index, err)
+		}
+		claimed, ok, err := db.ClaimEvent(ctx, result.EventID, fmt.Sprintf("run_new_%d", index), at)
+		if err != nil || !ok {
+			t.Fatalf("claim event %d ok=%v err=%v", index, ok, err)
+		}
+		if activeSessionID == "" {
+			activeSessionID = claimed.Event.ActiveSessionID
+		}
+		for i := range messages {
+			messages[i].SessionKey = claimed.Event.SessionKey
+			messages[i].SessionID = claimed.Event.ActiveSessionID
+			messages[i].RunID = claimed.RunID
+			messages[i].CreatedAt = at
+		}
+		if err := db.FinalizeRun(ctx, RunFinalize{
+			RunID:       claimed.RunID,
+			EventID:     claimed.Event.EventID,
+			SessionKey:  claimed.Event.SessionKey,
+			SessionID:   claimed.Event.ActiveSessionID,
+			RunMode:     runModeForPayloadType(payloadType),
+			RunStatus:   model.RunStatusCompleted,
+			EventStatus: eventStatusForPayloadType(payloadType),
+			Messages:    messages,
+			Now:         at,
+		}); err != nil {
+			t.Fatalf("finalize run %d: %v", index, err)
+		}
+	}
+
+	seedRun(1, now, "new_session", "/new", []StoredMessage{
+		{MessageID: "msg_new_user", Role: "user", Content: "/new", Visible: true, Meta: map[string]any{"payload_type": "new_session"}},
+		{MessageID: "msg_new_assistant", Role: "assistant", Content: "已开始新会话。", Visible: true, Meta: map[string]any{"payload_type": "new_session"}},
+	})
+	seedRun(2, now.Add(time.Second), "message", "hello", []StoredMessage{
+		{MessageID: "msg_user", Role: "user", Content: "hello", Visible: true},
+		{MessageID: "msg_assistant", Role: "assistant", Content: "world", Visible: true},
+	})
+
+	history, err := db.RecentMessagesForPrompt(ctx, activeSessionID, 2)
+	if err != nil {
+		t.Fatalf("recent prompt messages: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 prompt history messages, got %+v", history)
+	}
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("expected user message to remain, got %+v", history)
+	}
+	if history[1].Role != "assistant" || history[1].Content != "world" {
+		t.Fatalf("expected assistant message to remain, got %+v", history)
+	}
+}
+
+func TestConversationDMScopeRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	conv := model.Conversation{ConversationID: "conv_scope", ChannelType: "dm", ParticipantID: "u1"}
+	now := time.Now().UTC()
+
+	if _, ok, err := db.GetConversationDMScope(ctx, "local", conv); err != nil || ok {
+		t.Fatalf("expected empty scope before insert, ok=%v err=%v", ok, err)
+	}
+	if err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
+		return upsertConversationDMScopeTx(ctx, tx, "local", conv, "scope_abc", now)
+	}); err != nil {
+		t.Fatalf("upsertConversationDMScopeTx: %v", err)
+	}
+	scope, ok, err := db.GetConversationDMScope(ctx, "local", conv)
+	if err != nil || !ok {
+		t.Fatalf("GetConversationDMScope ok=%v err=%v", ok, err)
+	}
+	if scope != "scope_abc" {
+		t.Fatalf("expected scope_abc, got %q", scope)
+	}
+}
+
 func runModeForPayloadType(payloadType string) model.RunMode {
 	if payloadType == "cron_fire" || payloadType == "memory_flush" || payloadType == "compaction" {
 		return model.RunModeNoReply
@@ -496,4 +594,20 @@ func TestOpenAddsOutboxRoutingColumns(t *testing.T) {
 			t.Fatalf("expected outbox.%s to exist after migration", column)
 		}
 	}
+	if !tablePresent(t, opened.writer, "conversation_scopes") {
+		t.Fatalf("expected conversation_scopes to exist after migration")
+	}
+}
+
+func tablePresent(t *testing.T, db *sql.DB, table string) bool {
+	t.Helper()
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("query sqlite_master for %s: %v", table, err)
+	}
+	return name == table
 }

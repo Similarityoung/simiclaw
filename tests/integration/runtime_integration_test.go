@@ -325,6 +325,96 @@ func TestWorkspaceDeleteToolRemovesBootstrapFile(t *testing.T) {
 	}
 }
 
+func TestNewSessionCommandStartsFreshSession(t *testing.T) {
+	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-new-session",
+		}
+	})
+	conversation := model.Conversation{ConversationID: "integration-new-session", ChannelType: "dm", ParticipantID: "u1"}
+
+	first := ingest(t, app, model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-new-session:1",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello first"},
+	}, http.StatusAccepted)
+	firstEvent := pollEvent(t, app, first.EventID)
+	if firstEvent.AssistantReply != "roles=system,user last=hello first" {
+		t.Fatalf("unexpected first assistant reply: %+v", firstEvent)
+	}
+
+	reset := ingest(t, app, model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-new-session:2",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "/new"},
+	}, http.StatusAccepted)
+	resetEvent := pollEvent(t, app, reset.EventID)
+	if resetEvent.AssistantReply != "已开始新会话。" {
+		t.Fatalf("unexpected reset assistant reply: %+v", resetEvent)
+	}
+	if resetEvent.SessionKey == firstEvent.SessionKey {
+		t.Fatalf("expected /new to create a fresh session key, got %+v and %+v", firstEvent, resetEvent)
+	}
+
+	after := ingest(t, app, model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-new-session:3",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello after new"},
+	}, http.StatusAccepted)
+	afterEvent := pollEvent(t, app, after.EventID)
+	if afterEvent.SessionKey != resetEvent.SessionKey {
+		t.Fatalf("expected follow-up message to reuse reset session, got reset=%+v after=%+v", resetEvent, afterEvent)
+	}
+	if afterEvent.AssistantReply != "roles=system,user last=hello after new" {
+		t.Fatalf("expected follow-up reply without leaked history, got %+v", afterEvent)
+	}
+
+	newer := ingest(t, app, model.IngestRequest{
+		Source:         "cli",
+		Conversation:   conversation,
+		IdempotencyKey: "cli:integration-new-session:4",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello second after new"},
+	}, http.StatusAccepted)
+	newerEvent := pollEvent(t, app, newer.EventID)
+	if newerEvent.SessionKey != resetEvent.SessionKey {
+		t.Fatalf("expected second follow-up to stay in reset session, got reset=%+v newer=%+v", resetEvent, newerEvent)
+	}
+	if newerEvent.AssistantReply != "roles=system,user,assistant,user last=hello second after new" {
+		t.Fatalf("expected second follow-up to see reset-session history, got %+v", newerEvent)
+	}
+
+	backToFirst := ingest(t, app, model.IngestRequest{
+		Source:         "web",
+		Conversation:   conversation,
+		SessionKeyHint: first.SessionKey,
+		IdempotencyKey: "web:integration-new-session:5",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "back to first"},
+	}, http.StatusAccepted)
+	backToFirstEvent := pollEvent(t, app, backToFirst.EventID)
+	if backToFirstEvent.SessionKey != first.SessionKey {
+		t.Fatalf("expected session_key hint to route back to first session, got first=%+v back=%+v", firstEvent, backToFirstEvent)
+	}
+	if backToFirstEvent.AssistantReply != "roles=system,user,assistant,user last=back to first" {
+		t.Fatalf("expected hinted request to use first-session history only, got %+v", backToFirstEvent)
+	}
+}
+
 func TestReadyzRequiresDBAndEventLoop(t *testing.T) {
 	app := newTestApp(t)
 	body, code := doRequest(t, app, http.MethodGet, "/readyz", nil)

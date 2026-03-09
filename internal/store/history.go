@@ -71,7 +71,7 @@ func (db *DB) RecentMessagesForPrompt(ctx context.Context, sessionID string, lim
 			return nil, err
 		}
 		msg.Meta, msg.ToolCalls = decodeStoredMeta(metaJSON)
-		if msg.Meta[historyPayloadTypeMetaKey] == "cron_fire" {
+		if shouldSkipPromptHistoryPayloadType(msg.Meta[historyPayloadTypeMetaKey]) {
 			continue
 		}
 		out = append(out, msg)
@@ -195,6 +195,11 @@ func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, bef
 	}
 	reverseMessages(out)
 	return out, nil
+}
+
+func shouldSkipPromptHistoryPayloadType(payloadType any) bool {
+	value, _ := payloadType.(string)
+	return value == "cron_fire" || value == "new_session"
 }
 
 func reverseHistory(items []HistoryMessage) {

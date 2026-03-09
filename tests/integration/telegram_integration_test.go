@@ -229,6 +229,17 @@ func TestTelegramPrivateMessageEndToEnd(t *testing.T) {
 	defer restore()
 
 	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-telegram-message",
+		}
 		cfg.Channels.Telegram.Enabled = true
 		cfg.Channels.Telegram.Token = token
 		cfg.Channels.Telegram.AllowedUserIDs = []int64{1001}
@@ -249,15 +260,74 @@ func TestTelegramPrivateMessageEndToEnd(t *testing.T) {
 
 	eventID := waitTelegramEventID(t, app, "telegram:update:100")
 	event := pollEvent(t, app, eventID)
-	if event.AssistantReply != "已收到: hello telegram" {
+	if event.AssistantReply != "roles=system,user last=hello telegram" {
 		t.Fatalf("unexpected assistant reply: %+v", event)
 	}
 	msg := api.WaitSent(t, 1)
 	if msg.ChatID != "3001" {
 		t.Fatalf("unexpected telegram target chat: %+v", msg)
 	}
-	if msg.Text != "已收到: hello telegram" {
+	if msg.Text != "roles=system,user last=hello telegram" {
 		t.Fatalf("unexpected telegram text: %+v", msg)
+	}
+}
+
+func TestTelegramNewCommandStartsFreshSession(t *testing.T) {
+	const token = "telegram-test-token-new"
+	api := newFakeTelegramAPIServer(t, token)
+	restore := telegramchannel.SetRuntimeTestHooksForTesting(api.URL(), api.Client())
+	defer restore()
+
+	app := newTestAppWithConfig(t, func(cfg *config.Config) {
+		cfg.LLM.DefaultModel = "fake/default"
+		cfg.LLM.Providers["fake"] = config.LLMProviderConfig{
+			Type:                 "fake",
+			Timeout:              config.Duration{Duration: 5 * time.Second},
+			FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+			FakeFinishReason:     "stop",
+			FakeRawFinishReason:  "stop",
+			FakePromptTokens:     8,
+			FakeCompletionTokens: 8,
+			FakeRequestID:        "fake-telegram-new-session",
+		}
+		cfg.Channels.Telegram.Enabled = true
+		cfg.Channels.Telegram.Token = token
+		cfg.Channels.Telegram.AllowedUserIDs = []int64{1001}
+		cfg.Channels.Telegram.LongPollTimeout = config.Duration{Duration: 50 * time.Millisecond}
+	})
+
+	waitReadyzTelegram(t, app)
+	api.Enqueue(tele.Update{ID: 110, Message: &tele.Message{ID: 210, Unixtime: time.Now().UTC().Unix(), Text: "hello first", Chat: &tele.Chat{ID: 3010, Type: tele.ChatPrivate}, Sender: &tele.User{ID: 1001}}})
+	firstEvent := pollEvent(t, app, waitTelegramEventID(t, app, "telegram:update:110"))
+	if firstEvent.AssistantReply != "roles=system,user last=hello first" {
+		t.Fatalf("unexpected first assistant reply: %+v", firstEvent)
+	}
+	if msg := api.WaitSent(t, 1); msg.Text != "roles=system,user last=hello first" {
+		t.Fatalf("unexpected first telegram text: %+v", msg)
+	}
+
+	api.Enqueue(tele.Update{ID: 111, Message: &tele.Message{ID: 211, Unixtime: time.Now().UTC().Unix(), Text: "/new", Chat: &tele.Chat{ID: 3010, Type: tele.ChatPrivate}, Sender: &tele.User{ID: 1001}}})
+	resetEvent := pollEvent(t, app, waitTelegramEventID(t, app, "telegram:update:111"))
+	if resetEvent.AssistantReply != "已开始新会话。" {
+		t.Fatalf("unexpected reset assistant reply: %+v", resetEvent)
+	}
+	if resetEvent.SessionKey == firstEvent.SessionKey {
+		t.Fatalf("expected telegram /new to create a fresh session, got first=%+v reset=%+v", firstEvent, resetEvent)
+	}
+	if msg := api.WaitSent(t, 2); msg.Text != "已开始新会话。" {
+		t.Fatalf("unexpected reset telegram text: %+v", msg)
+	}
+
+	api.Enqueue(tele.Update{ID: 112, Message: &tele.Message{ID: 212, Unixtime: time.Now().UTC().Unix(), Text: "hello after new", Chat: &tele.Chat{ID: 3010, Type: tele.ChatPrivate}, Sender: &tele.User{ID: 1001}}})
+	afterEvent := pollEvent(t, app, waitTelegramEventID(t, app, "telegram:update:112"))
+	if afterEvent.SessionKey != resetEvent.SessionKey {
+		t.Fatalf("expected follow-up telegram message to reuse reset session, got reset=%+v after=%+v", resetEvent, afterEvent)
+	}
+	if afterEvent.AssistantReply != "roles=system,user last=hello after new" {
+		t.Fatalf("unexpected follow-up assistant reply: %+v", afterEvent)
+	}
+	if msg := api.WaitSent(t, 3); msg.Text != "roles=system,user last=hello after new" {
+		t.Fatalf("unexpected follow-up telegram text: %+v", msg)
 	}
 }
 

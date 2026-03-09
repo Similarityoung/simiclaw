@@ -188,6 +188,18 @@ func validateSchemaVersion(db *sql.DB) error {
 }
 
 func ensureSchemaFeatures(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS conversation_scopes (
+		tenant_id TEXT NOT NULL,
+		conversation_id TEXT NOT NULL,
+		channel_type TEXT NOT NULL,
+		participant_id TEXT NOT NULL DEFAULT '',
+		dm_scope TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (tenant_id, conversation_id, channel_type, participant_id)
+	)`); err != nil {
+		return err
+	}
+
 	features := []struct {
 		table  string
 		column string

@@ -29,6 +29,32 @@ func TestProviderRunnerContinuesWhenStreamSinkPanics(t *testing.T) {
 	}
 }
 
+func TestProviderRunnerNewSessionSkipsLLM(t *testing.T) {
+	r := newTestRunner(t, config.Default().LLM, nil)
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_new_session",
+		Conversation:    model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "sk:new",
+		ActiveSessionID: "ses_new",
+		Payload:         model.EventPayload{Type: payloadTypeNewSession, Text: "/new"},
+	}, 1, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if output.AssistantReply != "已开始新会话。" {
+		t.Fatalf("unexpected assistant reply: %+v", output)
+	}
+	if len(output.Messages) != 2 {
+		t.Fatalf("expected user+assistant shortcut messages, got %+v", output.Messages)
+	}
+	if output.Messages[0].Meta["payload_type"] != payloadTypeNewSession || output.Messages[1].Meta["payload_type"] != payloadTypeNewSession {
+		t.Fatalf("expected new_session payload meta, got %+v", output.Messages)
+	}
+	if output.Trace.Provider != "" || output.Trace.TotalTokens != 0 {
+		t.Fatalf("expected no llm/provider usage, got %+v", output.Trace)
+	}
+}
+
 func TestProviderRunnerPrependsSystemPrompt(t *testing.T) {
 	cfg := config.Default().LLM
 	cfg.DefaultModel = "fake/default"
@@ -280,6 +306,26 @@ func TestHistoryToChatMessagesSkipsCronFireHiddenMessages(t *testing.T) {
 	got := historyToChatMessages(history)
 	if len(got) != 2 {
 		t.Fatalf("expected cron_fire hidden history to be skipped, got %+v", got)
+	}
+	if got[0].Role != "user" || got[0].Content != "hello" {
+		t.Fatalf("expected normal user message to remain, got %+v", got)
+	}
+	if got[1].Role != "assistant" || got[1].Content != "world" {
+		t.Fatalf("expected normal assistant message to remain, got %+v", got)
+	}
+}
+
+func TestHistoryToChatMessagesSkipsNewSessionMessages(t *testing.T) {
+	history := []store.HistoryMessage{
+		{Role: "user", Content: "/new", Meta: map[string]any{"payload_type": payloadTypeNewSession}},
+		{Role: "assistant", Content: "已开始新会话。", Meta: map[string]any{"payload_type": payloadTypeNewSession}},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+	}
+
+	got := historyToChatMessages(history)
+	if len(got) != 2 {
+		t.Fatalf("expected new_session history to be skipped, got %+v", got)
 	}
 	if got[0].Role != "user" || got[0].Content != "hello" {
 		t.Fatalf("expected normal user message to remain, got %+v", got)

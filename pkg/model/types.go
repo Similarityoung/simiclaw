@@ -96,6 +96,7 @@ type InternalEvent struct {
 type IngestRequest struct {
 	Source         string       `json:"source"`
 	Conversation   Conversation `json:"conversation"`
+	DMScope        string       `json:"dm_scope,omitempty"`
 	SessionKeyHint string       `json:"session_key,omitempty"`
 	IdempotencyKey string       `json:"idempotency_key"`
 	Timestamp      string       `json:"timestamp"`

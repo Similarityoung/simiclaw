@@ -13,6 +13,8 @@ import (
 
 const MaxBytes = 256 * 1024
 
+const DefaultFileMode = 0o644
+
 const (
 	CodeInvalidArgument = "invalid_argument"
 	CodeNotFound        = "not_found"
@@ -138,7 +140,7 @@ func Patch(workspace, channelType string, args PatchArgs) (PatchResult, error) {
 		if err := os.MkdirAll(filepath.Dir(pathInfo.AbsPath), 0o755); err != nil {
 			return PatchResult{}, err
 		}
-		if err := writeFileAtomically(pathInfo.AbsPath, []byte(normalizedNew)); err != nil {
+		if err := writeFileAtomically(pathInfo.AbsPath, []byte(normalizedNew), DefaultFileMode); err != nil {
 			return PatchResult{}, err
 		}
 		return buildPatchResult(pathInfo.RequestPath, "created", []byte(normalizedNew)), nil
@@ -186,7 +188,7 @@ func Patch(workspace, channelType string, args PatchArgs) (PatchResult, error) {
 	if err := validateTextContent([]byte(updated)); err != nil {
 		return PatchResult{}, err
 	}
-	if err := writeFileAtomically(pathInfo.AbsPath, []byte(updated)); err != nil {
+	if err := writeFileAtomically(pathInfo.AbsPath, []byte(updated), info.Mode().Perm()); err != nil {
 		return PatchResult{}, err
 	}
 	return buildPatchResult(pathInfo.RequestPath, "patched", []byte(updated)), nil
@@ -222,6 +224,16 @@ func Delete(workspace, channelType string, args DeleteArgs) (DeleteResult, error
 	}
 	if !info.Mode().IsRegular() {
 		return DeleteResult{}, &Error{Code: CodeInvalidArgument, Message: "path does not point to a regular file"}
+	}
+	data, err := os.ReadFile(pathInfo.AbsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DeleteResult{}, &Error{Code: CodeNotFound, Message: fmt.Sprintf("file not found: %s", pathInfo.RequestPath)}
+		}
+		return DeleteResult{}, err
+	}
+	if err := validateTextContent(data); err != nil {
+		return DeleteResult{}, err
 	}
 
 	if err := os.Remove(pathInfo.AbsPath); err != nil {
@@ -374,7 +386,7 @@ func normalizeText(in string) string {
 	return in
 }
 
-func writeFileAtomically(path string, data []byte) error {
+func writeFileAtomically(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	tmp, err := os.CreateTemp(dir, "."+base+".tmp-*")
@@ -390,6 +402,10 @@ func writeFileAtomically(path string, data []byte) error {
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return err
 	}
