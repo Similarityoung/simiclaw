@@ -77,7 +77,7 @@
 - `USER.md`：用户偏好、称呼、时区
 - `AGENTS.md`：当前项目范围内的局部工作约定
 - `TOOLS.md`：环境事实与工具可用性
-- `BOOTSTRAP.md`：短期 onboarding 文件；完成初始化后应手动删除
+- `BOOTSTRAP.md`：短期 onboarding 文件；初始化完成后应移除，避免持续影响后续对话
 - `HEARTBEAT.md`：后台巡检/整理 checklist，仅服务 `cron_fire`
 
 ### Skills
@@ -96,6 +96,11 @@
 - `BOOTSTRAP.md`
 - `HEARTBEAT.md`
 - `skills/<name>/SKILL.md`
+
+此外，workspace 内现提供两个文本写工具：
+
+- `workspace_patch`：对已有文本做精确单次查找替换，或在显式 `create=true` 时创建新文本文件
+- `workspace_delete`：删除单个 workspace 文本文件
 
 ### Memory
 

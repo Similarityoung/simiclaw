@@ -36,7 +36,7 @@ func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read BOOTSTRAP.md: %v", err)
 	}
-	if !strings.Contains(string(bootstrap), "Please delete this file manually") {
+	if !strings.Contains(string(bootstrap), "If file-write tools are unavailable") {
 		t.Fatalf("expected bootstrap warning, got %q", string(bootstrap))
 	}
 }

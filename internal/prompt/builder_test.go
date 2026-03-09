@@ -19,6 +19,9 @@ func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
 	if !strings.Contains(promptpkg.SystemText.IdentityRuntime, "{{workspace_path}}") {
 		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", promptpkg.SystemText.IdentityRuntime)
 	}
+	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") {
+		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", promptpkg.SystemText.ToolContract)
+	}
 }
 
 func TestBuilderBuildIncludesSectionsInOrder(t *testing.T) {
