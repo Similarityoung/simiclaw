@@ -227,6 +227,133 @@ make accept-v1-alpha
 make accept-current
 ```
 
+### 手动验收（真实模型）
+
+若本地 `.env` 已配置真实 OpenAI-compatible 模型（例如 `OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=openai/deepseek-chat`），可按下面步骤做一轮手工验收。
+
+#### 1. 验证 `BOOTSTRAP.md` 存在即生效
+
+```bash
+TMP_WS=$(mktemp -d /tmp/simiclaw-ws-XXXXXX)
+go run ./cmd/simiclaw init --workspace "$TMP_WS"
+cat > "$TMP_WS/BOOTSTRAP.md" <<'EOF'
+# Bootstrap Test Rule
+
+For this workspace test only:
+- Start every assistant reply with the exact prefix `BOOTSTRAP_OK:`.
+- Keep the rest of the reply short.
+EOF
+
+go run ./cmd/simiclaw serve --workspace "$TMP_WS" --listen :18080
+```
+
+另开一个终端发送测试消息：
+
+```bash
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+cat > /tmp/bootstrap_req.json <<EOF
+{
+  "source": "cli",
+  "conversation": {
+    "conversation_id": "manual-bootstrap-test",
+    "channel_type": "dm",
+    "participant_id": "local_test_user"
+  },
+  "idempotency_key": "cli:manual-bootstrap-test:1",
+  "timestamp": "$NOW",
+  "payload": {
+    "type": "message",
+    "text": "Give me a short greeting."
+  }
+}
+EOF
+
+curl -sS -X POST "http://127.0.0.1:18080/v1/events:ingest"   -H "Content-Type: application/json"   -d @/tmp/bootstrap_req.json
+```
+
+预期：最终 event 的 `assistant_reply` 带有前缀 `BOOTSTRAP_OK:`。
+
+#### 2. 验证移走 `BOOTSTRAP.md` 后新会话不再受影响
+
+```bash
+mv "$TMP_WS/BOOTSTRAP.md" "$TMP_WS/BOOTSTRAP.md.off"
+```
+
+再次发送消息，但换一个新的 `conversation_id` / `participant_id` / `idempotency_key`。预期：回复不再包含 `BOOTSTRAP_OK:`。
+
+#### 3. 验证 `cron_fire` 的 suppressed LLM + hidden history
+
+```bash
+TMP_CRON_WS=$(mktemp -d /tmp/simiclaw-cron-ws-XXXXXX)
+go run ./cmd/simiclaw init --workspace "$TMP_CRON_WS"
+mv "$TMP_CRON_WS/BOOTSTRAP.md" "$TMP_CRON_WS/BOOTSTRAP.md.off"
+mkdir -p "$TMP_CRON_WS/memory/public/daily"
+echo 'daily cron marker XQJ-CRON-42861' > "$TMP_CRON_WS/memory/public/daily/$(date -u +%F).md"
+cat > "$TMP_CRON_WS/HEARTBEAT.md" <<'EOF'
+# Heartbeat Test Instructions
+
+- This is a cron_fire verification run.
+- Use `memory_search` once to look for the exact token `XQJ-CRON-42861` in daily memory.
+- If found, finish with exactly one sentence that contains `CRON_OK:XQJ-CRON-42861`.
+- If not found, finish with exactly one sentence that contains `CRON_MISS`.
+EOF
+
+go run ./cmd/simiclaw serve --workspace "$TMP_CRON_WS" --listen :18081
+```
+
+发送 `cron_fire`：
+
+```bash
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+cat > /tmp/cron_req.json <<EOF
+{
+  "source": "cli",
+  "conversation": {
+    "conversation_id": "real-cron-check",
+    "channel_type": "dm",
+    "participant_id": "cron_user"
+  },
+  "idempotency_key": "cli:real-cron-check:1",
+  "timestamp": "$NOW",
+  "payload": {
+    "type": "cron_fire",
+    "text": "nightly heartbeat"
+  }
+}
+EOF
+
+curl -sS -X POST "http://127.0.0.1:18081/v1/events:ingest"   -H "Content-Type: application/json"   -d @/tmp/cron_req.json
+```
+
+然后检查：
+
+```bash
+go run ./cmd/simiclaw inspect sessions --base-url http://127.0.0.1:18081 --limit 5
+go run ./cmd/simiclaw inspect trace <run-id> --base-url http://127.0.0.1:18081
+```
+
+也可以直接访问 history：
+
+- `GET /v1/sessions/<session_key>/history?visible=true`
+- `GET /v1/sessions/<session_key>/history?visible=false`
+
+预期：
+
+- event 状态为 `suppressed`
+- run trace 的 `output_text` 包含 `CRON_OK:XQJ-CRON-42861`
+- `visible=true` 的 history 为空
+- `visible=false` 的 history 能看到 hidden `user / assistant / tool / assistant` 链路，且都带 `meta.payload_type=cron_fire`
+
+#### 4. 验证普通消息不会回灌 `cron_fire` hidden 历史
+
+在同一个 cron 会话里继续发送普通 `message`，例如：
+
+```text
+What was the exact text of the most recent assistant message in this conversation? If there was none, reply EXACTLY NONE. Do not use tools.
+```
+
+预期：如果该会话此前只有 `cron_fire` hidden 消息，则普通回复应为 `NONE`，说明后台 hidden 历史没有回灌到正常聊天上下文。
+
 ### `cron_fire` 行为
 
 - 对外仍属于 `NO_REPLY`，最终 event 状态为 `suppressed`
