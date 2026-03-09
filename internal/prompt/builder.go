@@ -110,20 +110,21 @@ func (b *Builder) buildStaticPrefix(variant staticVariant) string {
 	}
 	b.mu.RUnlock()
 
-	content := b.buildStaticContent(variant)
-	snapshot = b.snapshotStaticState(variant)
+	content, snapshot, cacheable := stableStaticBuild(
+		func() string { return b.buildStaticContent(variant) },
+		func() map[string]string { return b.snapshotStaticState(variant) },
+	)
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if entry, ok := b.cachedStatic[key]; ok {
-		latest := b.snapshotStaticState(variant)
-		if equalStringMap(entry.fingerprints, latest) {
-			return entry.content
-		}
-		snapshot = latest
+	latest := b.snapshotStaticState(variant)
+	if entry, ok := b.cachedStatic[key]; ok && equalStringMap(entry.fingerprints, latest) {
+		return entry.content
 	}
-	b.cachedStatic[key] = staticCacheEntry{content: content, fingerprints: snapshot}
-	b.staticBuilds++
+	if cacheable && equalStringMap(snapshot, latest) {
+		b.cachedStatic[key] = staticCacheEntry{content: content, fingerprints: snapshot}
+		b.staticBuilds++
+	}
 	return content
 }
 
@@ -557,4 +558,16 @@ func equalStringMap(left, right map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func stableStaticBuild(build func() string, snapshot func() map[string]string) (string, map[string]string, bool) {
+	for attempt := 0; attempt < 3; attempt++ {
+		before := snapshot()
+		content := build()
+		after := snapshot()
+		if equalStringMap(before, after) {
+			return content, after, true
+		}
+	}
+	return build(), snapshot(), false
 }

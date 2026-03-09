@@ -448,8 +448,11 @@ func (panicSink) OnToolStart(string, string, map[string]any, bool) {}
 func (panicSink) OnToolResult(string, string, map[string]any, bool, *model.ErrorBlock) {}
 
 type captureSink struct {
-	starts  []capturedToolStart
-	results []capturedToolResult
+	statusCount    int
+	reasoningCount int
+	textCount      int
+	starts         []capturedToolStart
+	results        []capturedToolResult
 }
 
 type capturedToolStart struct {
@@ -467,11 +470,11 @@ type capturedToolResult struct {
 	Error      *model.ErrorBlock
 }
 
-func (c *captureSink) OnStatus(string, string) {}
+func (c *captureSink) OnStatus(string, string) { c.statusCount++ }
 
-func (c *captureSink) OnReasoningDelta(string) {}
+func (c *captureSink) OnReasoningDelta(string) { c.reasoningCount++ }
 
-func (c *captureSink) OnTextDelta(string) {}
+func (c *captureSink) OnTextDelta(string) { c.textCount++ }
 
 func (c *captureSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
 	c.starts = append(c.starts, capturedToolStart{
@@ -490,6 +493,47 @@ func (c *captureSink) OnToolResult(toolCallID, toolName string, result map[strin
 		Truncated:  truncated,
 		Error:      apiErr,
 	})
+}
+
+func TestProviderRunnerCronFireDoesNotEmitStreamEvents(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "roles={{message_roles}} last={{last_user_message}}",
+		FakeToolName:         "memory_search",
+		FakeToolArgsJSON:     `{"query":"alpha","visibility":"auto","kind":"any","top_k":1}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir memory/public: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "MEMORY.md"), []byte("alpha memory\n"), 0o644); err != nil {
+		t.Fatalf("write public memory: %v", err)
+	}
+	sink := &captureSink{}
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron_stream_hidden",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron_stream_hidden",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, sink)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if output.AssistantReply != "" || !output.SuppressOutput {
+		t.Fatalf("expected suppressed cron output, got %+v", output)
+	}
+	if sink.statusCount != 0 || sink.reasoningCount != 0 || sink.textCount != 0 || len(sink.starts) != 0 || len(sink.results) != 0 {
+		t.Fatalf("expected cron_fire to emit no stream events, got %+v", sink)
+	}
 }
 
 func containsAll(in string, needles ...string) bool {

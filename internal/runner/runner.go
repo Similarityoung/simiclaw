@@ -100,7 +100,7 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 
 func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
 	if event.Payload.Type == "cron_fire" {
-		return r.runSuppressedCronFire(ctx, event, maxToolRounds, now, trace, sink)
+		return r.runSuppressedCronFire(ctx, event, maxToolRounds, now, trace)
 	}
 
 	note := strings.TrimSpace(event.Payload.Text)
@@ -131,8 +131,8 @@ func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEve
 	}, nil
 }
 
-func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
-	return r.runLLM(ctx, event, maxToolRounds, now, trace, sink, llmRunOptions{
+func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace) (RunOutput, error) {
+	return r.runLLM(ctx, event, maxToolRounds, now, trace, newSafeStreamSink(nil, trace), llmRunOptions{
 		runMode:               model.RunModeNoReply,
 		suppressOutput:        true,
 		userVisible:           false,
@@ -198,7 +198,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
-	history, err := r.db.RecentMessages(ctx, event.ActiveSessionID, r.historyLimit)
+	history, err := r.db.RecentMessagesForPrompt(ctx, event.ActiveSessionID, r.historyLimit)
 	if err != nil {
 		trace.Status = model.RunStatusFailed
 		trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}

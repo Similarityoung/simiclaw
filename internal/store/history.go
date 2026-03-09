@@ -9,6 +9,8 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
+const historyPayloadTypeMetaKey = "payload_type"
+
 func (db *DB) RecentMessages(ctx context.Context, sessionID string, limit int) ([]HistoryMessage, error) {
 	if limit <= 0 {
 		limit = 20
@@ -36,6 +38,46 @@ func (db *DB) RecentMessages(ctx context.Context, sessionID string, limit int) (
 		}
 		msg.Meta, msg.ToolCalls = decodeStoredMeta(metaJSON)
 		out = append(out, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	reverseHistory(out)
+	return out, nil
+}
+
+func (db *DB) RecentMessagesForPrompt(ctx context.Context, sessionID string, limit int) ([]HistoryMessage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := db.reader.QueryContext(
+		ctx,
+		`SELECT role, content, tool_call_id, tool_name, meta_json
+		 FROM messages
+		 WHERE session_id = ?
+		 ORDER BY created_at DESC, fts_rowid DESC`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]HistoryMessage, 0, limit)
+	for rows.Next() {
+		var msg HistoryMessage
+		var metaJSON string
+		if err := rows.Scan(&msg.Role, &msg.Content, &msg.ToolCallID, &msg.ToolName, &metaJSON); err != nil {
+			return nil, err
+		}
+		msg.Meta, msg.ToolCalls = decodeStoredMeta(metaJSON)
+		if msg.Meta[historyPayloadTypeMetaKey] == "cron_fire" {
+			continue
+		}
+		out = append(out, msg)
+		if len(out) >= limit {
+			break
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

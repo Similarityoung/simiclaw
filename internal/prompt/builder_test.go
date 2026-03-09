@@ -3,6 +3,7 @@ package prompt
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -391,6 +392,65 @@ func TestBuilderInvalidatesCacheOnCuratedMemoryChange(t *testing.T) {
 	}
 	if !strings.Contains(third, "public v2") {
 		t.Fatalf("expected public v2 after invalidation, got: %s", third)
+	}
+}
+
+func TestStableStaticBuildRetriesUntilSnapshotMatchesContent(t *testing.T) {
+	snapshots := []map[string]string{
+		{"ctx:SOUL.md": "old"},
+		{"ctx:SOUL.md": "new"},
+		{"ctx:SOUL.md": "new"},
+		{"ctx:SOUL.md": "new"},
+	}
+	index := 0
+	buildCalls := 0
+
+	content, snapshot, stable := stableStaticBuild(
+		func() string {
+			buildCalls++
+			if buildCalls == 1 {
+				return "old content"
+			}
+			return "new content"
+		},
+		func() map[string]string {
+			current := snapshots[index]
+			if index < len(snapshots)-1 {
+				index++
+			}
+			return current
+		},
+	)
+
+	if !stable {
+		t.Fatalf("expected stable rebuild, got unstable result")
+	}
+	if buildCalls != 2 {
+		t.Fatalf("expected retry after snapshot drift, got buildCalls=%d", buildCalls)
+	}
+	if content != "new content" {
+		t.Fatalf("expected retried content, got %q", content)
+	}
+	if snapshot["ctx:SOUL.md"] != "new" {
+		t.Fatalf("expected snapshot to match retried content, got %+v", snapshot)
+	}
+}
+
+func TestStableStaticBuildReportsUnstableAfterRetries(t *testing.T) {
+	snapshotCalls := 0
+	content, snapshot, stable := stableStaticBuild(
+		func() string { return "flapping content" },
+		func() map[string]string {
+			snapshotCalls++
+			return map[string]string{"ctx:SOUL.md": strconv.Itoa(snapshotCalls)}
+		},
+	)
+
+	if stable {
+		t.Fatalf("expected unstable result, got stable snapshot %+v", snapshot)
+	}
+	if content != "flapping content" {
+		t.Fatalf("unexpected fallback content %q", content)
 	}
 }
 

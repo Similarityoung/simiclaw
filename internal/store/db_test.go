@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -255,6 +256,104 @@ func TestFinalizeRunRecentMessagesRestoresMeta(t *testing.T) {
 	if history[0].Meta["payload_type"] != "cron_fire" {
 		t.Fatalf("expected payload_type meta restored, got %+v", history[0])
 	}
+}
+
+func TestRecentMessagesForPromptSkipsCronFireWithoutShrinkingWindow(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	sessionKey := "local:dm:u1"
+	activeSessionID := ""
+
+	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
+		result, err := db.IngestEvent(ctx, "local", sessionKey, model.IngestRequest{
+			Source:         "cli",
+			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+			IdempotencyKey: fmt.Sprintf("cli:conv:%d", index),
+			Timestamp:      at.Format(time.RFC3339Nano),
+			Payload:        model.EventPayload{Type: payloadType, Text: text},
+		}, fmt.Sprintf("sha256:test:%d", index), at)
+		if err != nil {
+			t.Fatalf("ingest event %d: %v", index, err)
+		}
+		if err := db.MarkEventQueued(ctx, result.EventID, at); err != nil {
+			t.Fatalf("mark queued %d: %v", index, err)
+		}
+		claimed, ok, err := db.ClaimEvent(ctx, result.EventID, fmt.Sprintf("run_%d", index), at)
+		if err != nil || !ok {
+			t.Fatalf("claim event %d ok=%v err=%v", index, ok, err)
+		}
+		if activeSessionID == "" {
+			activeSessionID = claimed.Event.ActiveSessionID
+		}
+		for i := range messages {
+			messages[i].SessionKey = claimed.Event.SessionKey
+			messages[i].SessionID = claimed.Event.ActiveSessionID
+			messages[i].RunID = claimed.RunID
+			messages[i].CreatedAt = at
+		}
+		if err := db.FinalizeRun(ctx, RunFinalize{
+			RunID:       claimed.RunID,
+			EventID:     claimed.Event.EventID,
+			SessionKey:  claimed.Event.SessionKey,
+			SessionID:   claimed.Event.ActiveSessionID,
+			RunMode:     runModeForPayloadType(payloadType),
+			RunStatus:   model.RunStatusCompleted,
+			EventStatus: eventStatusForPayloadType(payloadType),
+			Messages:    messages,
+			Now:         at,
+		}); err != nil {
+			t.Fatalf("finalize run %d: %v", index, err)
+		}
+	}
+
+	seedRun(1, now, "message", "hello", []StoredMessage{
+		{MessageID: "msg_user", Role: "user", Content: "hello", Visible: true},
+		{MessageID: "msg_assistant", Role: "assistant", Content: "world", Visible: true},
+	})
+	for i := 0; i < 3; i++ {
+		seedRun(
+			i+2,
+			now.Add(time.Duration(i+1)*time.Second),
+			"cron_fire",
+			"nightly tick",
+			[]StoredMessage{{
+				MessageID: fmt.Sprintf("msg_cron_%d", i),
+				Role:      "user",
+				Content:   "nightly tick",
+				Visible:   false,
+				Meta:      map[string]any{"payload_type": "cron_fire"},
+			}},
+		)
+	}
+
+	history, err := db.RecentMessagesForPrompt(ctx, activeSessionID, 2)
+	if err != nil {
+		t.Fatalf("recent prompt messages: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 prompt history messages, got %+v", history)
+	}
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("expected oldest prompt history user message, got %+v", history)
+	}
+	if history[1].Role != "assistant" || history[1].Content != "world" {
+		t.Fatalf("expected oldest prompt history assistant message, got %+v", history)
+	}
+}
+
+func runModeForPayloadType(payloadType string) model.RunMode {
+	if payloadType == "cron_fire" || payloadType == "memory_flush" || payloadType == "compaction" {
+		return model.RunModeNoReply
+	}
+	return model.RunModeNormal
+}
+
+func eventStatusForPayloadType(payloadType string) model.EventStatus {
+	if payloadType == "cron_fire" || payloadType == "memory_flush" || payloadType == "compaction" {
+		return model.EventStatusSuppressed
+	}
+	return model.EventStatusProcessed
 }
 
 func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
