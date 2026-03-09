@@ -76,6 +76,7 @@ func TestLoadTelegramEnabledWithoutTokenFails(t *testing.T) {
 }
 
 func TestLoadEnvOpenAIAliases(t *testing.T) {
+	setTelegramEnv(t, "", "", "", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_BASE_URL", "")
 	t.Setenv("SIMICLAW_LLM_DEFAULT_MODEL", "")
@@ -107,13 +108,8 @@ func TestLoadEnvOpenAIAliases(t *testing.T) {
 }
 
 func TestLoadTelegramTokenFromEnv(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("SIMICLAW_LLM_DEFAULT_MODEL", "")
-	t.Setenv("LLM_API_KEY", "")
-	t.Setenv("LLM_BASE_URL", "")
-	t.Setenv("LLM_MODEL", "")
-	t.Setenv("TELEGRAM_TOKEN", "env-telegram-token")
+	setLLMEnv(t)
+	setTelegramEnv(t, "", "env-telegram-token", "", "")
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "cfg.json")
@@ -138,4 +134,71 @@ func TestLoadTelegramTokenFromEnv(t *testing.T) {
 	if cfg.Channels.Telegram.Token != "env-telegram-token" {
 		t.Fatalf("unexpected telegram token: %s", cfg.Channels.Telegram.Token)
 	}
+}
+
+func TestLoadTelegramFieldsFromEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "true", "env-telegram-token", "1001, 2002", "45s")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load config from env: %v", err)
+	}
+	if !cfg.Channels.Telegram.Enabled {
+		t.Fatal("expected telegram enabled from env")
+	}
+	if cfg.Channels.Telegram.Token != "env-telegram-token" {
+		t.Fatalf("unexpected telegram token: %s", cfg.Channels.Telegram.Token)
+	}
+	if len(cfg.Channels.Telegram.AllowedUserIDs) != 2 || cfg.Channels.Telegram.AllowedUserIDs[0] != 1001 || cfg.Channels.Telegram.AllowedUserIDs[1] != 2002 {
+		t.Fatalf("unexpected allowed user ids: %+v", cfg.Channels.Telegram.AllowedUserIDs)
+	}
+	if cfg.Channels.Telegram.LongPollTimeout.Duration != 45*time.Second {
+		t.Fatalf("unexpected telegram long poll timeout: %v", cfg.Channels.Telegram.LongPollTimeout.Duration)
+	}
+}
+
+func TestLoadInvalidTelegramEnabledEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "maybe", "env-telegram-token", "", "")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid TELEGRAM_ENABLED error")
+	}
+}
+
+func TestLoadInvalidTelegramAllowedUserIDsEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "true", "env-telegram-token", "1001, nope", "")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid TELEGRAM_ALLOWED_USER_IDS error")
+	}
+}
+
+func TestLoadInvalidTelegramLongPollTimeoutEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "true", "env-telegram-token", "1001", "later")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid TELEGRAM_LONG_POLL_TIMEOUT error")
+	}
+}
+
+func setLLMEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("SIMICLAW_LLM_DEFAULT_MODEL", "")
+	t.Setenv("LLM_API_KEY", "")
+	t.Setenv("LLM_BASE_URL", "")
+	t.Setenv("LLM_MODEL", "")
+}
+
+func setTelegramEnv(t *testing.T, enabled, token, allowedUserIDs, longPollTimeout string) {
+	t.Helper()
+	t.Setenv("TELEGRAM_ENABLED", enabled)
+	t.Setenv("TELEGRAM_TOKEN", token)
+	t.Setenv("TELEGRAM_ALLOWED_USER_IDS", allowedUserIDs)
+	t.Setenv("TELEGRAM_LONG_POLL_TIMEOUT", longPollTimeout)
 }

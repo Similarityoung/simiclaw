@@ -184,7 +184,16 @@ LLM_MODEL=openai/deepseek-chat
 }
 ```
 
-也可以只通过环境变量覆盖 token：`TELEGRAM_TOKEN=<telegram-bot-token>`。
+也可以全部通过环境变量覆盖：
+
+```bash
+TELEGRAM_ENABLED=true
+TELEGRAM_TOKEN=<telegram-bot-token>
+TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+TELEGRAM_LONG_POLL_TIMEOUT=30s
+```
+
+若同时提供配置文件和环境变量，环境变量优先。
 
 - `allowed_user_ids` 为空时会按 fail-closed 处理：Telegram 入站全部拒绝。
 - 当前不支持群聊 mention、callback query、webhook、媒体消息。
