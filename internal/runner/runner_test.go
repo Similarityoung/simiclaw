@@ -147,6 +147,90 @@ func TestProviderRunnerPersistsAssistantToolCallsMessage(t *testing.T) {
 	}
 }
 
+func TestProviderRunnerBuiltinsIncludeWorkspaceWriteTools(t *testing.T) {
+	r := newTestRunner(t, config.Default().LLM, nil)
+	defs := r.registry.Definitions()
+	names := map[string]bool{}
+	for _, def := range defs {
+		names[def.Schema.Name] = true
+	}
+	if !names["workspace_patch"] || !names["workspace_delete"] {
+		t.Fatalf("expected workspace write tools in builtins, got %+v", names)
+	}
+}
+
+func TestProviderRunnerWorkspacePatchWritesFileAndMarksMediumRisk(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "done: {{last_user_message}}",
+		FakeToolName:         "workspace_patch",
+		FakeToolArgsJSON:     `{"path":"IDENTITY.md","old_text":"SimiClaw","new_text":"Simi 龙虾"}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.WriteFile(filepath.Join(workspace, "IDENTITY.md"), []byte("- Name: SimiClaw\n"), 0o644); err != nil {
+		t.Fatalf("write IDENTITY.md: %v", err)
+	}
+
+	output, err := r.Run(context.Background(), testEvent("rename yourself"), 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, "IDENTITY.md"))
+	if err != nil {
+		t.Fatalf("read IDENTITY.md: %v", err)
+	}
+	if !strings.Contains(string(data), "Simi 龙虾") {
+		t.Fatalf("expected patched file, got %q", string(data))
+	}
+	if len(output.Trace.ToolExecutions) != 1 || output.Trace.ToolExecutions[0].Name != "workspace_patch" {
+		t.Fatalf("expected workspace_patch execution, got %+v", output.Trace.ToolExecutions)
+	}
+	if len(output.Trace.Actions) != 1 || output.Trace.Actions[0].Risk != "medium" {
+		t.Fatalf("expected medium-risk tool action, got %+v", output.Trace.Actions)
+	}
+	if output.Messages[2].ToolName != "workspace_patch" {
+		t.Fatalf("expected persisted tool message, got %+v", output.Messages)
+	}
+}
+
+func TestProviderRunnerWorkspaceDeleteMarksHighRisk(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "done: {{last_user_message}}",
+		FakeToolName:         "workspace_delete",
+		FakeToolArgsJSON:     `{"path":"BOOTSTRAP.md"}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.WriteFile(filepath.Join(workspace, "BOOTSTRAP.md"), []byte("cleanup me\n"), 0o644); err != nil {
+		t.Fatalf("write BOOTSTRAP.md: %v", err)
+	}
+
+	output, err := r.Run(context.Background(), testEvent("cleanup bootstrap"), 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "BOOTSTRAP.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected BOOTSTRAP.md deleted, err=%v", err)
+	}
+	if len(output.Trace.Actions) != 1 || output.Trace.Actions[0].Risk != "high" {
+		t.Fatalf("expected high-risk tool action, got %+v", output.Trace.Actions)
+	}
+}
+
 func TestHistoryToChatMessagesSkipsOrphanToolResults(t *testing.T) {
 	history := []store.HistoryMessage{
 		{Role: "user", Content: "hello"},
@@ -324,6 +408,43 @@ func TestProviderRunnerCronFireRejectsNonAllowlistedTool(t *testing.T) {
 	}
 	if toolMessage.Visible {
 		t.Fatalf("expected forbidden cron tool result to stay hidden, got %+v", toolMessage)
+	}
+}
+
+func TestProviderRunnerCronFireRejectsWorkspacePatch(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "after {{last_user_message}}",
+		FakeToolName:         "workspace_patch",
+		FakeToolArgsJSON:     `{"path":"IDENTITY.md","old_text":"A","new_text":"B"}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r, workspace := newTestRunnerWithWorkspace(t, cfg, nil)
+	if err := os.WriteFile(filepath.Join(workspace, "IDENTITY.md"), []byte("A\n"), 0o644); err != nil {
+		t.Fatalf("write IDENTITY.md: %v", err)
+	}
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron_workspace_patch",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron_workspace_patch",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(output.Trace.ToolExecutions) != 1 {
+		t.Fatalf("expected one tool execution, got %+v", output.Trace.ToolExecutions)
+	}
+	if output.Trace.ToolExecutions[0].Name != "workspace_patch" || output.Trace.ToolExecutions[0].Error == nil || output.Trace.ToolExecutions[0].Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden workspace_patch execution, got %+v", output.Trace.ToolExecutions)
 	}
 }
 

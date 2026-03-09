@@ -333,7 +333,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 				ActionIndex:          len(trace.Actions),
 				ActionIdempotencyKey: fmt.Sprintf("%s:%d", event.EventID, len(trace.Actions)),
 				Type:                 "InvokeTool",
-				Risk:                 "low",
+				Risk:                 toolRisk(call.Name),
 				Payload:              map[string]any{"tool_name": call.Name},
 			})
 			payload := map[string]any{}
@@ -427,6 +427,17 @@ func toolAllowed(name string, allowed map[string]struct{}) bool {
 	}
 	_, ok := allowed[name]
 	return ok
+}
+
+func toolRisk(name string) string {
+	switch name {
+	case "workspace_patch":
+		return "medium"
+	case "workspace_delete":
+		return "high"
+	default:
+		return "low"
+	}
 }
 
 func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessage {
