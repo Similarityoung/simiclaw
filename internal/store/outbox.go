@@ -76,7 +76,7 @@ func (db *DB) ClaimOutbox(ctx context.Context, owner string, now time.Time) (Cla
 		     ORDER BY next_attempt_at ASC, outbox_id ASC
 		     LIMIT 1
 		 )
-		 RETURNING outbox_id, event_id, session_key, body, attempt_count, created_at`,
+		 RETURNING outbox_id, event_id, session_key, channel, target_id, body, attempt_count, created_at`,
 		string(model.OutboxStatusSending),
 		timeText(now),
 		owner,
@@ -87,7 +87,7 @@ func (db *DB) ClaimOutbox(ctx context.Context, owner string, now time.Time) (Cla
 	)
 	var claimed ClaimedOutbox
 	var createdAt string
-	err := row.Scan(&claimed.OutboxID, &claimed.EventID, &claimed.SessionKey, &claimed.Body, &claimed.AttemptCount, &createdAt)
+	err := row.Scan(&claimed.OutboxID, &claimed.EventID, &claimed.SessionKey, &claimed.Channel, &claimed.TargetID, &claimed.Body, &claimed.AttemptCount, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ClaimedOutbox{}, false, nil
 	}

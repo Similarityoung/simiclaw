@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     outbox_id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
     session_key TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT ',
+    target_id TEXT NOT NULL DEFAULT ',
     body TEXT NOT NULL,
     status TEXT NOT NULL,
     next_attempt_at TEXT NOT NULL,

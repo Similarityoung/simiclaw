@@ -25,7 +25,9 @@ func TestSmokeV1Alpha_InitServeChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.Start()
+	if err := app.Start(); err != nil {
+		t.Fatalf("start app: %v", err)
+	}
 	defer app.Stop()
 
 	req := cli.BuildIngestRequest("smoke-v1-alpha", "u1", 1, "hello alpha")

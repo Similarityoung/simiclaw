@@ -84,7 +84,9 @@ func newHTTPAPITestServer(t *testing.T) (*bootstrap.App, *httptest.Server) {
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	app.Start()
+	if err := app.Start(); err != nil {
+		t.Fatalf("start app: %v", err)
+	}
 	t.Cleanup(app.Stop)
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)

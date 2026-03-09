@@ -252,6 +252,8 @@ type OutboxMessage struct {
 	OutboxID   string    `json:"outbox_id"`
 	EventID    string    `json:"event_id"`
 	SessionKey string    `json:"session_key"`
+	Channel    string    `json:"channel,omitempty"`
+	TargetID   string    `json:"target_id,omitempty"`
 	Body       string    `json:"body"`
 	CreatedAt  time.Time `json:"created_at"`
 	Attempts   int       `json:"attempts"`

@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -194,7 +196,24 @@ func (l *EventLoop) processEvent(eventID string) {
 			finalize.AssistantReply = ""
 		} else {
 			finalize.AssistantReply = output.AssistantReply
-			finalize.OutboxBody = output.AssistantReply
+			if strings.TrimSpace(output.AssistantReply) != "" {
+				if claimed.Event.Source == "telegram" {
+					chatID, err := telegramTargetID(claimed.Event)
+					if err != nil {
+						runErr = err
+						finalize.RunStatus = model.RunStatusFailed
+						finalize.EventStatus = model.EventStatusFailed
+						finalize.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
+						finalize.AssistantReply = ""
+					} else {
+						finalize.OutboxChannel = "telegram"
+						finalize.OutboxTargetID = chatID
+						finalize.OutboxBody = output.AssistantReply
+					}
+				} else {
+					finalize.OutboxBody = output.AssistantReply
+				}
+			}
 		}
 		if err := l.db.FinalizeRun(ctx, finalize); err != nil {
 			logger.Error("finalize failed",
@@ -224,4 +243,19 @@ func (l *EventLoop) processEvent(eventID string) {
 	}()
 
 	output, runErr = l.runner.Run(ctx, claimed.Event, l.maxRounds, streamSink)
+}
+
+func telegramTargetID(event model.InternalEvent) (string, error) {
+	if event.Payload.Extra == nil {
+		return "", fmt.Errorf("telegram event missing payload.extra.telegram_chat_id")
+	}
+	raw := strings.TrimSpace(event.Payload.Extra["telegram_chat_id"])
+	if raw == "" {
+		return "", fmt.Errorf("telegram event missing payload.extra.telegram_chat_id")
+	}
+	chatID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid payload.extra.telegram_chat_id %q: %w", raw, err)
+	}
+	return strconv.FormatInt(chatID, 10), nil
 }

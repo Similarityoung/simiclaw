@@ -134,11 +134,13 @@ func (db *DB) FinalizeRun(ctx context.Context, finalize RunFinalize) error {
 			if _, err := tx.ExecContext(
 				ctx,
 				`INSERT INTO outbox (
-					outbox_id, event_id, session_key, body, status, next_attempt_at, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+					outbox_id, event_id, session_key, channel, target_id, body, status, next_attempt_at, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				outboxID,
 				finalize.EventID,
 				finalize.SessionKey,
+				finalize.OutboxChannel,
+				finalize.OutboxTargetID,
 				finalize.OutboxBody,
 				outboxStatus,
 				nowText,

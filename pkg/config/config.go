@@ -69,6 +69,17 @@ type CronJobConfig struct {
 	Interval       Duration `json:"interval"`
 }
 
+type ChannelsConfig struct {
+	Telegram TelegramChannelConfig `json:"telegram,omitempty"`
+}
+
+type TelegramChannelConfig struct {
+	Enabled         bool     `json:"enabled,omitempty"`
+	Token           string   `json:"token,omitempty"`
+	AllowedUserIDs  []int64  `json:"allowed_user_ids,omitempty"`
+	LongPollTimeout Duration `json:"long_poll_timeout,omitempty"`
+}
+
 type Config struct {
 	Workspace             string          `json:"workspace"`
 	ListenAddr            string          `json:"listen_addr"`
@@ -84,24 +95,26 @@ type Config struct {
 	MaxToolRounds         int             `json:"max_tool_rounds"`
 	DBBusyTimeout         Duration        `json:"db_busy_timeout"`
 	LLM                   LLMConfig       `json:"llm"`
+	Channels              ChannelsConfig  `json:"channels,omitempty"`
 	CronJobs              []CronJobConfig `json:"cron_jobs,omitempty"`
 }
 
 const (
-	defaultWorkspace             = "."
-	defaultListenAddr            = ":8080"
-	defaultLogLevel              = "info"
-	defaultTenantID              = "local"
-	defaultEventQueueCapacity    = 1024
-	defaultIngestEnqueueTimeout  = 200 * time.Millisecond
-	defaultRateLimitTenantRPS    = 30
-	defaultRateLimitTenantBurst  = 60
-	defaultRateLimitSessionRPS   = 5
-	defaultRateLimitSessionBurst = 10
-	defaultMaxToolRounds         = 4
-	defaultDBBusyTimeout         = 5 * time.Second
-	defaultProviderTimeout       = 60 * time.Second
-	defaultFakeModel             = "fake/default"
+	defaultWorkspace               = "."
+	defaultListenAddr              = ":8080"
+	defaultLogLevel                = "info"
+	defaultTenantID                = "local"
+	defaultEventQueueCapacity      = 1024
+	defaultIngestEnqueueTimeout    = 200 * time.Millisecond
+	defaultRateLimitTenantRPS      = 30
+	defaultRateLimitTenantBurst    = 60
+	defaultRateLimitSessionRPS     = 5
+	defaultRateLimitSessionBurst   = 10
+	defaultMaxToolRounds           = 4
+	defaultDBBusyTimeout           = 5 * time.Second
+	defaultProviderTimeout         = 60 * time.Second
+	defaultTelegramLongPollTimeout = 30 * time.Second
+	defaultFakeModel               = "fake/default"
 )
 
 func Default() Config {
@@ -131,6 +144,11 @@ func Default() Config {
 					FakeCompletionTokens: 8,
 					FakeRequestID:        "fake-request-1",
 				},
+			},
+		},
+		Channels: ChannelsConfig{
+			Telegram: TelegramChannelConfig{
+				LongPollTimeout: Duration{defaultTelegramLongPollTimeout},
 			},
 		},
 	}
@@ -192,6 +210,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.DBBusyTimeout.Duration <= 0 {
 		cfg.DBBusyTimeout = Duration{defaultDBBusyTimeout}
 	}
+	if cfg.Channels.Telegram.LongPollTimeout.Duration <= 0 {
+		cfg.Channels.Telegram.LongPollTimeout = Duration{defaultTelegramLongPollTimeout}
+	}
 	if cfg.LLM.DefaultModel == "" {
 		cfg.LLM.DefaultModel = defaultFakeModel
 	}
@@ -230,6 +251,9 @@ func validate(cfg Config) (Config, error) {
 	}
 	if cfg.DBBusyTimeout.Duration < time.Second {
 		return cfg, errors.New("db_busy_timeout must be at least 1s")
+	}
+	if cfg.Channels.Telegram.Enabled && strings.TrimSpace(cfg.Channels.Telegram.Token) == "" {
+		return cfg, errors.New("channels.telegram.token is required when channels.telegram.enabled=true")
 	}
 	providerName, _, ok := strings.Cut(cfg.LLM.DefaultModel, "/")
 	if !ok || strings.TrimSpace(providerName) == "" {
@@ -333,6 +357,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if model := strings.TrimSpace(os.Getenv("LLM_MODEL")); model != "" {
 		cfg.LLM.DefaultModel = model
+	}
+	if token := strings.TrimSpace(os.Getenv("TELEGRAM_TOKEN")); token != "" {
+		cfg.Channels.Telegram.Token = token
 	}
 }
 
