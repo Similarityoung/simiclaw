@@ -101,9 +101,9 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	queue := &captureEnqueuer{}
 	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		db:     db,
-		ingest: ingestService,
-		ctx:    context.Background(),
+		workers: db,
+		ingest:  ingestService,
+		ctx:     context.Background(),
 	}
 
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
@@ -166,10 +166,10 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
 	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		db:     db,
-		ingest: ingestService,
-		loop:   loop,
-		ctx:    context.Background(),
+		workers: db,
+		ingest:  ingestService,
+		loop:    loop,
+		ctx:     context.Background(),
 	}
 
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
@@ -335,7 +335,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
 	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, db), 100, 100, 100, 100)
 	sender := &captureSender{}
-	supervisor := NewSupervisor(cfg, db, ingestService, loop, sender)
+	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()
 	defer supervisor.Stop()
 
@@ -404,7 +404,7 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 	defer db.Close()
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 1, 1)
-	supervisor := NewSupervisor(cfg, db, nil, loop, &captureSender{})
+	supervisor := NewSupervisor(cfg, db, db, nil, loop, &captureSender{})
 	state, err := supervisor.ReadyState(context.Background())
 	if err == nil || state["event_loop"] != "down" {
 		t.Fatalf("expected loop-down readiness failure, err=%v state=%+v", err, state)
@@ -430,7 +430,7 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 		t.Fatalf("insert scheduled job: %v", err)
 	}
 
-	supervisor := &Supervisor{db: db, ctx: context.Background()}
+	supervisor := &Supervisor{workers: db, ctx: context.Background()}
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
 
 	var lastError string

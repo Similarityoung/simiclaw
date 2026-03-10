@@ -90,6 +90,10 @@ func TestEventLoopProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReferenceInFiles(t, "internal/runtime/eventloop.go")
 }
 
+func TestRuntimeProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/runtime")
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
