@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	apitypes "github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"
 )
@@ -156,7 +156,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	req := api.IngestRequest{
+	req := apitypes.IngestRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:301",
