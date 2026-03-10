@@ -3,11 +3,11 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 const historyPayloadTypeMetaKey = "payload_type"
@@ -87,7 +87,7 @@ func (db *DB) RecentMessagesForPrompt(ctx context.Context, sessionID string, lim
 	return out, nil
 }
 
-func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]model.RAGHit, error) {
+func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]api.RAGHit, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -109,13 +109,13 @@ func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, li
 		return nil, err
 	}
 	defer rows.Close()
-	var hits []model.RAGHit
+	var hits []api.RAGHit
 	for rows.Next() {
 		var content string
 		if err := rows.Scan(&content); err != nil {
 			return nil, err
 		}
-		hits = append(hits, model.RAGHit{
+		hits = append(hits, api.RAGHit{
 			Path:    sessionID,
 			Scope:   "session",
 			Preview: content,

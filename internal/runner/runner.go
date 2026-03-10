@@ -10,6 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/tools"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -40,14 +41,14 @@ type OutputMessage struct {
 type RunOutput struct {
 	RunMode        model.RunMode
 	Messages       []OutputMessage
-	Trace          model.RunTrace
+	Trace          api.RunTrace
 	AssistantReply string
 	SuppressOutput bool
 }
 
 type HistoryReader interface {
 	RecentMessagesForPrompt(ctx context.Context, sessionID string, limit int) ([]store.HistoryMessage, error)
-	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]model.RAGHit, error)
+	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]api.RAGHit, error)
 }
 
 type ProviderRunner struct {
@@ -81,7 +82,7 @@ func NewProviderRunner(workspace string, historyReader HistoryReader, registry *
 func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int, sink StreamSink) (RunOutput, error) {
 	start := time.Now().UTC()
 	if event.Payload.Type == payloadTypeNewSession {
-		trace := model.RunTrace{
+		trace := api.RunTrace{
 			EventID:    event.EventID,
 			SessionKey: event.SessionKey,
 			SessionID:  event.ActiveSessionID,
@@ -95,7 +96,7 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 	if isNoReplyPayload(event.Payload.Type) {
 		runMode = model.RunModeNoReply
 	}
-	trace := model.RunTrace{
+	trace := api.RunTrace{
 		EventID:    event.EventID,
 		SessionKey: event.SessionKey,
 		SessionID:  event.ActiveSessionID,
@@ -110,7 +111,7 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 	return r.runInteractive(ctx, event, maxToolRounds, start, &trace, safeSink)
 }
 
-func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
+func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink) (RunOutput, error) {
 	if event.Payload.Type == "cron_fire" {
 		return r.runSuppressedCronFire(ctx, event, maxToolRounds, now, trace)
 	}
@@ -143,7 +144,7 @@ func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEve
 	}, nil
 }
 
-func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace) (RunOutput, error) {
+func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace) (RunOutput, error) {
 	return r.runLLM(ctx, event, maxToolRounds, now, trace, newSafeStreamSink(nil, trace), llmRunOptions{
 		runMode:               model.RunModeNoReply,
 		suppressOutput:        true,
@@ -155,7 +156,7 @@ func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.
 	})
 }
 
-func (r *ProviderRunner) runInteractive(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink) (RunOutput, error) {
+func (r *ProviderRunner) runInteractive(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink) (RunOutput, error) {
 	return r.runLLM(ctx, event, maxToolRounds, now, trace, sink, llmRunOptions{
 		runMode:               model.RunModeNormal,
 		suppressOutput:        false,
@@ -175,7 +176,7 @@ type llmRunOptions struct {
 	allowedTools          map[string]struct{}
 }
 
-func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *model.RunTrace, sink StreamSink, opts llmRunOptions) (RunOutput, error) {
+func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink, opts llmRunOptions) (RunOutput, error) {
 	defaultModel := r.providers.DefaultModel()
 	llmProvider, actualModel, err := r.providers.Resolve(defaultModel)
 	if err != nil {
@@ -286,7 +287,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 	}, nil
 }
 
-func runNewSession(event model.InternalEvent, now time.Time, trace *model.RunTrace) RunOutput {
+func runNewSession(event model.InternalEvent, now time.Time, trace *api.RunTrace) RunOutput {
 	const reply = "已开始新会话。"
 	meta := map[string]any{payloadTypeMetaKey: event.Payload.Type}
 	trace.OutputText = reply

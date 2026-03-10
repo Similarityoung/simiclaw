@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/tools"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type executedToolStep struct {
 	message   OutputMessage
 	chat      providerToolMessage
-	execution model.ToolExecution
-	action    model.Action
+	execution api.ToolExecution
+	action    api.Action
 }
 
 type providerToolMessage struct {
@@ -33,14 +34,14 @@ func (e llmToolExecutor) Execute(ctx context.Context, event model.InternalEvent,
 	sink.OnToolStart(call.ToolCallID, call.Name, displayArgs, argsTruncated)
 
 	res := e.call(ctx, event, call, opts.allowedTools, counts)
-	exec := model.ToolExecution{
+	exec := api.ToolExecution{
 		ToolCallID: call.ToolCallID,
 		Name:       call.Name,
 		Args:       call.Args,
 		Result:     res.Output,
 		Error:      res.Error,
 	}
-	action := model.Action{
+	action := api.Action{
 		ActionID:             nextID("act", now),
 		ActionIndex:          actionIndex,
 		ActionIdempotencyKey: fmt.Sprintf("%s:%d", event.EventID, actionIndex),

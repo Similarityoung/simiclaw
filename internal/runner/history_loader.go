@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 type loadedHistory struct {
 	history  []store.HistoryMessage
-	ragHits  []model.RAGHit
-	manifest *model.ContextManifest
+	ragHits  []api.RAGHit
+	manifest *api.ContextManifest
 }
 
 type runHistoryLoader struct {
@@ -28,8 +28,8 @@ func (l runHistoryLoader) Load(ctx context.Context, sessionID, query string) (lo
 	return loadedHistory{
 		history: history,
 		ragHits: ragHits,
-		manifest: &model.ContextManifest{
-			HistoryRange: model.HistoryRange{Mode: "tail", TailLimit: l.historyLimit},
+		manifest: &api.ContextManifest{
+			HistoryRange: api.HistoryRange{Mode: "tail", TailLimit: l.historyLimit},
 		},
 	}, nil
 }

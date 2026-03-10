@@ -6,6 +6,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -63,7 +64,7 @@ type EventPage struct {
 }
 
 type RunPage struct {
-	Items []model.RunTrace
+	Items []api.RunTrace
 	Next  *RunCursorAnchor
 }
 
@@ -80,11 +81,11 @@ type MessagePage struct {
 type Repository interface {
 	GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error)
 	LookupInbound(ctx context.Context, key string) (readmodel.LookupEvent, bool, error)
-	GetRun(ctx context.Context, runID string) (model.RunTrace, bool, error)
+	GetRun(ctx context.Context, runID string) (api.RunTrace, bool, error)
 	GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error)
 	ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]readmodel.MessageRecord, error)
 	ListEventsPage(ctx context.Context, filter store.EventListFilter) ([]readmodel.EventRecord, error)
-	ListRunsPage(ctx context.Context, filter store.RunListFilter) ([]model.RunTrace, error)
+	ListRunsPage(ctx context.Context, filter store.RunListFilter) ([]api.RunTrace, error)
 	ListSessionsPage(ctx context.Context, filter store.SessionListFilter) ([]readmodel.SessionRecord, error)
 }
 

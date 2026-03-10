@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
-func (s *Service) GetRun(ctx context.Context, runID string) (model.RunTrace, bool, error) {
+func (s *Service) GetRun(ctx context.Context, runID string) (api.RunTrace, bool, error) {
 	return s.repo.GetRun(ctx, runID)
 }
 
@@ -28,7 +28,7 @@ func (s *Service) ListRuns(ctx context.Context, query RunListQuery) (RunPage, er
 	return buildRunPage(items, query.Limit), nil
 }
 
-func buildRunPage(items []model.RunTrace, limit int) RunPage {
+func buildRunPage(items []api.RunTrace, limit int) RunPage {
 	if limit <= 0 || len(items) <= limit {
 		return RunPage{Items: items}
 	}
