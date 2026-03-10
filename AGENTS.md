@@ -81,6 +81,7 @@ Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, inspect, version, completion
   internal/             CLI-internal packages (chat, gateway, initcmd, inspect, version, common)
 pkg/
+  api/                  Stable HTTP / SSE / CLI wire models
   logging/              Thin zap wrapper
   model/                Shared cross-package types only
 internal/
@@ -94,9 +95,13 @@ internal/
   prompt/               Prompt builder orchestration
   provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
   query/                Read-side query service for events / runs / sessions
+    model/              Query-internal filters, cursors, pages, and read DTOs
   runner/               Provider-driven runtime execution
+    model/              Runner-internal prompt history and retrieval DTOs
   runtime/              EventLoop, workers, supervisor lifecycle
+    model/              Runtime-internal event loop / worker port DTOs
   session/              Session key computation
+  readmodel/            Store-internal read projections only
   store/                SQLite bootstrapping, schema, queries, repo
   systemprompt/         Embedded runtime system prompt fragments
   tools/                Tools / skills execution surface
@@ -112,7 +117,9 @@ tests/
 - Standard `gofmt` formatting; run `make fmt` before committing.
 - Use the standard `testing` package only.
 - Keep imports ordered as stdlib first, then project packages.
-- Shared cross-package types belong in `pkg/model`.
+- External wire contracts belong in `pkg/api`; shared stable domain/runtime types belong in `pkg/model`.
+- Subsystem-local port DTOs belong in the consuming package under `internal/<subsystem>/model`.
+- `internal/readmodel` is reserved for `internal/store` internals and should not be imported elsewhere.
 - Use `time.Now().UTC()` everywhere.
 - Use `map[string]any` for flexible payload/details fields.
 - Keep interfaces minimal and define them where consumed.
