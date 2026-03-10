@@ -10,6 +10,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -305,7 +306,7 @@ func TestProviderRunnerWorkspaceDeleteMarksHighRisk(t *testing.T) {
 }
 
 func TestHistoryToChatMessagesSkipsOrphanToolResults(t *testing.T) {
-	history := []store.HistoryMessage{
+	history := []runnermodel.HistoryMessage{
 		{Role: "user", Content: "hello"},
 		{Role: "tool", Content: `{"path":"AGENTS.md"}`, ToolCallID: "call_orphan", ToolName: "context_get"},
 		{Role: "assistant", Content: "world"},
@@ -321,7 +322,7 @@ func TestHistoryToChatMessagesSkipsOrphanToolResults(t *testing.T) {
 }
 
 func TestHistoryToChatMessagesPreservesAssistantToolChain(t *testing.T) {
-	history := []store.HistoryMessage{
+	history := []runnermodel.HistoryMessage{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", ToolCalls: []model.ToolCall{{ToolCallID: "call_1", Name: "memory_search", Args: map[string]any{"query": "hello"}}}},
 		{Role: "tool", Content: `{"hits":[]}`, ToolCallID: "call_1", ToolName: "memory_search"},
@@ -341,7 +342,7 @@ func TestHistoryToChatMessagesPreservesAssistantToolChain(t *testing.T) {
 }
 
 func TestHistoryToChatMessagesSkipsCronFireHiddenMessages(t *testing.T) {
-	history := []store.HistoryMessage{
+	history := []runnermodel.HistoryMessage{
 		{Role: "user", Content: "nightly tick", Meta: map[string]any{"payload_type": "cron_fire"}},
 		{Role: "assistant", ToolCalls: []model.ToolCall{{ToolCallID: "call_1", Name: "memory_search", Args: map[string]any{"query": "nightly tick"}}}, Meta: map[string]any{"payload_type": "cron_fire"}},
 		{Role: "tool", Content: `{"hits":[]}`, ToolCallID: "call_1", ToolName: "memory_search", Meta: map[string]any{"payload_type": "cron_fire"}},
@@ -363,7 +364,7 @@ func TestHistoryToChatMessagesSkipsCronFireHiddenMessages(t *testing.T) {
 }
 
 func TestHistoryToChatMessagesSkipsNewSessionMessages(t *testing.T) {
-	history := []store.HistoryMessage{
+	history := []runnermodel.HistoryMessage{
 		{Role: "user", Content: "/new", Meta: map[string]any{"payload_type": payloadTypeNewSession}},
 		{Role: "assistant", Content: "已开始新会话。", Meta: map[string]any{"payload_type": payloadTypeNewSession}},
 		{Role: "user", Content: "hello"},

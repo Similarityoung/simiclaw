@@ -9,7 +9,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
@@ -99,7 +99,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 
 	queue := &captureEnqueuer{}
-	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
+	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -164,7 +164,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
-	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
+	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -229,7 +229,7 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 		}
 	}
 
-	failed := terminalEventFromFinalize(store.RunFinalize{
+	failed := terminalEventFromFinalize(runtimemodel.RunFinalize{
 		EventID:     "evt_fail",
 		RunID:       "run_fail",
 		RunMode:     model.RunModeNormal,
@@ -242,7 +242,7 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 	if failed.Type != api.ChatStreamEventError || failed.Error == nil {
 		t.Fatalf("expected failed terminal event, got %+v", failed)
 	}
-	done := terminalEventFromRecord(readmodel.EventRecord{
+	done := terminalEventFromRecord(runtimemodel.EventRecord{
 		EventID:   "evt_done",
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),
@@ -333,7 +333,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
-	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, db), 100, 100, 100, 100)
+	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()

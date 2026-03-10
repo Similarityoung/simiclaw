@@ -3,11 +3,11 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"strings"
 
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 

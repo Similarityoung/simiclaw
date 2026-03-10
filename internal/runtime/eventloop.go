@@ -9,9 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/runner"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
@@ -33,9 +32,9 @@ type EventLoop struct {
 
 type EventLoopRepository interface {
 	ListRunnableEventIDs(ctx context.Context, limit int) ([]string, error)
-	ClaimEvent(ctx context.Context, eventID, runID string, now time.Time) (store.ClaimedEvent, bool, error)
-	FinalizeRun(ctx context.Context, finalize store.RunFinalize) error
-	GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error)
+	ClaimLoopEvent(ctx context.Context, eventID, runID string, now time.Time) (runtimemodel.ClaimedEvent, bool, error)
+	FinalizeLoopRun(ctx context.Context, finalize runtimemodel.RunFinalize) error
+	GetLoopEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error)
 }
 
 func NewEventLoop(repo EventLoopRepository, run runner.Runner, streamHub *streaming.Hub, queueCap, maxRounds int) *EventLoop {
@@ -131,7 +130,7 @@ func (l *EventLoop) processEvent(eventID string) {
 	ctx, cancel := context.WithTimeout(l.ctx, 2*time.Minute)
 	defer cancel()
 
-	claimed, ok, err := l.repo.ClaimEvent(ctx, eventID, runID, now)
+	claimed, ok, err := l.repo.ClaimLoopEvent(ctx, eventID, runID, now)
 	if err != nil || !ok {
 		return
 	}
@@ -154,7 +153,7 @@ func (l *EventLoop) processEvent(eventID string) {
 		if output.RunMode == "" {
 			output.RunMode = claimed.RunMode
 		}
-		finalize := store.RunFinalize{
+		finalize := runtimemodel.RunFinalize{
 			RunID:       claimed.RunID,
 			EventID:     claimed.Event.EventID,
 			SessionKey:  claimed.Event.SessionKey,
@@ -179,7 +178,7 @@ func (l *EventLoop) processEvent(eventID string) {
 			finalize.Diagnostics = output.Trace.Diagnostics
 		}
 		for _, msg := range output.Messages {
-			finalize.Messages = append(finalize.Messages, store.StoredMessage{
+			finalize.Messages = append(finalize.Messages, runtimemodel.StoredMessage{
 				MessageID:  fmt.Sprintf("msg_%d_%d", finalize.Now.UnixNano(), l.enqueueID.Add(1)),
 				SessionKey: claimed.Event.SessionKey,
 				SessionID:  claimed.Event.ActiveSessionID,
@@ -224,7 +223,7 @@ func (l *EventLoop) processEvent(eventID string) {
 				}
 			}
 		}
-		if err := l.repo.FinalizeRun(ctx, finalize); err != nil {
+		if err := l.repo.FinalizeLoopRun(ctx, finalize); err != nil {
 			logger.Error("finalize failed",
 				logging.String("status", "failed"),
 				logging.String("error_code", model.ErrorCodeInternal),
@@ -239,7 +238,7 @@ func (l *EventLoop) processEvent(eventID string) {
 			return
 		}
 		if l.streamHub != nil {
-			if rec, ok, err := l.repo.GetEvent(ctx, claimed.Event.EventID); err == nil && ok {
+			if rec, ok, err := l.repo.GetLoopEventRecord(ctx, claimed.Event.EventID); err == nil && ok {
 				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromRecord(rec))
 			} else {
 				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromFinalize(finalize))

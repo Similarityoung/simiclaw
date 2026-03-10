@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,7 +10,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -47,12 +47,12 @@ type WorkerRepository interface {
 	BeatHeartbeat(ctx context.Context, workerName string, now time.Time) error
 	RecoverExpiredProcessing(ctx context.Context, cutoff, now time.Time) ([]string, error)
 	RecoverExpiredSending(ctx context.Context, cutoff, now time.Time) error
-	ClaimOutbox(ctx context.Context, owner string, now time.Time) (store.ClaimedOutbox, bool, error)
+	ClaimRuntimeOutbox(ctx context.Context, owner string, now time.Time) (runtimemodel.ClaimedOutbox, bool, error)
 	FailOutboxSend(ctx context.Context, outboxID, eventID, message string, dead bool, nextAttemptAt, now time.Time) error
 	CompleteOutboxSend(ctx context.Context, outboxID, eventID string, now time.Time) error
-	ClaimScheduledJob(ctx context.Context, kind model.ScheduledJobKind, owner string, now time.Time) (store.ClaimedJob, bool, error)
+	ClaimRuntimeScheduledJob(ctx context.Context, kind model.ScheduledJobKind, owner string, now time.Time) (runtimemodel.ClaimedJob, bool, error)
 	FailScheduledJob(ctx context.Context, jobID, message string, nextRunAt, now time.Time) error
-	CompleteScheduledJob(ctx context.Context, job store.ClaimedJob, now time.Time) error
+	CompleteRuntimeScheduledJob(ctx context.Context, job runtimemodel.ClaimedJob, now time.Time) error
 	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
 }
 
@@ -185,7 +185,7 @@ func (s *Supervisor) outboxWorker() {
 			now := time.Now().UTC()
 			_ = s.workers.BeatHeartbeat(s.ctx, "outbox_retry", now)
 			_ = s.workers.RecoverExpiredSending(s.ctx, now.Add(-outboxSendingLease), now)
-			msg, ok, err := s.workers.ClaimOutbox(s.ctx, "outbox-worker", now)
+			msg, ok, err := s.workers.ClaimRuntimeOutbox(s.ctx, "outbox-worker", now)
 			if err != nil || !ok {
 				continue
 			}
@@ -246,7 +246,7 @@ func (s *Supervisor) cronWorker() {
 }
 
 func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind) {
-	job, ok, err := s.workers.ClaimScheduledJob(s.ctx, kind, string(kind)+"-worker", now)
+	job, ok, err := s.workers.ClaimRuntimeScheduledJob(s.ctx, kind, string(kind)+"-worker", now)
 	if err != nil || !ok {
 		return
 	}
@@ -266,7 +266,7 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 		_ = s.workers.FailScheduledJob(s.ctx, job.JobID, ingestErr.Error(), now.Add(30*time.Second), now)
 		return
 	}
-	_ = s.workers.CompleteScheduledJob(s.ctx, job, now)
+	_ = s.workers.CompleteRuntimeScheduledJob(s.ctx, job, now)
 	if !result.Duplicate && !result.Enqueued && s.loop != nil {
 		if err := s.workers.MarkEventQueued(s.ctx, result.EventID, now); err == nil {
 			s.loop.TryEnqueue(result.EventID)

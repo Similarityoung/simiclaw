@@ -4,14 +4,13 @@ import (
 	"context"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 )
 
 type loadedHistory struct {
-	history  []store.HistoryMessage
-	ragHits  []api.RAGHit
-	manifest *api.ContextManifest
+	history  []runnermodel.HistoryMessage
+	ragHits  []runnermodel.RAGHit
+	manifest *runnermodel.ContextManifest
 }
 
 type runHistoryLoader struct {
@@ -20,16 +19,16 @@ type runHistoryLoader struct {
 }
 
 func (l runHistoryLoader) Load(ctx context.Context, sessionID, query string) (loadedHistory, error) {
-	history, err := l.reader.RecentMessagesForPrompt(ctx, sessionID, l.historyLimit)
+	history, err := l.reader.LoadPromptHistory(ctx, sessionID, l.historyLimit)
 	if err != nil {
 		return loadedHistory{}, err
 	}
-	ragHits, _ := l.reader.SearchMessagesFTS(ctx, sessionID, strings.TrimSpace(query), 5)
+	ragHits, _ := l.reader.SearchRAGHits(ctx, sessionID, strings.TrimSpace(query), 5)
 	return loadedHistory{
 		history: history,
 		ragHits: ragHits,
-		manifest: &api.ContextManifest{
-			HistoryRange: api.HistoryRange{Mode: "tail", TailLimit: l.historyLimit},
+		manifest: &runnermodel.ContextManifest{
+			HistoryRange: runnermodel.HistoryRange{Mode: "tail", TailLimit: l.historyLimit},
 		},
 	}, nil
 }

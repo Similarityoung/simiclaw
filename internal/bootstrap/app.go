@@ -50,11 +50,12 @@ func NewApp(cfg config.Config) (*App, error) {
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
 	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
+	scopeReader := ingest.NewStoreSessionReader(db)
 	ingestService := ingest.NewService(
 		cfg.TenantID,
 		db,
 		eventLoop,
-		ingest.NewScopeResolver(cfg.TenantID, db),
+		ingest.NewScopeResolver(cfg.TenantID, scopeReader),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,

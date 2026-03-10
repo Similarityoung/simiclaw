@@ -6,7 +6,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -21,7 +21,7 @@ type llmPromptAssembler struct {
 	registry *tools.Registry
 }
 
-func (a llmPromptAssembler) Assemble(event model.InternalEvent, now time.Time, history []store.HistoryMessage, allowedTools map[string]struct{}) llmPromptAssembly {
+func (a llmPromptAssembler) Assemble(event model.InternalEvent, now time.Time, history []runnermodel.HistoryMessage, allowedTools map[string]struct{}) llmPromptAssembly {
 	userText := strings.TrimSpace(event.Payload.Text)
 	systemPrompt := a.prompts.Build(prompt.BuildInput{Context: prompt.RunContext{
 		Now:          now,

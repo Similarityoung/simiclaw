@@ -51,35 +51,19 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 }
 
 func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {
-	root := repoRoot(t)
-	files := goFilesUnder(t, root, "internal/httpapi")
-	if len(files) == 0 {
-		t.Fatal("expected httpapi production files")
-	}
+	assertNoPackageImport(t, storeImportPath, "internal/httpapi")
+}
 
-	const storeImport = "github.com/similarityyoung/simiclaw/internal/store"
-	var violations []string
+func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/query")
+}
 
-	for _, rel := range files {
-		abs := filepath.Join(root, rel)
-		fset := token.NewFileSet()
-		parsed, err := parser.ParseFile(fset, abs, nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatalf("parse imports for %s: %v", rel, err)
-		}
+func TestRunnerProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/runner")
+}
 
-		for _, spec := range parsed.Imports {
-			if strings.Trim(spec.Path.Value, `"`) == storeImport {
-				violations = append(violations, rel)
-				break
-			}
-		}
-	}
-
-	if len(violations) > 0 {
-		slices.Sort(violations)
-		t.Fatalf("internal/httpapi production code must not import %s:\n%s", storeImport, strings.Join(violations, "\n"))
-	}
+func TestRuntimeProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/runtime")
 }
 
 func TestRunnerProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
@@ -93,6 +77,41 @@ func TestEventLoopProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 func TestRuntimeProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runtime")
 }
+
+func TestQueryExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/query")
+}
+
+func TestRunnerExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/runner")
+}
+
+func TestRuntimeExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/runtime")
+}
+
+func TestNonStoreProductionCodeDoesNotImportReadModel(t *testing.T) {
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, "cmd", "internal", "pkg")
+	var violations []string
+	for _, rel := range files {
+		if rel == "internal/readmodel/types.go" || strings.HasPrefix(rel, "internal/store/") {
+			continue
+		}
+		if fileImportsPath(t, filepath.Join(root, rel), readmodelImportPath) {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("production code outside internal/store must not import %s:\n%s", readmodelImportPath, strings.Join(violations, "\n"))
+	}
+}
+
+const (
+	storeImportPath     = "github.com/similarityyoung/simiclaw/internal/store"
+	readmodelImportPath = "github.com/similarityyoung/simiclaw/internal/readmodel"
+)
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -131,6 +150,21 @@ func goFilesUnder(t *testing.T, root string, dirs ...string) []string {
 	}
 	slices.Sort(files)
 	return files
+}
+
+func fileImportsPath(t *testing.T, absPath string, importPath string) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, absPath, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse imports for %s: %v", absPath, err)
+	}
+	for _, spec := range parsed.Imports {
+		if strings.Trim(spec.Path.Value, `"`) == importPath {
+			return true
+		}
+	}
+	return false
 }
 
 func itoa(v int) string {
@@ -189,4 +223,123 @@ func assertNoStoreDBReferenceInFiles(t *testing.T, relPaths ...string) {
 		slices.Sort(violations)
 		t.Fatalf("production code must not reference *store.DB:\n%s", strings.Join(violations, "\n"))
 	}
+}
+
+func assertNoPackageImport(t *testing.T, importPath string, dir string) {
+	t.Helper()
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, dir)
+	if len(files) == 0 {
+		t.Fatalf("expected production files under %s", dir)
+	}
+
+	var violations []string
+	for _, rel := range files {
+		if fileImportsPath(t, filepath.Join(root, rel), importPath) {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("%s production code must not import %s:\n%s", dir, importPath, strings.Join(violations, "\n"))
+	}
+}
+
+func assertNoExportedImportSelectors(t *testing.T, importPath string, dir string) {
+	t.Helper()
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, dir)
+	if len(files) == 0 {
+		t.Fatalf("expected production files under %s", dir)
+	}
+
+	var violations []string
+	for _, rel := range files {
+		abs := filepath.Join(root, rel)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, abs, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", rel, err)
+		}
+
+		aliases := importAliasesForPath(parsed, importPath)
+		if len(aliases) == 0 {
+			continue
+		}
+
+		for _, decl := range parsed.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if !d.Name.IsExported() {
+					continue
+				}
+				if hits := selectorHitsForFuncDecl(fset, d, aliases); len(hits) > 0 {
+					for _, hit := range hits {
+						violations = append(violations, rel+":"+itoa(hit)+" "+d.Name.Name)
+					}
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if !ok || !typeSpec.Name.IsExported() {
+						continue
+					}
+					if hits := selectorHitsForNode(fset, typeSpec.Type, aliases); len(hits) > 0 {
+						for _, hit := range hits {
+							violations = append(violations, rel+":"+itoa(hit)+" "+typeSpec.Name.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("%s exported API must not expose selectors from %s:\n%s", dir, importPath, strings.Join(violations, "\n"))
+	}
+}
+
+func importAliasesForPath(file *ast.File, importPath string) []string {
+	aliases := make([]string, 0, 1)
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, `"`) != importPath {
+			continue
+		}
+		if spec.Name != nil && spec.Name.Name != "" && spec.Name.Name != "." {
+			aliases = append(aliases, spec.Name.Name)
+			continue
+		}
+		parts := strings.Split(importPath, "/")
+		aliases = append(aliases, parts[len(parts)-1])
+	}
+	return aliases
+}
+
+func selectorHitsForFuncDecl(fset *token.FileSet, decl *ast.FuncDecl, aliases []string) []int {
+	var hits []int
+	if decl.Recv != nil {
+		hits = append(hits, selectorHitsForNode(fset, decl.Recv, aliases)...)
+	}
+	hits = append(hits, selectorHitsForNode(fset, decl.Type, aliases)...)
+	return hits
+}
+
+func selectorHitsForNode(fset *token.FileSet, node ast.Node, aliases []string) []int {
+	if node == nil {
+		return nil
+	}
+	var hits []int
+	ast.Inspect(node, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || !slices.Contains(aliases, ident.Name) {
+			return true
+		}
+		hits = append(hits, fset.Position(sel.Pos()).Line)
+		return true
+	})
+	return hits
 }

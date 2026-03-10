@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	querysvc "github.com/similarityyoung/simiclaw/internal/query"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -42,15 +42,15 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	page, err := s.query.ListSessions(r.Context(), querysvc.SessionListQuery{
+	page, err := s.query.ListSessions(r.Context(), querymodel.SessionFilter{
 		SessionKey:     r.URL.Query().Get("session_key"),
 		ConversationID: r.URL.Query().Get("conversation_id"),
 		Limit:          limit,
-		Cursor: func() *querysvc.SessionCursorAnchor {
+		Cursor: func() *querymodel.SessionCursorAnchor {
 			if !hasCursor {
 				return nil
 			}
-			return &querysvc.SessionCursorAnchor{LastActivityAt: curTime, SessionKey: cur.LastSessionKey}
+			return &querymodel.SessionCursorAnchor{LastActivityAt: curTime, SessionKey: cur.LastSessionKey}
 		}(),
 	})
 	if err != nil {

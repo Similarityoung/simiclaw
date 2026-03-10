@@ -8,7 +8,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -47,8 +47,8 @@ type RunOutput struct {
 }
 
 type HistoryReader interface {
-	RecentMessagesForPrompt(ctx context.Context, sessionID string, limit int) ([]store.HistoryMessage, error)
-	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]api.RAGHit, error)
+	LoadPromptHistory(ctx context.Context, sessionID string, limit int) ([]runnermodel.HistoryMessage, error)
+	SearchRAGHits(ctx context.Context, sessionID, query string, limit int) ([]runnermodel.RAGHit, error)
 }
 
 type ProviderRunner struct {

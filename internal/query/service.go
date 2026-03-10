@@ -2,91 +2,19 @@ package query
 
 import (
 	"context"
-	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/api"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 )
 
-type EventCursorAnchor struct {
-	CreatedAt time.Time
-	EventID   string
-}
-
-type RunCursorAnchor struct {
-	StartedAt time.Time
-	RunID     string
-}
-
-type SessionCursorAnchor struct {
-	LastActivityAt time.Time
-	SessionKey     string
-}
-
-type MessageCursorAnchor struct {
-	CreatedAt time.Time
-	MessageID string
-}
-
-type EventListQuery struct {
-	SessionKey string
-	Status     model.EventStatus
-	Limit      int
-	Cursor     *EventCursorAnchor
-}
-
-type RunListQuery struct {
-	SessionKey string
-	SessionID  string
-	Limit      int
-	Cursor     *RunCursorAnchor
-}
-
-type SessionListQuery struct {
-	SessionKey     string
-	ConversationID string
-	Limit          int
-	Cursor         *SessionCursorAnchor
-}
-
-type SessionHistoryQuery struct {
-	SessionID   string
-	VisibleOnly bool
-	Limit       int
-	Cursor      *MessageCursorAnchor
-}
-
-type EventPage struct {
-	Items []readmodel.EventRecord
-	Next  *EventCursorAnchor
-}
-
-type RunPage struct {
-	Items []api.RunTrace
-	Next  *RunCursorAnchor
-}
-
-type SessionPage struct {
-	Items []readmodel.SessionRecord
-	Next  *SessionCursorAnchor
-}
-
-type MessagePage struct {
-	Items []readmodel.MessageRecord
-	Next  *MessageCursorAnchor
-}
-
 type Repository interface {
-	GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error)
-	LookupInbound(ctx context.Context, key string) (readmodel.LookupEvent, bool, error)
-	GetRun(ctx context.Context, runID string) (api.RunTrace, bool, error)
-	GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error)
-	ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]readmodel.MessageRecord, error)
-	ListEventsPage(ctx context.Context, filter store.EventListFilter) ([]readmodel.EventRecord, error)
-	ListRunsPage(ctx context.Context, filter store.RunListFilter) ([]api.RunTrace, error)
-	ListSessionsPage(ctx context.Context, filter store.SessionListFilter) ([]readmodel.SessionRecord, error)
+	GetEventRecord(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error)
+	LookupEvent(ctx context.Context, key string) (querymodel.LookupEvent, bool, error)
+	GetRunTrace(ctx context.Context, runID string) (querymodel.RunTrace, bool, error)
+	GetSessionRecord(ctx context.Context, sessionKey string) (querymodel.SessionRecord, bool, error)
+	ListMessageRecords(ctx context.Context, filter querymodel.SessionHistoryFilter) ([]querymodel.MessageRecord, error)
+	ListEventRecords(ctx context.Context, filter querymodel.EventFilter) ([]querymodel.EventRecord, error)
+	ListRunTraces(ctx context.Context, filter querymodel.RunFilter) ([]querymodel.RunTrace, error)
+	ListSessionRecords(ctx context.Context, filter querymodel.SessionFilter) ([]querymodel.SessionRecord, error)
 }
 
 type Service struct {

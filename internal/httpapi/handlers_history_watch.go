@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	querysvc "github.com/similarityyoung/simiclaw/internal/query"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -62,15 +62,15 @@ func (s *Server) handleGetSessionHistory(w http.ResponseWriter, r *http.Request)
 		visibleOnly = parsed
 	}
 
-	page, err := s.query.ListSessionHistory(r.Context(), querysvc.SessionHistoryQuery{
+	page, err := s.query.ListSessionHistory(r.Context(), querymodel.SessionHistoryFilter{
 		SessionID:   sessionRec.ActiveSessionID,
 		VisibleOnly: visibleOnly,
 		Limit:       limit,
-		Cursor: func() *querysvc.MessageCursorAnchor {
+		Cursor: func() *querymodel.MessageCursorAnchor {
 			if before.IsZero() && cur.LastMessageID == "" {
 				return nil
 			}
-			return &querysvc.MessageCursorAnchor{
+			return &querymodel.MessageCursorAnchor{
 				CreatedAt: before,
 				MessageID: cur.LastMessageID,
 			}
