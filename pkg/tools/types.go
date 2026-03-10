@@ -28,6 +28,8 @@ type ParameterSchema struct {
 	Type        string                     `json:"type"`
 	Description string                     `json:"description,omitempty"`
 	Enum        []string                   `json:"enum,omitempty"`
+	Minimum     *float64                   `json:"minimum,omitempty"`
+	Maximum     *float64                   `json:"maximum,omitempty"`
 	Properties  map[string]ParameterSchema `json:"properties,omitempty"`
 	Required    []string                   `json:"required,omitempty"`
 	Items       *ParameterSchema           `json:"items,omitempty"`

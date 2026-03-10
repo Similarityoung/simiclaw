@@ -24,6 +24,16 @@ func TestDefaultTelegramConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultWebSearchConfig(t *testing.T) {
+	cfg := Default()
+	if cfg.WebSearch.Timeout.Duration != 10*time.Second {
+		t.Fatalf("unexpected web search timeout: %v", cfg.WebSearch.Timeout.Duration)
+	}
+	if cfg.WebSearch.MaxResults != 5 {
+		t.Fatalf("unexpected web search max results: %d", cfg.WebSearch.MaxResults)
+	}
+}
+
 func TestLoadLogLevel(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "cfg.json")
@@ -182,6 +192,69 @@ func TestLoadInvalidTelegramLongPollTimeoutEnv(t *testing.T) {
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected invalid TELEGRAM_LONG_POLL_TIMEOUT error")
+	}
+}
+
+func TestLoadWebSearchFieldsFromEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "", "", "", "")
+	t.Setenv("WEB_SEARCH_TIMEOUT", "12s")
+	t.Setenv("WEB_SEARCH_MAX_RESULTS", "7")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load config from env: %v", err)
+	}
+	if cfg.WebSearch.Timeout.Duration != 12*time.Second {
+		t.Fatalf("unexpected web search timeout: %v", cfg.WebSearch.Timeout.Duration)
+	}
+	if cfg.WebSearch.MaxResults != 7 {
+		t.Fatalf("unexpected web search max results: %d", cfg.WebSearch.MaxResults)
+	}
+}
+
+func TestLoadWebSearchMaxResultsClamp(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "", "", "", "")
+	t.Setenv("WEB_SEARCH_TIMEOUT", "")
+	t.Setenv("WEB_SEARCH_MAX_RESULTS", "99")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load config from env: %v", err)
+	}
+	if cfg.WebSearch.MaxResults != 8 {
+		t.Fatalf("unexpected clamped web search max results: %d", cfg.WebSearch.MaxResults)
+	}
+}
+
+func TestLoadWebSearchMaxResultsClampFromJSON(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "", "", "", "")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "cfg.json")
+	data := []byte(`{"workspace":".","web_search":{"max_results":-1}}`)
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.WebSearch.MaxResults != 5 {
+		t.Fatalf("unexpected defaulted web search max results: %d", cfg.WebSearch.MaxResults)
+	}
+}
+
+func TestLoadInvalidWebSearchTimeoutEnv(t *testing.T) {
+	setLLMEnv(t)
+	setTelegramEnv(t, "", "", "", "")
+	t.Setenv("WEB_SEARCH_TIMEOUT", "later")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid WEB_SEARCH_TIMEOUT error")
 	}
 }
 

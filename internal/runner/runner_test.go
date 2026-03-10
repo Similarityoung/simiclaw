@@ -180,8 +180,55 @@ func TestProviderRunnerBuiltinsIncludeWorkspaceWriteTools(t *testing.T) {
 	for _, def := range defs {
 		names[def.Schema.Name] = true
 	}
-	if !names["workspace_patch"] || !names["workspace_delete"] {
+	if !names["workspace_patch"] || !names["workspace_delete"] || !names["web_search"] {
 		t.Fatalf("expected workspace write tools in builtins, got %+v", names)
+	}
+}
+
+func TestProviderRunnerExecutesWebSearchInNormalRun(t *testing.T) {
+	registry := tools.NewRegistry()
+	tools.RegisterBuiltins(registry)
+	registry.Register("web_search", tools.Schema{Name: "web_search"}, func(_ context.Context, _ tools.Context, args map[string]any) tools.Result {
+		return tools.Result{Output: map[string]any{
+			"provider": "duckduckgo",
+			"query":    args["query"],
+			"summary":  "fresh facts",
+			"results": []any{
+				map[string]any{"title": "T1", "url": "https://example.com/1", "snippet": "S1"},
+			},
+		}}
+	})
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "done: {{last_user_message}}",
+		FakeToolName:         "web_search",
+		FakeToolArgsJSON:     `{"query":"latest go release","top_k":2}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r := newTestRunner(t, cfg, registry)
+
+	output, err := r.Run(context.Background(), testEvent("what is new"), 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(output.Trace.ToolExecutions) != 1 || output.Trace.ToolExecutions[0].Name != "web_search" || output.Trace.ToolExecutions[0].Error != nil {
+		t.Fatalf("expected successful web_search execution, got %+v", output.Trace.ToolExecutions)
+	}
+	var toolMessage *OutputMessage
+	for i := range output.Messages {
+		if output.Messages[i].Role == "tool" {
+			toolMessage = &output.Messages[i]
+			break
+		}
+	}
+	if toolMessage == nil || toolMessage.ToolName != "web_search" {
+		t.Fatalf("expected persisted web_search tool message, got %+v", output.Messages)
 	}
 }
 
@@ -454,6 +501,51 @@ func TestProviderRunnerCronFireRejectsNonAllowlistedTool(t *testing.T) {
 	}
 	if toolMessage.Visible {
 		t.Fatalf("expected forbidden cron tool result to stay hidden, got %+v", toolMessage)
+	}
+}
+
+func TestProviderRunnerCronFireRejectsWebSearch(t *testing.T) {
+	registry := tools.NewRegistry()
+	tools.RegisterBuiltins(registry)
+	registry.Register("web_search", tools.Schema{Name: "web_search"}, func(_ context.Context, _ tools.Context, args map[string]any) tools.Result {
+		return tools.Result{Output: map[string]any{
+			"provider": "duckduckgo",
+			"query":    args["query"],
+			"summary":  "fresh facts",
+			"results":  []any{},
+		}}
+	})
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                 "fake",
+		FakeResponseText:     "after {{last_user_message}}",
+		FakeToolName:         "web_search",
+		FakeToolArgsJSON:     `{"query":"latest release","top_k":1}`,
+		FakeFinishReason:     "stop",
+		FakeRawFinishReason:  "stop",
+		FakePromptTokens:     8,
+		FakeCompletionTokens: 8,
+		FakeRequestID:        "fake-request-1",
+	}
+	r := newTestRunner(t, cfg, registry)
+
+	output, err := r.Run(context.Background(), model.InternalEvent{
+		EventID:         "evt_cron_web_search",
+		Conversation:    model.Conversation{ConversationID: "conv-cron", ChannelType: "dm", ParticipantID: "u1"},
+		SessionKey:      "local:dm:u1",
+		ActiveSessionID: "sess_cron_web_search",
+		Payload:         model.EventPayload{Type: "cron_fire", Text: "nightly heartbeat"},
+	}, 2, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(output.Trace.ToolExecutions) != 1 {
+		t.Fatalf("expected one tool execution, got %+v", output.Trace.ToolExecutions)
+	}
+	toolExec := output.Trace.ToolExecutions[0]
+	if toolExec.Name != "web_search" || toolExec.Error == nil || toolExec.Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden web_search execution, got %+v", output.Trace.ToolExecutions)
 	}
 }
 

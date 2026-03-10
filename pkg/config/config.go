@@ -81,6 +81,11 @@ type TelegramChannelConfig struct {
 	LongPollTimeout Duration `json:"long_poll_timeout,omitempty"`
 }
 
+type WebSearchConfig struct {
+	Timeout    Duration `json:"timeout,omitempty"`
+	MaxResults int      `json:"max_results,omitempty"`
+}
+
 type Config struct {
 	Workspace             string          `json:"workspace"`
 	ListenAddr            string          `json:"listen_addr"`
@@ -96,6 +101,7 @@ type Config struct {
 	MaxToolRounds         int             `json:"max_tool_rounds"`
 	DBBusyTimeout         Duration        `json:"db_busy_timeout"`
 	LLM                   LLMConfig       `json:"llm"`
+	WebSearch             WebSearchConfig `json:"web_search,omitempty"`
 	Channels              ChannelsConfig  `json:"channels,omitempty"`
 	CronJobs              []CronJobConfig `json:"cron_jobs,omitempty"`
 }
@@ -115,6 +121,10 @@ const (
 	defaultDBBusyTimeout           = 5 * time.Second
 	defaultProviderTimeout         = 60 * time.Second
 	defaultTelegramLongPollTimeout = 30 * time.Second
+	defaultWebSearchTimeout        = 10 * time.Second
+	defaultWebSearchMaxResults     = 5
+	minWebSearchMaxResults         = 1
+	maxWebSearchMaxResults         = 8
 	defaultFakeModel               = "fake/default"
 )
 
@@ -146,6 +156,10 @@ func Default() Config {
 					FakeRequestID:        "fake-request-1",
 				},
 			},
+		},
+		WebSearch: WebSearchConfig{
+			Timeout:    Duration{defaultWebSearchTimeout},
+			MaxResults: defaultWebSearchMaxResults,
 		},
 		Channels: ChannelsConfig{
 			Telegram: TelegramChannelConfig{
@@ -215,6 +229,10 @@ func applyDefaults(cfg *Config) {
 	if cfg.DBBusyTimeout.Duration <= 0 {
 		cfg.DBBusyTimeout = Duration{defaultDBBusyTimeout}
 	}
+	if cfg.WebSearch.Timeout.Duration <= 0 {
+		cfg.WebSearch.Timeout = Duration{defaultWebSearchTimeout}
+	}
+	cfg.WebSearch.MaxResults = clampWebSearchMaxResults(cfg.WebSearch.MaxResults)
 	if cfg.Channels.Telegram.LongPollTimeout.Duration <= 0 {
 		cfg.Channels.Telegram.LongPollTimeout = Duration{defaultTelegramLongPollTimeout}
 	}
@@ -387,6 +405,20 @@ func applyEnvOverrides(cfg *Config) error {
 		}
 		cfg.Channels.Telegram.LongPollTimeout = Duration{parsed}
 	}
+	if rawTimeout := strings.TrimSpace(os.Getenv("WEB_SEARCH_TIMEOUT")); rawTimeout != "" {
+		parsed, err := time.ParseDuration(rawTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid WEB_SEARCH_TIMEOUT %q: %w", rawTimeout, err)
+		}
+		cfg.WebSearch.Timeout = Duration{parsed}
+	}
+	if rawMaxResults := strings.TrimSpace(os.Getenv("WEB_SEARCH_MAX_RESULTS")); rawMaxResults != "" {
+		parsed, err := strconv.Atoi(rawMaxResults)
+		if err != nil {
+			return fmt.Errorf("invalid WEB_SEARCH_MAX_RESULTS %q: %w", rawMaxResults, err)
+		}
+		cfg.WebSearch.MaxResults = parsed
+	}
 	return nil
 }
 
@@ -414,4 +446,17 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func clampWebSearchMaxResults(v int) int {
+	switch {
+	case v <= 0:
+		return defaultWebSearchMaxResults
+	case v < minWebSearchMaxResults:
+		return minWebSearchMaxResults
+	case v > maxWebSearchMaxResults:
+		return maxWebSearchMaxResults
+	default:
+		return v
+	}
 }

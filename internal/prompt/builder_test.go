@@ -19,7 +19,7 @@ func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
 	if !strings.Contains(promptpkg.SystemText.IdentityRuntime, "{{workspace_path}}") {
 		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", promptpkg.SystemText.IdentityRuntime)
 	}
-	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") {
+	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_search") {
 		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", promptpkg.SystemText.ToolContract)
 	}
 }
@@ -180,7 +180,7 @@ func TestBuilderHeartbeatPolicyIncludesCronToolBudgetGuidance(t *testing.T) {
 	if !strings.Contains(got, "Do not reread it with `context_get`") {
 		t.Fatalf("expected heartbeat policy to forbid rereading HEARTBEAT.md, got: %s", got)
 	}
-	if !strings.Contains(got, "Default rhythm: do one `memory_search` first") || !strings.Contains(got, "then summarize") {
+	if !strings.Contains(got, "Default rhythm: do one `memory_search` first") || !strings.Contains(got, "memory_get` or `context_get`") || !strings.Contains(got, "then summarize") {
 		t.Fatalf("expected heartbeat policy to include small cron tool budget guidance, got: %s", got)
 	}
 }
