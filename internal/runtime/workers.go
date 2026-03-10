@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,31 +26,52 @@ const (
 )
 
 type Supervisor struct {
-	cfg     config.Config
-	db      *store.DB
-	ingest  EventIngestor
-	loop    *EventLoop
-	sender  outbound.Sender
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	healthy atomic.Bool
+	cfg       config.Config
+	workers   WorkerRepository
+	readiness ReadinessRepository
+	ingest    EventIngestor
+	loop      *EventLoop
+	sender    outbound.Sender
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	healthy   atomic.Bool
 }
 
 type EventIngestor interface {
 	Ingest(ctx context.Context, cmd ingest.Command) (ingest.Result, *ingest.Error)
 }
 
-func NewSupervisor(cfg config.Config, db *store.DB, ingestor EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
+type WorkerRepository interface {
+	UpsertCronJobs(ctx context.Context, tenantID string, jobs []config.CronJobConfig, now time.Time) error
+	BeatHeartbeat(ctx context.Context, workerName string, now time.Time) error
+	RecoverExpiredProcessing(ctx context.Context, cutoff, now time.Time) ([]string, error)
+	RecoverExpiredSending(ctx context.Context, cutoff, now time.Time) error
+	ClaimOutbox(ctx context.Context, owner string, now time.Time) (store.ClaimedOutbox, bool, error)
+	FailOutboxSend(ctx context.Context, outboxID, eventID, message string, dead bool, nextAttemptAt, now time.Time) error
+	CompleteOutboxSend(ctx context.Context, outboxID, eventID string, now time.Time) error
+	ClaimScheduledJob(ctx context.Context, kind model.ScheduledJobKind, owner string, now time.Time) (store.ClaimedJob, bool, error)
+	FailScheduledJob(ctx context.Context, jobID, message string, nextRunAt, now time.Time) error
+	CompleteScheduledJob(ctx context.Context, job store.ClaimedJob, now time.Time) error
+	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
+}
+
+type ReadinessRepository interface {
+	CheckReadWrite(ctx context.Context) error
+	HeartbeatAt(ctx context.Context, workerName string) (time.Time, bool, error)
+}
+
+func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Supervisor{
-		cfg:    cfg,
-		db:     db,
-		ingest: ingestor,
-		loop:   loop,
-		sender: sender,
-		ctx:    ctx,
-		cancel: cancel,
+		cfg:       cfg,
+		workers:   workers,
+		readiness: readiness,
+		ingest:    ingestor,
+		loop:      loop,
+		sender:    sender,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -62,7 +84,7 @@ func (s *Supervisor) Start() {
 	go s.outboxWorker()
 	go s.delayedJobWorker()
 	go s.cronWorker()
-	_ = s.db.UpsertCronJobs(context.Background(), s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC())
+	_ = s.workers.UpsertCronJobs(context.Background(), s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC())
 }
 
 func (s *Supervisor) Stop() {
@@ -82,7 +104,7 @@ func (s *Supervisor) ReadyState(ctx context.Context) (map[string]any, error) {
 		"queue_depth": s.loop.InboundDepth(),
 		"time":        time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	if err := s.db.CheckReadWrite(ctx); err != nil {
+	if err := s.readiness.CheckReadWrite(ctx); err != nil {
 		state["status"] = "not_ready"
 		state["db_error"] = err.Error()
 		return state, err
@@ -97,7 +119,7 @@ func (s *Supervisor) ReadyState(ctx context.Context) (map[string]any, error) {
 		workers = append(workers, "telegram_polling")
 	}
 	for _, worker := range workers {
-		beatAt, ok, err := s.db.HeartbeatAt(ctx, worker)
+		beatAt, ok, err := s.readiness.HeartbeatAt(ctx, worker)
 		if err != nil {
 			state[worker] = "error"
 			continue
@@ -124,7 +146,7 @@ func (s *Supervisor) heartbeatWorker() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			_ = s.db.BeatHeartbeat(s.ctx, "heartbeat", time.Now().UTC())
+			_ = s.workers.BeatHeartbeat(s.ctx, "heartbeat", time.Now().UTC())
 		}
 	}
 }
@@ -139,8 +161,8 @@ func (s *Supervisor) processingSweeper() {
 			return
 		case <-ticker.C:
 			now := time.Now().UTC()
-			_ = s.db.BeatHeartbeat(s.ctx, "processing_sweeper", now)
-			ids, err := s.db.RecoverExpiredProcessing(s.ctx, now.Add(-processingLease), now)
+			_ = s.workers.BeatHeartbeat(s.ctx, "processing_sweeper", now)
+			ids, err := s.workers.RecoverExpiredProcessing(s.ctx, now.Add(-processingLease), now)
 			if err != nil {
 				continue
 			}
@@ -161,9 +183,9 @@ func (s *Supervisor) outboxWorker() {
 			return
 		case <-ticker.C:
 			now := time.Now().UTC()
-			_ = s.db.BeatHeartbeat(s.ctx, "outbox_retry", now)
-			_ = s.db.RecoverExpiredSending(s.ctx, now.Add(-outboxSendingLease), now)
-			msg, ok, err := s.db.ClaimOutbox(s.ctx, "outbox-worker", now)
+			_ = s.workers.BeatHeartbeat(s.ctx, "outbox_retry", now)
+			_ = s.workers.RecoverExpiredSending(s.ctx, now.Add(-outboxSendingLease), now)
+			msg, ok, err := s.workers.ClaimOutbox(s.ctx, "outbox-worker", now)
 			if err != nil || !ok {
 				continue
 			}
@@ -182,10 +204,10 @@ func (s *Supervisor) outboxWorker() {
 					backoff = 5 * time.Minute
 				}
 				dead := msg.AttemptCount >= 5
-				_ = s.db.FailOutboxSend(s.ctx, msg.OutboxID, msg.EventID, err.Error(), dead, now.Add(backoff), now)
+				_ = s.workers.FailOutboxSend(s.ctx, msg.OutboxID, msg.EventID, err.Error(), dead, now.Add(backoff), now)
 				continue
 			}
-			_ = s.db.CompleteOutboxSend(s.ctx, msg.OutboxID, msg.EventID, now)
+			_ = s.workers.CompleteOutboxSend(s.ctx, msg.OutboxID, msg.EventID, now)
 		}
 	}
 }
@@ -200,7 +222,7 @@ func (s *Supervisor) delayedJobWorker() {
 			return
 		case <-ticker.C:
 			now := time.Now().UTC()
-			_ = s.db.BeatHeartbeat(s.ctx, "delayed_jobs", now)
+			_ = s.workers.BeatHeartbeat(s.ctx, "delayed_jobs", now)
 			s.runScheduledKind(now, model.ScheduledJobKindDelayed)
 			s.runScheduledKind(now, model.ScheduledJobKindRetry)
 		}
@@ -217,18 +239,18 @@ func (s *Supervisor) cronWorker() {
 			return
 		case <-ticker.C:
 			now := time.Now().UTC()
-			_ = s.db.BeatHeartbeat(s.ctx, "cron", now)
+			_ = s.workers.BeatHeartbeat(s.ctx, "cron", now)
 			s.runScheduledKind(now, model.ScheduledJobKindCron)
 		}
 	}
 }
 
 func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind) {
-	job, ok, err := s.db.ClaimScheduledJob(s.ctx, kind, string(kind)+"-worker", now)
+	job, ok, err := s.workers.ClaimScheduledJob(s.ctx, kind, string(kind)+"-worker", now)
 	if err != nil || !ok {
 		return
 	}
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         job.Payload.Source,
 		Conversation:   job.Payload.Conversation,
 		IdempotencyKey: fmt.Sprintf("%s:%d", job.JobID, now.Unix()),
@@ -236,19 +258,19 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 		Payload:        job.Payload.Payload,
 	}
 	if s.ingest == nil {
-		_ = s.db.FailScheduledJob(s.ctx, job.JobID, "ingest service unavailable", now.Add(30*time.Second), now)
+		_ = s.workers.FailScheduledJob(s.ctx, job.JobID, "ingest service unavailable", now.Add(30*time.Second), now)
 		return
 	}
 	result, ingestErr := s.ingest.Ingest(s.ctx, ingest.Command{Request: req, ReceivedAt: now})
 	if ingestErr != nil {
-		_ = s.db.FailScheduledJob(s.ctx, job.JobID, ingestErr.Error(), now.Add(30*time.Second), now)
+		_ = s.workers.FailScheduledJob(s.ctx, job.JobID, ingestErr.Error(), now.Add(30*time.Second), now)
 		return
 	}
-	_ = s.db.CompleteScheduledJob(s.ctx, job, now)
+	_ = s.workers.CompleteScheduledJob(s.ctx, job, now)
 	if !result.Duplicate && !result.Enqueued && s.loop != nil {
-		if err := s.db.MarkEventQueued(s.ctx, result.EventID, now); err == nil {
+		if err := s.workers.MarkEventQueued(s.ctx, result.EventID, now); err == nil {
 			s.loop.TryEnqueue(result.EventID)
 		}
 	}
-	_ = s.db.BeatHeartbeat(s.ctx, string(kind), now)
+	_ = s.workers.BeatHeartbeat(s.ctx, string(kind), now)
 }

@@ -73,8 +73,8 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, db, ingestService, eventLoop, sender)
-	server := httpapi.New(cfg, db, gatewayService, queryService, supervisor, streamHub)
+	supervisor := runtime.NewSupervisor(cfg, db, db, ingestService, eventLoop, sender)
+	server := httpapi.New(cfg, gatewayService, queryService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
 		DB:         db,

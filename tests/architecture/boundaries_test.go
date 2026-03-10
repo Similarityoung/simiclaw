@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -49,43 +50,48 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	t.Fatalf("found direct IngestEvent calls outside %s:\n%s", allowed, strings.Join(violations, "\n"))
 }
 
-func TestHTTPListHandlersImportQueryServiceInsteadOfStore(t *testing.T) {
+func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {
 	root := repoRoot(t)
-	matches, err := filepath.Glob(filepath.Join(root, "internal/httpapi/handlers_*_query.go"))
-	if err != nil {
-		t.Fatalf("glob query handlers: %v", err)
-	}
-	if len(matches) == 0 {
-		t.Fatal("expected query handlers")
+	files := goFilesUnder(t, root, "internal/httpapi")
+	if len(files) == 0 {
+		t.Fatal("expected httpapi production files")
 	}
 
-	const (
-		queryImport = "github.com/similarityyoung/simiclaw/internal/query"
-		storeImport = "github.com/similarityyoung/simiclaw/internal/store"
-	)
+	const storeImport = "github.com/similarityyoung/simiclaw/internal/store"
+	var violations []string
 
-	for _, abs := range matches {
-		rel, err := filepath.Rel(root, abs)
-		if err != nil {
-			t.Fatalf("relative path for %s: %v", abs, err)
-		}
+	for _, rel := range files {
+		abs := filepath.Join(root, rel)
 		fset := token.NewFileSet()
 		parsed, err := parser.ParseFile(fset, abs, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatalf("parse imports for %s: %v", rel, err)
 		}
 
-		var imports []string
 		for _, spec := range parsed.Imports {
-			imports = append(imports, strings.Trim(spec.Path.Value, `"`))
-		}
-		if !slices.Contains(imports, queryImport) {
-			t.Fatalf("%s must import %s", filepath.ToSlash(rel), queryImport)
-		}
-		if slices.Contains(imports, storeImport) {
-			t.Fatalf("%s must not import %s", filepath.ToSlash(rel), storeImport)
+			if strings.Trim(spec.Path.Value, `"`) == storeImport {
+				violations = append(violations, rel)
+				break
+			}
 		}
 	}
+
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("internal/httpapi production code must not import %s:\n%s", storeImport, strings.Join(violations, "\n"))
+	}
+}
+
+func TestRunnerProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/runner")
+}
+
+func TestEventLoopProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReferenceInFiles(t, "internal/runtime/eventloop.go")
+}
+
+func TestRuntimeProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/runtime")
 }
 
 func repoRoot(t *testing.T) string {
@@ -139,4 +145,48 @@ func itoa(v int) string {
 		v /= 10
 	}
 	return string(buf[i:])
+}
+
+func assertNoStoreDBReference(t *testing.T, dir string) {
+	t.Helper()
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, dir)
+	if len(files) == 0 {
+		t.Fatalf("expected production files under %s", dir)
+	}
+
+	var violations []string
+	for _, rel := range files {
+		abs := filepath.Join(root, rel)
+		src, err := os.ReadFile(abs)
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if strings.Contains(string(src), "*store.DB") {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("%s production code must not reference *store.DB:\n%s", dir, strings.Join(violations, "\n"))
+	}
+}
+
+func assertNoStoreDBReferenceInFiles(t *testing.T, relPaths ...string) {
+	t.Helper()
+	root := repoRoot(t)
+	var violations []string
+	for _, rel := range relPaths {
+		src, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if strings.Contains(string(src), "*store.DB") {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("production code must not reference *store.DB:\n%s", strings.Join(violations, "\n"))
+	}
 }

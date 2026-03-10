@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,7 +24,7 @@ import (
 func TestIngestToProcessedAndQuerySQLite(t *testing.T) {
 	app := newTestApp(t)
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration:1",
@@ -58,7 +59,7 @@ func TestIngestToProcessedAndQuerySQLite(t *testing.T) {
 
 func TestNoReplySuppressed(t *testing.T) {
 	app := newTestApp(t)
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-no-reply", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration-no-reply:1",
@@ -79,7 +80,7 @@ func TestNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	app := newTestApp(t)
 	day := time.Now().UTC().Format("2006-01-02")
 
-	flushReq := model.IngestRequest{
+	flushReq := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-canonical-dm", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration-canonical-dm:1",
@@ -100,7 +101,7 @@ func TestNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 		t.Fatalf("expected flush text in private daily file, got %q", string(privateData))
 	}
 
-	compactReq := model.IngestRequest{
+	compactReq := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-canonical-group", ChannelType: "group"},
 		IdempotencyKey: "cli:integration-canonical-group:1",
@@ -149,7 +150,7 @@ func TestCronFireSuppressedLLMHiddenAndNoLeakToVisibleHistory(t *testing.T) {
 	}
 
 	conversation := model.Conversation{ConversationID: "integration-cron", ChannelType: "dm", ParticipantID: "u1"}
-	cronReq := model.IngestRequest{
+	cronReq := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-cron:1",
@@ -195,7 +196,7 @@ func TestCronFireSuppressedLLMHiddenAndNoLeakToVisibleHistory(t *testing.T) {
 		t.Fatalf("expected hidden cron tool result in history, got %+v", allHistory.Items)
 	}
 
-	normalReq := model.IngestRequest{
+	normalReq := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-cron:2",
@@ -247,7 +248,7 @@ func TestWorkspacePatchToolUpdatesIdentityFile(t *testing.T) {
 		t.Fatalf("write IDENTITY.md: %v", err)
 	}
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-workspace-patch", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration-workspace-patch:1",
@@ -298,7 +299,7 @@ func TestWorkspaceDeleteToolRemovesBootstrapFile(t *testing.T) {
 		t.Fatalf("write BOOTSTRAP.md: %v", err)
 	}
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-workspace-delete", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration-workspace-delete:1",
@@ -341,7 +342,7 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 	})
 	conversation := model.Conversation{ConversationID: "integration-new-session", ChannelType: "dm", ParticipantID: "u1"}
 
-	first := ingest(t, app, model.IngestRequest{
+	first := ingest(t, app, api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-new-session:1",
@@ -353,7 +354,7 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 		t.Fatalf("unexpected first assistant reply: %+v", firstEvent)
 	}
 
-	reset := ingest(t, app, model.IngestRequest{
+	reset := ingest(t, app, api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-new-session:2",
@@ -368,7 +369,7 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 		t.Fatalf("expected /new to create a fresh session key, got %+v and %+v", firstEvent, resetEvent)
 	}
 
-	after := ingest(t, app, model.IngestRequest{
+	after := ingest(t, app, api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-new-session:3",
@@ -383,7 +384,7 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 		t.Fatalf("expected follow-up reply without leaked history, got %+v", afterEvent)
 	}
 
-	newer := ingest(t, app, model.IngestRequest{
+	newer := ingest(t, app, api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:integration-new-session:4",
@@ -398,7 +399,7 @@ func TestNewSessionCommandStartsFreshSession(t *testing.T) {
 		t.Fatalf("expected second follow-up to see reset-session history, got %+v", newerEvent)
 	}
 
-	backToFirst := ingest(t, app, model.IngestRequest{
+	backToFirst := ingest(t, app, api.IngestRequest{
 		Source:         "web",
 		Conversation:   conversation,
 		SessionKeyHint: first.SessionKey,
@@ -428,7 +429,7 @@ func TestChatStreamAcceptedToDone(t *testing.T) {
 	server := httptest.NewServer(app.Handler)
 	defer server.Close()
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "integration-stream", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:integration-stream:1",
@@ -447,20 +448,20 @@ func TestChatStreamAcceptedToDone(t *testing.T) {
 
 	reader := bufio.NewReader(resp.Body)
 	accepted := readStreamEvent(t, reader)
-	if accepted.Type != model.ChatStreamEventAccepted {
+	if accepted.Type != api.ChatStreamEventAccepted {
 		t.Fatalf("expected accepted event, got %+v", accepted)
 	}
 	var (
 		sawText bool
-		done    model.ChatStreamEvent
+		done    api.ChatStreamEvent
 	)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		event := readStreamEvent(t, reader)
 		switch event.Type {
-		case model.ChatStreamEventTextDelta:
+		case api.ChatStreamEventTextDelta:
 			sawText = true
-		case model.ChatStreamEventDone:
+		case api.ChatStreamEventDone:
 			done = event
 			goto complete
 		}
@@ -508,21 +509,21 @@ func newTestAppWithConfig(t *testing.T, mutate func(*config.Config)) *bootstrap.
 	return app
 }
 
-func ingest(t *testing.T, app *bootstrap.App, req model.IngestRequest, want int) model.IngestResponse {
+func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest, want int) api.IngestResponse {
 	t.Helper()
 	body, _ := json.Marshal(req)
 	respBody, code := doRequest(t, app, http.MethodPost, "/v1/events:ingest", body)
 	if code != want {
 		t.Fatalf("expected %d got %d body=%s", want, code, string(respBody))
 	}
-	var resp model.IngestResponse
+	var resp api.IngestResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}
 	return resp
 }
 
-func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventRecord {
+func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -530,7 +531,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		if code != http.StatusOK {
 			t.Fatalf("event query expected 200, got %d body=%s", code, string(body))
 		}
-		var event model.EventRecord
+		var event api.EventRecord
 		if err := json.Unmarshal(body, &event); err != nil {
 			t.Fatalf("decode event: %v", err)
 		}
@@ -543,7 +544,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timeout polling event %s", eventID)
-	return model.EventRecord{}
+	return api.EventRecord{}
 }
 
 func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace {
@@ -560,7 +561,7 @@ func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace 
 }
 
 func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, visibleOnly bool) struct {
-	Items []model.MessageRecord `json:"items"`
+	Items []api.MessageRecord `json:"items"`
 } {
 	t.Helper()
 	path := "/v1/sessions/" + sessionKey + "/history"
@@ -572,7 +573,7 @@ func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, vi
 		t.Fatalf("history query expected 200, got %d body=%s", code, string(body))
 	}
 	var out struct {
-		Items []model.MessageRecord `json:"items"`
+		Items []api.MessageRecord `json:"items"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("decode history: %v", err)
@@ -580,13 +581,13 @@ func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, vi
 	return out
 }
 
-func getSession(t *testing.T, app *bootstrap.App, sessionKey string) model.SessionRecord {
+func getSession(t *testing.T, app *bootstrap.App, sessionKey string) api.SessionRecord {
 	t.Helper()
 	body, code := doRequest(t, app, http.MethodGet, "/v1/sessions/"+sessionKey, nil)
 	if code != http.StatusOK {
 		t.Fatalf("session query expected 200, got %d body=%s", code, string(body))
 	}
-	var session model.SessionRecord
+	var session api.SessionRecord
 	if err := json.Unmarshal(body, &session); err != nil {
 		t.Fatalf("decode session: %v", err)
 	}
@@ -604,7 +605,7 @@ func doRequest(t *testing.T, app *bootstrap.App, method, path string, body []byt
 	return rr.Body.Bytes(), rr.Code
 }
 
-func readStreamEvent(t *testing.T, reader *bufio.Reader) model.ChatStreamEvent {
+func readStreamEvent(t *testing.T, reader *bufio.Reader) api.ChatStreamEvent {
 	t.Helper()
 	var (
 		eventType string
@@ -619,7 +620,7 @@ func readStreamEvent(t *testing.T, reader *bufio.Reader) model.ChatStreamEvent {
 			if eventType == "" && len(data) == 0 {
 				continue
 			}
-			var event model.ChatStreamEvent
+			var event api.ChatStreamEvent
 			if err := json.Unmarshal(data, &event); err != nil {
 				t.Fatalf("decode SSE payload: %v", err)
 			}

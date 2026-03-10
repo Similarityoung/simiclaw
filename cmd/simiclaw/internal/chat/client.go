@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"net/http"
 	"net/url"
@@ -43,7 +44,7 @@ type HTTPClient struct {
 }
 
 type StreamEventHandler interface {
-	HandleStreamEvent(event model.ChatStreamEvent) error
+	HandleStreamEvent(event api.ChatStreamEvent) error
 }
 
 type StreamRecoverableError struct {
@@ -83,22 +84,22 @@ func NewHTTPClient(baseURL, apiKey string, requestTimeout, pollInterval, pollTim
 	}
 }
 
-func (c *HTTPClient) SendAndWait(ctx context.Context, req model.IngestRequest) (model.EventRecord, error) {
+func (c *HTTPClient) SendAndWait(ctx context.Context, req api.IngestRequest) (api.EventRecord, error) {
 	ingestResp, err := c.ingest(ctx, req)
 	if err != nil {
-		return model.EventRecord{}, err
+		return api.EventRecord{}, err
 	}
 	return c.pollEvent(ctx, ingestResp.EventID)
 }
 
-func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+func (c *HTTPClient) SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return model.EventRecord{}, err
+		return api.EventRecord{}, err
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat:stream", bytes.NewReader(body))
 	if err != nil {
-		return model.EventRecord{}, err
+		return api.EventRecord{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -106,18 +107,18 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 	}
 	resp, err := c.streamHTTPClient.Do(httpReq)
 	if err != nil {
-		return model.EventRecord{}, err
+		return api.EventRecord{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		if isStreamFallbackStatus(resp.StatusCode) {
-			return model.EventRecord{}, ErrStreamUnsupported
+			return api.EventRecord{}, ErrStreamUnsupported
 		}
-		return model.EventRecord{}, decodeAPIError(resp)
+		return api.EventRecord{}, decodeAPIError(resp)
 	}
 	if !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
-		return model.EventRecord{}, ErrStreamUnsupported
+		return api.EventRecord{}, ErrStreamUnsupported
 	}
 
 	reader := bufio.NewReader(resp.Body)
@@ -134,33 +135,33 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 		}
 		if err != nil {
 			if acceptedEventID != "" {
-				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+				return api.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
 			}
-			return model.EventRecord{}, err
+			return api.EventRecord{}, err
 		}
-		var event model.ChatStreamEvent
+		var event api.ChatStreamEvent
 		if err := json.Unmarshal(data, &event); err != nil {
 			if acceptedEventID != "" {
-				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+				return api.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
 			}
-			return model.EventRecord{}, err
+			return api.EventRecord{}, err
 		}
 		if eventType != string(event.Type) {
 			err = fmt.Errorf("stream event type mismatch: header=%s payload=%s", eventType, event.Type)
 			if acceptedEventID != "" {
-				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
+				return api.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
 			}
-			return model.EventRecord{}, err
+			return api.EventRecord{}, err
 		}
-		if event.Type == model.ChatStreamEventAccepted {
+		if event.Type == api.ChatStreamEventAccepted {
 			acceptedEventID = event.EventID
 			if handler != nil {
 				if err := handler.HandleStreamEvent(event); err != nil {
-					return model.EventRecord{}, err
+					return api.EventRecord{}, err
 				}
 			}
-			if event.StreamProtocolVersion != model.ChatStreamProtocolVersion {
-				return model.EventRecord{}, &StreamRecoverableError{
+			if event.StreamProtocolVersion != api.ChatStreamProtocolVersion {
+				return api.EventRecord{}, &StreamRecoverableError{
 					EventID: acceptedEventID,
 					Err:     ErrStreamProtocolMismatch,
 				}
@@ -169,10 +170,10 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 		}
 		if handler != nil {
 			if err := handler.HandleStreamEvent(event); err != nil {
-				return model.EventRecord{}, err
+				return api.EventRecord{}, err
 			}
 		}
-		if event.Type == model.ChatStreamEventDone || event.Type == model.ChatStreamEventError {
+		if event.Type == api.ChatStreamEventDone || event.Type == api.ChatStreamEventError {
 			if event.EventRecord != nil {
 				if !isTerminalEvent(*event.EventRecord) {
 					_ = resp.Body.Close()
@@ -181,9 +182,9 @@ func (c *HTTPClient) SendStream(ctx context.Context, req model.IngestRequest, ha
 				return *event.EventRecord, nil
 			}
 			if event.Error != nil {
-				return model.EventRecord{}, &APIError{StatusCode: http.StatusOK, Code: event.Error.Code, Message: event.Error.Message}
+				return api.EventRecord{}, &APIError{StatusCode: http.StatusOK, Code: event.Error.Code, Message: event.Error.Message}
 			}
-			return model.EventRecord{}, errors.New("stream terminal event missing event_record")
+			return api.EventRecord{}, errors.New("stream terminal event missing event_record")
 		}
 	}
 }
@@ -201,12 +202,12 @@ func newStreamHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
 	return &http.Client{Transport: cloned}
 }
 
-func (c *HTTPClient) PollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
+func (c *HTTPClient) PollEvent(ctx context.Context, eventID string) (api.EventRecord, error) {
 	return c.pollEvent(ctx, eventID)
 }
 
-func (c *HTTPClient) ingest(ctx context.Context, req model.IngestRequest) (model.IngestResponse, error) {
-	var out model.IngestResponse
+func (c *HTTPClient) ingest(ctx context.Context, req api.IngestRequest) (api.IngestResponse, error) {
+	var out api.IngestResponse
 	body, err := json.Marshal(req)
 	if err != nil {
 		return out, err
@@ -241,15 +242,15 @@ func (c *HTTPClient) ingest(ctx context.Context, req model.IngestRequest) (model
 	return out, nil
 }
 
-func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
+func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (api.EventRecord, error) {
 	deadline := time.Now().Add(c.pollTimeout)
 	for {
 		if !time.Now().Before(deadline) {
-			return model.EventRecord{}, fmt.Errorf("poll timeout after %s", c.pollTimeout)
+			return api.EventRecord{}, fmt.Errorf("poll timeout after %s", c.pollTimeout)
 		}
 		rec, err := c.getEvent(ctx, eventID)
 		if err != nil {
-			return model.EventRecord{}, err
+			return api.EventRecord{}, err
 		}
 		if rec.Status == model.EventStatusFailed {
 			return rec, nil
@@ -260,14 +261,14 @@ func (c *HTTPClient) pollEvent(ctx context.Context, eventID string) (model.Event
 
 		select {
 		case <-ctx.Done():
-			return model.EventRecord{}, ctx.Err()
+			return api.EventRecord{}, ctx.Err()
 		case <-time.After(c.pollInterval):
 		}
 	}
 }
 
-func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
-	var rec model.EventRecord
+func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (api.EventRecord, error) {
+	var rec api.EventRecord
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.baseURL+"/v1/events/"+url.PathEscape(eventID), nil)
@@ -293,7 +294,7 @@ func (c *HTTPClient) getEvent(ctx context.Context, eventID string) (model.EventR
 	return rec, nil
 }
 
-func isTerminalEvent(rec model.EventRecord) bool {
+func isTerminalEvent(rec api.EventRecord) bool {
 	switch rec.Status {
 	case model.EventStatusSuppressed:
 		return true
@@ -314,7 +315,7 @@ func decodeAPIError(resp *http.Response) error {
 		return &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("http status %d", resp.StatusCode)}
 	}
 
-	var parsed model.ErrorResponse
+	var parsed api.ErrorResponse
 	if err := json.Unmarshal(b, &parsed); err == nil && parsed.Error.Code != "" {
 		return &APIError{StatusCode: resp.StatusCode, Code: parsed.Error.Code, Message: parsed.Error.Message}
 	}

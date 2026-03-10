@@ -13,6 +13,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -31,16 +32,16 @@ func TestChatStreamAcceptedThenDone(t *testing.T) {
 	reader := bufio.NewReader(resp.Body)
 
 	accepted := readStreamEvent(t, reader)
-	if accepted.Type != model.ChatStreamEventAccepted {
+	if accepted.Type != api.ChatStreamEventAccepted {
 		t.Fatalf("expected accepted event, got %+v", accepted)
 	}
-	if accepted.StreamProtocolVersion != model.ChatStreamProtocolVersion {
+	if accepted.StreamProtocolVersion != api.ChatStreamProtocolVersion {
 		t.Fatalf("unexpected protocol version: %+v", accepted)
 	}
 
-	app.StreamHub.PublishTerminal(accepted.EventID, model.ChatStreamEvent{
-		Type: model.ChatStreamEventDone,
-		EventRecord: &model.EventRecord{
+	app.StreamHub.PublishTerminal(accepted.EventID, api.ChatStreamEvent{
+		Type: api.ChatStreamEventDone,
+		EventRecord: &api.EventRecord{
 			EventID:        accepted.EventID,
 			Status:         model.EventStatusProcessed,
 			AssistantReply: "done",
@@ -48,7 +49,7 @@ func TestChatStreamAcceptedThenDone(t *testing.T) {
 		},
 	})
 	done := readStreamEvent(t, reader)
-	if done.Type != model.ChatStreamEventDone {
+	if done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done event, got %+v", done)
 	}
 	if done.EventRecord == nil || done.EventRecord.AssistantReply != "done" {
@@ -67,13 +68,13 @@ func TestChatStreamAcceptedThenError(t *testing.T) {
 
 	reader := bufio.NewReader(resp.Body)
 	accepted := readStreamEvent(t, reader)
-	app.StreamHub.PublishTerminal(accepted.EventID, model.ChatStreamEvent{
-		Type: model.ChatStreamEventError,
+	app.StreamHub.PublishTerminal(accepted.EventID, api.ChatStreamEvent{
+		Type: api.ChatStreamEventError,
 		Error: &model.ErrorBlock{
 			Code:    model.ErrorCodeInternal,
 			Message: "boom",
 		},
-		EventRecord: &model.EventRecord{
+		EventRecord: &api.EventRecord{
 			EventID:   accepted.EventID,
 			Status:    model.EventStatusFailed,
 			UpdatedAt: time.Now().UTC(),
@@ -84,11 +85,39 @@ func TestChatStreamAcceptedThenError(t *testing.T) {
 		},
 	})
 	failed := readStreamEvent(t, reader)
-	if failed.Type != model.ChatStreamEventError {
+	if failed.Type != api.ChatStreamEventError {
 		t.Fatalf("expected error event, got %+v", failed)
 	}
 	if failed.Error == nil || failed.Error.Message != "boom" {
 		t.Fatalf("unexpected error payload: %+v", failed)
+	}
+}
+
+func TestChatStreamReplaysTerminalStateForExistingEvent(t *testing.T) {
+	app, server := newHTTPAPITestServer(t)
+
+	req := buildCLIRequest("stream-replay", 1, "message", "hello replay")
+	eventID := ingestTestEvent(t, server.URL, req)
+	waitEventTerminal(t, app, eventID)
+
+	resp := postStreamRequest(t, server.URL, req)
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	accepted := readStreamEvent(t, reader)
+	if accepted.Type != api.ChatStreamEventAccepted {
+		t.Fatalf("expected accepted event, got %+v", accepted)
+	}
+	if accepted.EventID != eventID {
+		t.Fatalf("expected accepted event_id %q, got %+v", eventID, accepted)
+	}
+
+	done := readStreamEvent(t, reader)
+	if done.Type != api.ChatStreamEventDone {
+		t.Fatalf("expected replayed terminal done event, got %+v", done)
+	}
+	if done.EventRecord == nil || done.EventRecord.EventID != eventID {
+		t.Fatalf("unexpected replayed terminal event: %+v", done)
 	}
 }
 
@@ -107,7 +136,7 @@ func newStreamTestApp(t *testing.T) *bootstrap.App {
 	return app
 }
 
-func postStreamRequest(t *testing.T, baseURL string, req model.IngestRequest) *http.Response {
+func postStreamRequest(t *testing.T, baseURL string, req api.IngestRequest) *http.Response {
 	t.Helper()
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -124,13 +153,13 @@ func postStreamRequest(t *testing.T, baseURL string, req model.IngestRequest) *h
 	return resp
 }
 
-func readStreamEvent(t *testing.T, reader *bufio.Reader) model.ChatStreamEvent {
+func readStreamEvent(t *testing.T, reader *bufio.Reader) api.ChatStreamEvent {
 	t.Helper()
 	eventType, data, err := readSSEEventForTest(reader)
 	if err != nil {
 		t.Fatalf("read SSE event: %v", err)
 	}
-	var event model.ChatStreamEvent
+	var event api.ChatStreamEvent
 	if err := json.Unmarshal(data, &event); err != nil {
 		t.Fatalf("decode SSE payload: %v", err)
 	}

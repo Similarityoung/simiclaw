@@ -2,19 +2,20 @@ package cli
 
 import (
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func BuildIngestRequest(conversationID, participantID string, seq int64, text string) model.IngestRequest {
+func BuildIngestRequest(conversationID, participantID string, seq int64, text string) api.IngestRequest {
 	if conversationID == "" {
 		conversationID = "cli_default"
 	}
 	if participantID == "" {
 		participantID = "local_user"
 	}
-	return model.IngestRequest{
+	return api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: conversationID,

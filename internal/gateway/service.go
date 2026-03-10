@@ -2,7 +2,7 @@ package gateway
 
 import (
 	"github.com/similarityyoung/simiclaw/internal/ingest"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 type Service struct {
@@ -10,7 +10,7 @@ type Service struct {
 }
 
 type AcceptedIngest struct {
-	Response   model.IngestResponse
+	Response   api.IngestResponse
 	Result     ingest.Result
 	StatusCode int
 }

@@ -9,15 +9,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type EventLoop struct {
-	db        *store.DB
+	repo      EventLoopRepository
 	runner    runner.Runner
 	streamHub *streaming.Hub
 	maxRounds int
@@ -29,7 +31,14 @@ type EventLoop struct {
 	enqueueID atomic.Uint64
 }
 
-func NewEventLoop(db *store.DB, run runner.Runner, streamHub *streaming.Hub, queueCap, maxRounds int) *EventLoop {
+type EventLoopRepository interface {
+	ListRunnableEventIDs(ctx context.Context, limit int) ([]string, error)
+	ClaimEvent(ctx context.Context, eventID, runID string, now time.Time) (store.ClaimedEvent, bool, error)
+	FinalizeRun(ctx context.Context, finalize store.RunFinalize) error
+	GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error)
+}
+
+func NewEventLoop(repo EventLoopRepository, run runner.Runner, streamHub *streaming.Hub, queueCap, maxRounds int) *EventLoop {
 	if queueCap <= 0 {
 		queueCap = 1024
 	}
@@ -38,7 +47,7 @@ func NewEventLoop(db *store.DB, run runner.Runner, streamHub *streaming.Hub, que
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &EventLoop{
-		db:        db,
+		repo:      repo,
 		runner:    run,
 		streamHub: streamHub,
 		maxRounds: maxRounds,
@@ -100,7 +109,7 @@ func (l *EventLoop) repumpLoop() {
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(l.ctx, time.Second)
-			ids, err := l.db.ListRunnableEventIDs(ctx, cap(l.queue))
+			ids, err := l.repo.ListRunnableEventIDs(ctx, cap(l.queue))
 			cancel()
 			if err != nil {
 				continue
@@ -122,7 +131,7 @@ func (l *EventLoop) processEvent(eventID string) {
 	ctx, cancel := context.WithTimeout(l.ctx, 2*time.Minute)
 	defer cancel()
 
-	claimed, ok, err := l.db.ClaimEvent(ctx, eventID, runID, now)
+	claimed, ok, err := l.repo.ClaimEvent(ctx, eventID, runID, now)
 	if err != nil || !ok {
 		return
 	}
@@ -215,22 +224,22 @@ func (l *EventLoop) processEvent(eventID string) {
 				}
 			}
 		}
-		if err := l.db.FinalizeRun(ctx, finalize); err != nil {
+		if err := l.repo.FinalizeRun(ctx, finalize); err != nil {
 			logger.Error("finalize failed",
 				logging.String("status", "failed"),
 				logging.String("error_code", model.ErrorCodeInternal),
 				logging.Error(err),
 			)
 			if l.streamHub != nil {
-				l.streamHub.PublishTerminal(claimed.Event.EventID, model.ChatStreamEvent{
-					Type:  model.ChatStreamEventError,
+				l.streamHub.PublishTerminal(claimed.Event.EventID, api.ChatStreamEvent{
+					Type:  api.ChatStreamEventError,
 					Error: &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()},
 				})
 			}
 			return
 		}
 		if l.streamHub != nil {
-			if rec, ok, err := l.db.GetEvent(ctx, claimed.Event.EventID); err == nil && ok {
+			if rec, ok, err := l.repo.GetEvent(ctx, claimed.Event.EventID); err == nil && ok {
 				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromRecord(rec))
 			} else {
 				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromFinalize(finalize))

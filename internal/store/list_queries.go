@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ type SessionListFilter struct {
 	CursorLastSessionKey string
 }
 
-func (db *DB) ListEventsPage(ctx context.Context, filter EventListFilter) ([]model.EventRecord, error) {
+func (db *DB) ListEventsPage(ctx context.Context, filter EventListFilter) ([]readmodel.EventRecord, error) {
 	query := eventSelectSQL + ` WHERE 1 = 1`
 	args := make([]any, 0, 6)
 	if strings.TrimSpace(filter.SessionKey) != "" {
@@ -57,7 +58,7 @@ func (db *DB) ListEventsPage(ctx context.Context, filter EventListFilter) ([]mod
 	}
 	defer rows.Close()
 
-	var out []model.EventRecord
+	var out []readmodel.EventRecord
 	for rows.Next() {
 		rec, err := scanEvent(rows)
 		if err != nil {
@@ -104,7 +105,7 @@ func (db *DB) ListRunsPage(ctx context.Context, filter RunListFilter) ([]model.R
 	return out, rows.Err()
 }
 
-func (db *DB) ListSessionsPage(ctx context.Context, filter SessionListFilter) ([]model.SessionRecord, error) {
+func (db *DB) ListSessionsPage(ctx context.Context, filter SessionListFilter) ([]readmodel.SessionRecord, error) {
 	query := sessionSelectSQL + ` WHERE 1 = 1`
 	args := make([]any, 0, 6)
 	if strings.TrimSpace(filter.SessionKey) != "" {
@@ -129,7 +130,7 @@ func (db *DB) ListSessionsPage(ctx context.Context, filter SessionListFilter) ([
 	}
 	defer rows.Close()
 
-	var out []model.SessionRecord
+	var out []readmodel.SessionRecord
 	for rows.Next() {
 		rec, err := scanSession(rows)
 		if err != nil {

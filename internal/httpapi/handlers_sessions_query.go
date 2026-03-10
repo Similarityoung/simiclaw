@@ -6,6 +6,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -56,7 +57,10 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
-	items := page.Items
+	items := make([]api.SessionRecord, 0, len(page.Items))
+	for _, rec := range page.Items {
+		items = append(items, toAPISessionRecord(rec))
+	}
 	resp := map[string]any{"items": items}
 	if page.Next != nil {
 		resp["next_cursor"] = encodeCursor(sessionCursor{
@@ -70,7 +74,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	sessionKey := r.PathValue("session_key")
-	rec, ok, err := s.db.GetSession(r.Context(), sessionKey)
+	rec, ok, err := s.query.GetSession(r.Context(), sessionKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -83,5 +87,5 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, rec)
+	writeJSON(w, http.StatusOK, toAPISessionRecord(rec))
 }

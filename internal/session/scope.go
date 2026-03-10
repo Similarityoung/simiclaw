@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 const DefaultScope = "default"
@@ -32,6 +32,6 @@ func NewScopeFromID(idempotencyKey string) string {
 	return "scope_" + hex.EncodeToString(sum[:8])
 }
 
-func ScopeFromRequest(req model.IngestRequest) string {
+func ScopeFromRequest(req api.IngestRequest) string {
 	return NormalizeScope(req.DMScope)
 }

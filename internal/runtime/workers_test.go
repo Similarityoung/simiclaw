@@ -9,9 +9,11 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -99,9 +101,9 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	queue := &captureEnqueuer{}
 	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		db:     db,
-		ingest: ingestService,
-		ctx:    context.Background(),
+		workers: db,
+		ingest:  ingestService,
+		ctx:     context.Background(),
 	}
 
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
@@ -164,10 +166,10 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
 	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		db:     db,
-		ingest: ingestService,
-		loop:   loop,
-		ctx:    context.Background(),
+		workers: db,
+		ingest:  ingestService,
+		loop:    loop,
+		ctx:     context.Background(),
 	}
 
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
@@ -211,12 +213,12 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	for _, want := range []model.ChatStreamEventType{
-		model.ChatStreamEventStatus,
-		model.ChatStreamEventReasoningDelta,
-		model.ChatStreamEventTextDelta,
-		model.ChatStreamEventToolStart,
-		model.ChatStreamEventToolResult,
+	for _, want := range []api.ChatStreamEventType{
+		api.ChatStreamEventStatus,
+		api.ChatStreamEventReasoningDelta,
+		api.ChatStreamEventTextDelta,
+		api.ChatStreamEventToolStart,
+		api.ChatStreamEventToolResult,
 	} {
 		event, ok := sub.Next(ctx)
 		if !ok {
@@ -237,15 +239,15 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 		Error:       &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: "boom"},
 		Now:         time.Now().UTC(),
 	})
-	if failed.Type != model.ChatStreamEventError || failed.Error == nil {
+	if failed.Type != api.ChatStreamEventError || failed.Error == nil {
 		t.Fatalf("expected failed terminal event, got %+v", failed)
 	}
-	done := terminalEventFromRecord(model.EventRecord{
+	done := terminalEventFromRecord(readmodel.EventRecord{
 		EventID:   "evt_done",
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),
 	})
-	if done.Type != model.ChatStreamEventDone {
+	if done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done terminal event, got %+v", done)
 	}
 	if nonZeroTime(time.Time{}).IsZero() {
@@ -267,7 +269,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",
@@ -333,7 +335,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
 	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, db), 100, 100, 100, 100)
 	sender := &captureSender{}
-	supervisor := NewSupervisor(cfg, db, ingestService, loop, sender)
+	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()
 	defer supervisor.Stop()
 
@@ -402,7 +404,7 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 	defer db.Close()
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 1, 1)
-	supervisor := NewSupervisor(cfg, db, nil, loop, &captureSender{})
+	supervisor := NewSupervisor(cfg, db, db, nil, loop, &captureSender{})
 	state, err := supervisor.ReadyState(context.Background())
 	if err == nil || state["event_loop"] != "down" {
 		t.Fatalf("expected loop-down readiness failure, err=%v state=%+v", err, state)
@@ -428,7 +430,7 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 		t.Fatalf("insert scheduled job: %v", err)
 	}
 
-	supervisor := &Supervisor{db: db, ctx: context.Background()}
+	supervisor := &Supervisor{workers: db, ctx: context.Background()}
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
 
 	var lastError string

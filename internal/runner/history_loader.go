@@ -15,16 +15,16 @@ type loadedHistory struct {
 }
 
 type runHistoryLoader struct {
-	db           *store.DB
+	reader       HistoryReader
 	historyLimit int
 }
 
 func (l runHistoryLoader) Load(ctx context.Context, sessionID, query string) (loadedHistory, error) {
-	history, err := l.db.RecentMessagesForPrompt(ctx, sessionID, l.historyLimit)
+	history, err := l.reader.RecentMessagesForPrompt(ctx, sessionID, l.historyLimit)
 	if err != nil {
 		return loadedHistory{}, err
 	}
-	ragHits, _ := l.db.SearchMessagesFTS(ctx, sessionID, strings.TrimSpace(query), 5)
+	ragHits, _ := l.reader.SearchMessagesFTS(ctx, sessionID, strings.TrimSpace(query), 5)
 	return loadedHistory{
 		history: history,
 		ragHits: ragHits,

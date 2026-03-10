@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"time"
 
@@ -10,22 +11,22 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.IngestResponse, int, *APIError) {
+func (s *Service) Ingest(ctx context.Context, req api.IngestRequest) (api.IngestResponse, int, *APIError) {
 	accepted, apiErr := s.Accept(ctx, req)
 	if apiErr != nil {
-		return model.IngestResponse{}, 0, apiErr
+		return api.IngestResponse{}, 0, apiErr
 	}
 	return accepted.Response, accepted.StatusCode, nil
 }
 
-func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (AcceptedIngest, *APIError) {
+func (s *Service) Accept(ctx context.Context, req api.IngestRequest) (AcceptedIngest, *APIError) {
 	if s.ingest == nil {
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "ingest service unavailable"}
 	}
 	result, err := s.ingest.Ingest(ctx, ingest.Command{Request: req})
 	if result.Duplicate {
 		return AcceptedIngest{
-			Response: model.IngestResponse{
+			Response: api.IngestResponse{
 				EventID:         result.EventID,
 				SessionKey:      result.SessionKey,
 				ActiveSessionID: result.SessionID,
@@ -42,7 +43,7 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 		return AcceptedIngest{}, mapIngestError(err)
 	}
 	return AcceptedIngest{
-		Response: model.IngestResponse{
+		Response: api.IngestResponse{
 			EventID:         result.EventID,
 			SessionKey:      result.SessionKey,
 			ActiveSessionID: result.SessionID,

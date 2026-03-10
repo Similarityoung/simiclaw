@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +37,7 @@ func TestClaimEventSingleActiveRun(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
@@ -63,7 +64,7 @@ func TestFinalizeRunUpdatesFTSAndSessionAggregate(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
@@ -136,7 +137,7 @@ func TestFinalizeRunRecentMessagesRestoresAssistantToolCalls(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:tool:1",
@@ -207,7 +208,7 @@ func TestFinalizeRunRecentMessagesRestoresMeta(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:cron:1",
@@ -268,7 +269,7 @@ func TestRecentMessagesForPromptSkipsCronFireWithoutShrinkingWindow(t *testing.T
 	activeSessionID := ""
 
 	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
-		result, err := db.IngestEvent(ctx, "local", sessionKey, model.IngestRequest{
+		result, err := db.IngestEvent(ctx, "local", sessionKey, api.IngestRequest{
 			Source:         "cli",
 			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 			IdempotencyKey: fmt.Sprintf("cli:conv:%d", index),
@@ -352,7 +353,7 @@ func TestRecentMessagesForPromptSkipsNewSessionWithoutShrinkingWindow(t *testing
 	activeSessionID := ""
 
 	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
-		result, err := db.IngestEvent(ctx, "local", sessionKey, model.IngestRequest{
+		result, err := db.IngestEvent(ctx, "local", sessionKey, api.IngestRequest{
 			Source:         "cli",
 			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 			IdempotencyKey: fmt.Sprintf("cli:new:%d", index),
@@ -458,7 +459,7 @@ func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",

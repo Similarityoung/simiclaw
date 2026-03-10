@@ -45,6 +45,11 @@ type RunOutput struct {
 	SuppressOutput bool
 }
 
+type HistoryReader interface {
+	RecentMessagesForPrompt(ctx context.Context, sessionID string, limit int) ([]store.HistoryMessage, error)
+	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]model.RAGHit, error)
+}
+
 type ProviderRunner struct {
 	registry        *tools.Registry
 	providers       *provider.Factory
@@ -55,7 +60,7 @@ type ProviderRunner struct {
 	traceAssembler  runTraceAssembler
 }
 
-func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry, providers *provider.Factory) *ProviderRunner {
+func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory) *ProviderRunner {
 	if registry == nil {
 		registry = tools.NewRegistry()
 		tools.RegisterBuiltins(registry)
@@ -66,7 +71,7 @@ func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry,
 		providers: providers,
 		writer:    memory.NewWriter(workspace),
 	}
-	runner.historyLoader = runHistoryLoader{db: db, historyLimit: 20}
+	runner.historyLoader = runHistoryLoader{reader: historyReader, historyLimit: 20}
 	runner.promptAssembler = llmPromptAssembler{prompts: prompts, registry: runner.registry}
 	runner.toolExecutor = llmToolExecutor{workspace: workspace, registry: runner.registry}
 	runner.traceAssembler = runTraceAssembler{}

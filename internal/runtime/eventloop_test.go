@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   conversation,
 		IdempotencyKey: "cli:panic:1",
@@ -62,7 +63,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	var terminal model.ChatStreamEvent
+	var terminal api.ChatStreamEvent
 	for {
 		event, ok := sub.Next(ctx)
 		if !ok {
@@ -73,7 +74,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 			break
 		}
 	}
-	if terminal.Type != model.ChatStreamEventError {
+	if terminal.Type != api.ChatStreamEventError {
 		t.Fatalf("expected terminal error, got %+v", terminal)
 	}
 
@@ -123,7 +124,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, model.IngestRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, api.IngestRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:1",

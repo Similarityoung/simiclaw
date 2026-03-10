@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ type fakeRepo struct {
 	markQueued int
 }
 
-func (r *fakeRepo) IngestEvent(context.Context, string, string, model.IngestRequest, string, time.Time) (store.IngestResult, error) {
+func (r *fakeRepo) IngestEvent(context.Context, string, string, api.IngestRequest, string, time.Time) (store.IngestResult, error) {
 	return r.result, r.err
 }
 
@@ -31,7 +32,7 @@ func (fakeQueue) TryEnqueue(string) bool { return true }
 
 type fakeResolver struct{}
 
-func (fakeResolver) Resolve(_ context.Context, req model.IngestRequest) (model.IngestRequest, string, *ingest.Error) {
+func (fakeResolver) Resolve(_ context.Context, req api.IngestRequest) (api.IngestRequest, string, *ingest.Error) {
 	if req.DMScope == "" {
 		req.DMScope = "default"
 	}
@@ -157,8 +158,8 @@ func TestIngestReturnsAPIError(t *testing.T) {
 	}
 }
 
-func validGatewayRequest(now time.Time) model.IngestRequest {
-	return model.IngestRequest{
+func validGatewayRequest(now time.Time) api.IngestRequest {
+	return api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",

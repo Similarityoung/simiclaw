@@ -103,7 +103,7 @@ func (s *Server) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	row, ok, err := s.db.LookupInbound(r.Context(), idempotencyKey)
+	row, ok, err := s.query.LookupEvent(r.Context(), idempotencyKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return

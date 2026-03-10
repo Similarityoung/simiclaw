@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"strings"
 
@@ -21,11 +22,11 @@ func newStreamRenderer(out io.Writer) *streamRenderer {
 	return &streamRenderer{out: out}
 }
 
-func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
+func (r *streamRenderer) HandleStreamEvent(event api.ChatStreamEvent) error {
 	switch event.Type {
-	case model.ChatStreamEventAccepted:
+	case api.ChatStreamEventAccepted:
 		return r.openBotLine()
-	case model.ChatStreamEventStatus:
+	case api.ChatStreamEventStatus:
 		statusText := strings.TrimSpace(event.Message)
 		if statusText == "" {
 			statusText = strings.TrimSpace(event.Status)
@@ -39,7 +40,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		}
 		_, err := fmt.Fprint(r.out, messages.Chat.StreamStatus(statusText))
 		return err
-	case model.ChatStreamEventReasoningDelta:
+	case api.ChatStreamEventReasoningDelta:
 		if strings.TrimSpace(event.Delta) == "" {
 			return nil
 		}
@@ -48,7 +49,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		}
 		_, err := fmt.Fprint(r.out, messages.Chat.StreamThinking(event.Delta))
 		return err
-	case model.ChatStreamEventTextDelta:
+	case api.ChatStreamEventTextDelta:
 		if err := r.openBotLine(); err != nil {
 			return err
 		}
@@ -57,13 +58,13 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 		}
 		r.streamed.WriteString(event.Delta)
 		return nil
-	case model.ChatStreamEventToolStart:
+	case api.ChatStreamEventToolStart:
 		if err := r.closeBotLine(); err != nil {
 			return err
 		}
 		_, err := fmt.Fprint(r.out, messages.Chat.StreamToolStart(event.ToolCallID, event.ToolName, formatToolPayload(event.Args, event.Truncated)))
 		return err
-	case model.ChatStreamEventToolResult:
+	case api.ChatStreamEventToolResult:
 		if err := r.closeBotLine(); err != nil {
 			return err
 		}
@@ -78,7 +79,7 @@ func (r *streamRenderer) HandleStreamEvent(event model.ChatStreamEvent) error {
 	}
 }
 
-func (r *streamRenderer) Finish(rec model.EventRecord) error {
+func (r *streamRenderer) Finish(rec api.EventRecord) error {
 	reply := rec.AssistantReply
 	if rec.Status == model.EventStatusFailed {
 		return r.closeBotLine()

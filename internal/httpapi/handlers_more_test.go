@@ -14,7 +14,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func TestRunsAndSessionsPaginationAndValidation(t *testing.T) {
@@ -25,15 +25,15 @@ func TestRunsAndSessionsPaginationAndValidation(t *testing.T) {
 	}
 
 	sessionPage1 := fetchJSON[struct {
-		Items      []model.SessionRecord `json:"items"`
-		NextCursor string                `json:"next_cursor"`
+		Items      []api.SessionRecord `json:"items"`
+		NextCursor string              `json:"next_cursor"`
 	}](t, srv.URL+"/v1/sessions?limit=1")
 	if len(sessionPage1.Items) != 1 || sessionPage1.NextCursor == "" {
 		t.Fatalf("expected one session with next cursor, got %+v", sessionPage1)
 	}
 	sessionPage2 := fetchJSON[struct {
-		Items      []model.SessionRecord `json:"items"`
-		NextCursor string                `json:"next_cursor"`
+		Items      []api.SessionRecord `json:"items"`
+		NextCursor string              `json:"next_cursor"`
 	}](t, srv.URL+"/v1/sessions?limit=1&cursor="+url.QueryEscape(sessionPage1.NextCursor))
 	if len(sessionPage2.Items) != 1 {
 		t.Fatalf("expected one session on second page, got %+v", sessionPage2)
@@ -43,7 +43,7 @@ func TestRunsAndSessionsPaginationAndValidation(t *testing.T) {
 	}
 
 	filteredSessions := fetchJSON[struct {
-		Items []model.SessionRecord `json:"items"`
+		Items []api.SessionRecord `json:"items"`
 	}](t, srv.URL+"/v1/sessions?conversation_id=runs_sessions_a&limit=10")
 	if len(filteredSessions.Items) != 1 {
 		t.Fatalf("expected one filtered session, got %+v", filteredSessions.Items)

@@ -5,23 +5,24 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (db *DB) GetSession(ctx context.Context, sessionKey string) (model.SessionRecord, bool, error) {
+func (db *DB) GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error) {
 	rows, err := db.reader.QueryContext(ctx, sessionSelectSQL+` WHERE session_key = ?`, sessionKey)
 	if err != nil {
-		return model.SessionRecord{}, false, err
+		return readmodel.SessionRecord{}, false, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		return model.SessionRecord{}, false, rows.Err()
+		return readmodel.SessionRecord{}, false, rows.Err()
 	}
 	rec, err := scanSession(rows)
 	if err != nil {
-		return model.SessionRecord{}, false, err
+		return readmodel.SessionRecord{}, false, err
 	}
 	return rec, true, rows.Err()
 }
@@ -120,9 +121,9 @@ func recomputeSessionAggregateTx(ctx context.Context, tx *sql.Tx, sessionKey str
 	return err
 }
 
-func scanSession(rows *sql.Rows) (model.SessionRecord, error) {
+func scanSession(rows *sql.Rows) (readmodel.SessionRecord, error) {
 	var (
-		rec            model.SessionRecord
+		rec            readmodel.SessionRecord
 		lastActivityAt string
 		createdAt      string
 		updatedAt      string
@@ -144,7 +145,7 @@ func scanSession(rows *sql.Rows) (model.SessionRecord, error) {
 		&createdAt,
 		&updatedAt,
 	); err != nil {
-		return model.SessionRecord{}, err
+		return readmodel.SessionRecord{}, err
 	}
 	rec.LastActivityAt = mustParseTime(lastActivityAt)
 	rec.CreatedAt = mustParseTime(createdAt)

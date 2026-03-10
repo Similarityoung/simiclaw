@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ type modelState struct {
 	mode         viewMode
 	width        int
 	height       int
-	sessions     []model.SessionRecord
+	sessions     []api.SessionRecord
 	selectorIdx  int
 	selectorBusy bool
 	loading      bool
@@ -62,14 +63,14 @@ type modelState struct {
 }
 
 type sessionsLoadedMsg struct {
-	Items []model.SessionRecord
+	Items []api.SessionRecord
 	Err   error
 }
 
 type sessionOpenedMsg struct {
-	Session      *model.SessionRecord
+	Session      *api.SessionRecord
 	Conversation string
-	Messages     []model.MessageRecord
+	Messages     []api.MessageRecord
 	Err          error
 }
 
@@ -85,7 +86,7 @@ type streamStartedMsg struct {
 }
 
 type streamFrameMsg struct {
-	Frame model.ChatStreamEvent
+	Frame api.ChatStreamEvent
 }
 
 type streamDoneMsg struct{}
@@ -401,7 +402,7 @@ func (m *modelState) startSend(text string) tea.Cmd {
 	return startSendCmd(m.client, req, m.opts.NoStream)
 }
 
-func (m *modelState) applyStreamFrame(frame model.ChatStreamEvent) {
+func (m *modelState) applyStreamFrame(frame api.ChatStreamEvent) {
 	if frame.IngestResponse != nil {
 		if frame.IngestResponse.SessionKey != "" {
 			m.sessionKey = frame.IngestResponse.SessionKey
@@ -420,9 +421,9 @@ func (m *modelState) applyStreamFrame(frame model.ChatStreamEvent) {
 	}
 
 	switch frame.Type {
-	case model.ChatStreamEventAccepted:
+	case api.ChatStreamEventAccepted:
 		m.status = messages.Chat.StatusRequestAccepted
-	case model.ChatStreamEventStatus:
+	case api.ChatStreamEventStatus:
 		statusText := strings.TrimSpace(frame.Message)
 		if statusText == "" {
 			statusText = strings.TrimSpace(frame.Status)
@@ -431,32 +432,32 @@ func (m *modelState) applyStreamFrame(frame model.ChatStreamEvent) {
 			statusText = messages.Chat.StatusProcessing
 		}
 		m.status = statusText
-	case model.ChatStreamEventReasoningDelta:
+	case api.ChatStreamEventReasoningDelta:
 		m.status = messages.Chat.StatusReasoning
-	case model.ChatStreamEventTextDelta:
+	case api.ChatStreamEventTextDelta:
 		m.status = messages.Chat.StatusStreamingReply
 		m.appendAssistantDelta(frame.Delta)
-	case model.ChatStreamEventToolStart:
+	case api.ChatStreamEventToolStart:
 		m.status = messages.Chat.RunningTool(nonEmpty(frame.ToolName, frame.ToolCallID))
-	case model.ChatStreamEventToolResult:
+	case api.ChatStreamEventToolResult:
 		if frame.Error != nil {
 			m.status = messages.Chat.ToolFailed(nonEmpty(frame.ToolName, frame.ToolCallID))
 		} else {
 			m.status = messages.Chat.ToolCompleted(nonEmpty(frame.ToolName, frame.ToolCallID))
 		}
-	case model.ChatStreamEventDone, model.ChatStreamEventError:
+	case api.ChatStreamEventDone, api.ChatStreamEventError:
 		m.applyTerminalRecord(frame)
 	}
 	m.syncViewport()
 }
 
-func (m *modelState) applyTerminalRecord(frame model.ChatStreamEvent) {
+func (m *modelState) applyTerminalRecord(frame api.ChatStreamEvent) {
 	rec := frame.EventRecord
 	if rec == nil {
 		if frame.Error != nil {
 			m.lastError = frame.Error.Code + ": " + frame.Error.Message
 		}
-		if frame.Type == model.ChatStreamEventError {
+		if frame.Type == api.ChatStreamEventError {
 			m.status = messages.Chat.StatusRunFailed
 		} else {
 			m.status = messages.Chat.StatusDone
@@ -678,7 +679,7 @@ func checkConversationAvailableCmd(cli *client.Client, conversation string) tea.
 	}
 }
 
-func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*model.SessionRecord, error) {
+func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*api.SessionRecord, error) {
 	conversation = strings.TrimSpace(conversation)
 	if conversation == "" {
 		return nil, nil
@@ -707,13 +708,13 @@ func findConversationSession(ctx context.Context, cli *client.Client, conversati
 	}
 }
 
-func startSendCmd(cli *client.Client, req model.IngestRequest, noStream bool) tea.Cmd {
+func startSendCmd(cli *client.Client, req api.IngestRequest, noStream bool) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan tea.Msg, 64)
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() {
 			defer close(updates)
-			emit := func(event model.ChatStreamEvent) error {
+			emit := func(event api.ChatStreamEvent) error {
 				updates <- streamFrameMsg{Frame: event}
 				return nil
 			}
@@ -725,11 +726,11 @@ func startSendCmd(cli *client.Client, req model.IngestRequest, noStream bool) te
 					updates <- streamErrorMsg{Err: ingestErr}
 					return
 				}
-				if err = emit(model.ChatStreamEvent{
-					Type:                  model.ChatStreamEventAccepted,
+				if err = emit(api.ChatStreamEvent{
+					Type:                  api.ChatStreamEventAccepted,
 					EventID:               resp.EventID,
 					At:                    time.Now().UTC(),
-					StreamProtocolVersion: model.ChatStreamProtocolVersion,
+					StreamProtocolVersion: api.ChatStreamProtocolVersion,
 					IngestResponse:        &resp,
 				}); err != nil {
 					updates <- streamErrorMsg{Err: err}
@@ -745,7 +746,7 @@ func startSendCmd(cli *client.Client, req model.IngestRequest, noStream bool) te
 					return
 				}
 			} else {
-				_, err = cli.StreamChat(ctx, req, func(event model.ChatStreamEvent) error {
+				_, err = cli.StreamChat(ctx, req, func(event api.ChatStreamEvent) error {
 					updates <- streamFrameMsg{Frame: event}
 					return nil
 				})
@@ -770,21 +771,21 @@ func waitForAsyncMsg(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func eventToTerminalFrame(rec model.EventRecord) model.ChatStreamEvent {
-	frame := model.ChatStreamEvent{
-		Type:        model.ChatStreamEventDone,
+func eventToTerminalFrame(rec api.EventRecord) api.ChatStreamEvent {
+	frame := api.ChatStreamEvent{
+		Type:        api.ChatStreamEventDone,
 		EventID:     rec.EventID,
 		At:          time.Now().UTC(),
 		EventRecord: &rec,
 		Error:       rec.Error,
 	}
 	if rec.Status == model.EventStatusFailed {
-		frame.Type = model.ChatStreamEventError
+		frame.Type = api.ChatStreamEventError
 	}
 	return frame
 }
 
-func isTerminalFrame(frame model.ChatStreamEvent) bool {
+func isTerminalFrame(frame api.ChatStreamEvent) bool {
 	return frame.IsTerminal()
 }
 

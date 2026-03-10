@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
 
 	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
@@ -14,10 +16,10 @@ import (
 
 var nilSentinel = errors.New("no-op")
 
-func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req model.IngestRequest, payloadHash string, now time.Time) (IngestResult, error) {
+func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req api.IngestRequest, payloadHash string, now time.Time) (IngestResult, error) {
 	var result IngestResult
 	err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
-		var existing LookupEvent
+		var existing readmodel.LookupEvent
 		var createdAt string
 		err := tx.QueryRowContext(
 			ctx,
@@ -125,8 +127,8 @@ func (db *DB) MarkEventQueued(ctx context.Context, eventID string, now time.Time
 	return err
 }
 
-func (db *DB) LookupInbound(ctx context.Context, key string) (LookupEvent, bool, error) {
-	var row LookupEvent
+func (db *DB) LookupInbound(ctx context.Context, key string) (readmodel.LookupEvent, bool, error) {
+	var row readmodel.LookupEvent
 	var createdAt string
 	err := db.reader.QueryRowContext(
 		ctx,
@@ -134,27 +136,27 @@ func (db *DB) LookupInbound(ctx context.Context, key string) (LookupEvent, bool,
 		key,
 	).Scan(&row.EventID, &row.PayloadHash, &row.SessionKey, &row.SessionID, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return LookupEvent{}, false, nil
+		return readmodel.LookupEvent{}, false, nil
 	}
 	if err != nil {
-		return LookupEvent{}, false, err
+		return readmodel.LookupEvent{}, false, err
 	}
 	row.ReceivedAt = mustParseTime(createdAt)
 	return row, true, nil
 }
 
-func (db *DB) GetEvent(ctx context.Context, eventID string) (model.EventRecord, bool, error) {
+func (db *DB) GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error) {
 	rows, err := db.reader.QueryContext(ctx, eventSelectSQL+` WHERE event_id = ?`, eventID)
 	if err != nil {
-		return model.EventRecord{}, false, err
+		return readmodel.EventRecord{}, false, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		return model.EventRecord{}, false, rows.Err()
+		return readmodel.EventRecord{}, false, rows.Err()
 	}
 	rec, err := scanEvent(rows)
 	if err != nil {
-		return model.EventRecord{}, false, err
+		return readmodel.EventRecord{}, false, err
 	}
 	return rec, true, rows.Err()
 }
@@ -362,9 +364,9 @@ func (db *DB) RecoverExpiredProcessing(ctx context.Context, cutoff, now time.Tim
 	return ids, nil
 }
 
-func scanEvent(rows *sql.Rows) (model.EventRecord, error) {
+func scanEvent(rows *sql.Rows) (readmodel.EventRecord, error) {
 	var (
-		rec          model.EventRecord
+		rec          readmodel.EventRecord
 		createdAt    string
 		receivedAt   string
 		updatedAt    string
@@ -392,7 +394,7 @@ func scanEvent(rows *sql.Rows) (model.EventRecord, error) {
 		&errorCode,
 		&errorMessage,
 	); err != nil {
-		return model.EventRecord{}, err
+		return readmodel.EventRecord{}, err
 	}
 	rec.CreatedAt = mustParseTime(createdAt)
 	rec.ReceivedAt = mustParseTime(receivedAt)

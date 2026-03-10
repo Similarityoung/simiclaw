@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func TestQueryAndHealthEndpoints(t *testing.T) {
@@ -16,7 +16,7 @@ func TestQueryAndHealthEndpoints(t *testing.T) {
 	eventID := ingestTestEvent(t, srv.URL, req)
 	waitEventTerminal(t, app, eventID)
 
-	event := fetchJSON[model.EventRecord](t, srv.URL+"/v1/events/"+eventID)
+	event := fetchJSON[api.EventRecord](t, srv.URL+"/v1/events/"+eventID)
 	if event.EventID != eventID {
 		t.Fatalf("unexpected event payload: %+v", event)
 	}
@@ -47,12 +47,12 @@ func TestQueryAndHealthEndpoints(t *testing.T) {
 	}
 
 	sessionPage := fetchJSON[struct {
-		Items []model.SessionRecord `json:"items"`
+		Items []api.SessionRecord `json:"items"`
 	}](t, srv.URL+"/v1/sessions?conversation_id=query_endpoints")
 	if len(sessionPage.Items) != 1 {
 		t.Fatalf("expected one session, got %+v", sessionPage.Items)
 	}
-	session := fetchJSON[model.SessionRecord](t, srv.URL+"/v1/sessions/"+sessionPage.Items[0].SessionKey)
+	session := fetchJSON[api.SessionRecord](t, srv.URL+"/v1/sessions/"+sessionPage.Items[0].SessionKey)
 	if session.SessionKey != sessionPage.Items[0].SessionKey {
 		t.Fatalf("unexpected session payload: %+v", session)
 	}

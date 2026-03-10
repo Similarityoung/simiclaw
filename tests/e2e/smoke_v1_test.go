@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,21 +51,21 @@ func runSmokeV1(t *testing.T) {
 	}
 }
 
-func ingest(t *testing.T, app *bootstrap.App, req model.IngestRequest) model.IngestResponse {
+func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest) api.IngestResponse {
 	t.Helper()
 	body, _ := json.Marshal(req)
 	respBody, code := doRequest(t, app, http.MethodPost, "/v1/events:ingest", body)
 	if code != http.StatusAccepted {
 		t.Fatalf("ingest expected 202, got %d body=%s", code, string(respBody))
 	}
-	var resp model.IngestResponse
+	var resp api.IngestResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}
 	return resp
 }
 
-func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventRecord {
+func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -72,7 +73,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		if code != http.StatusOK {
 			t.Fatalf("event query expected 200, got %d body=%s", code, string(body))
 		}
-		var event model.EventRecord
+		var event api.EventRecord
 		if err := json.Unmarshal(body, &event); err != nil {
 			t.Fatalf("decode event: %v", err)
 		}
@@ -82,7 +83,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timeout waiting for event %s", eventID)
-	return model.EventRecord{}
+	return api.EventRecord{}
 }
 
 func doRequest(t *testing.T, app *bootstrap.App, method, path string, body []byte) ([]byte, int) {

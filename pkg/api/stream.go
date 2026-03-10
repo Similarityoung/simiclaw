@@ -1,6 +1,10 @@
-package model
+package api
 
-import "time"
+import (
+	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/model"
+)
 
 const ChatStreamProtocolVersion = "2026-03-07.sse.v1"
 
@@ -33,7 +37,7 @@ type ChatStreamEvent struct {
 	Truncated             bool                `json:"truncated,omitempty"`
 	IngestResponse        *IngestResponse     `json:"ingest_response,omitempty"`
 	EventRecord           *EventRecord        `json:"event_record,omitempty"`
-	Error                 *ErrorBlock         `json:"error,omitempty"`
+	Error                 *model.ErrorBlock   `json:"error,omitempty"`
 }
 
 func (e ChatStreamEvent) IsTerminal() bool {

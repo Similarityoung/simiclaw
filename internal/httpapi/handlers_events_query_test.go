@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func TestListEventsCursorUsesCreatedAtAnchor(t *testing.T) {
@@ -54,8 +54,8 @@ func TestListEventsCursorUsesCreatedAtAnchor(t *testing.T) {
 }
 
 func fetchEventPage(t *testing.T, baseURL, cursor string, limit int) struct {
-	Items      []model.EventRecord `json:"items"`
-	NextCursor string              `json:"next_cursor"`
+	Items      []api.EventRecord `json:"items"`
+	NextCursor string            `json:"next_cursor"`
 } {
 	t.Helper()
 	url := fmt.Sprintf("%s/v1/events?limit=%d", baseURL, limit)
@@ -72,8 +72,8 @@ func fetchEventPage(t *testing.T, baseURL, cursor string, limit int) struct {
 		t.Fatalf("events status=%d body=%s", resp.StatusCode, string(body))
 	}
 	var out struct {
-		Items      []model.EventRecord `json:"items"`
-		NextCursor string              `json:"next_cursor"`
+		Items      []api.EventRecord `json:"items"`
+		NextCursor string            `json:"next_cursor"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode events: %v", err)
