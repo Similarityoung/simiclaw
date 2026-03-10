@@ -40,7 +40,7 @@
 
 当前 runtime 会在每次 agent run 前构造一条 system message，并放在对话消息最前面。当前文本资源分为 4 层：
 
-- `pkg/prompt/system/`：给模型看的系统固定 prompt
+- `internal/systemprompt/system/`：给模型看的系统固定 prompt
 - `internal/workspace/templates/`：`init` 使用的 workspace 脚手架模板
 - `workspace/` 根文件：用户/项目可编辑上下文
 - `internal/ui/messages/`：给 CLI 等用户界面使用的可见文案
@@ -144,16 +144,18 @@ canonical 路径如下：
 - `internal/httpapi`：HTTP 路由、handler、鉴权与分页
 - `internal/memory`：工作区记忆读写
 - `internal/outbound`：出站 sender
+- `internal/config`：配置模型
 - `internal/provider`：LLM provider 抽象与实现
+- `internal/query`：events / runs / sessions 读服务
 - `internal/runner`：执行编排
 - `internal/runtime`：EventLoop、Supervisor、后台 workers
 - `internal/session`：session key 归一化与计算
 - `internal/store`：SQLite 启动、schema、读写与恢复
+- `internal/systemprompt`：运行时 system prompt 资源
+- `internal/tools`：tools / skills 扩展边界，内含 `memory_*`、`web_search`、`web_fetch` 和 workspace 写工具
 - `internal/ui/messages`：CLI 等用户可见文案资源
-- `pkg/config`：配置模型
 - `pkg/logging`：日志封装
 - `pkg/model`：共享类型
-- `pkg/tools`：tools / skills 扩展边界，内含 `memory_*`、`web_search`、`web_fetch` 和 workspace 写工具
 
 ## 快速开始
 
