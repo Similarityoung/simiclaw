@@ -60,6 +60,7 @@ func RegisterBuiltins(reg *Registry) {
 	RegisterMemorySearch(reg)
 	RegisterMemoryGet(reg)
 	RegisterWebSearch(reg, WebSearchOptions{})
+	RegisterWebFetch(reg, WebFetchOptions{})
 	RegisterWorkspacePatch(reg)
 	RegisterWorkspaceDelete(reg)
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
 
-const AppVersion = "v0.4"
+const AppVersion = "v1.0"
 
 func Run() {
 	_, _ = fmt.Fprintln(os.Stdout, AppVersion)

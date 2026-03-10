@@ -58,7 +58,7 @@ go test ./tests/integration/... -tags=integration -run TestName
 - `internal/runner/runner.go`: loads recent message history and SQLite FTS hits, resolves the configured LLM provider, executes tools through the registry, and produces trace/output. `memory_flush`, `cron_fire`, and `compaction` are handled as no-reply payloads that write directly into workspace memory.
 - `internal/store/db.go` + `internal/store/history.go`: workspace initialization, SQLite open/schema validation, read/write connections, recent history reads, and FTS-backed message search.
 - `pkg/config/config.go`: defaults, file/env overrides, and provider selection/validation.
-- `pkg/tools/registry.go`, `pkg/tools/memory_search.go`, `pkg/tools/memory_get.go`: built-in tool registration and execution surface exposed to the runner.
+- `pkg/tools/registry.go`, `pkg/tools/memory_search.go`, `pkg/tools/memory_get.go`, `pkg/tools/web_search.go`, `pkg/tools/web_fetch.go`: built-in tool registration and execution surface exposed to the runner.
 
 ## Suggested reading paths
 

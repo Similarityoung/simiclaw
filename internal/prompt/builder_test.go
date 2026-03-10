@@ -19,7 +19,7 @@ func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
 	if !strings.Contains(promptpkg.SystemText.IdentityRuntime, "{{workspace_path}}") {
 		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", promptpkg.SystemText.IdentityRuntime)
 	}
-	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_search") {
+	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_search") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_fetch") {
 		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", promptpkg.SystemText.ToolContract)
 	}
 }
