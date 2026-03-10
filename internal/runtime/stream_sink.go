@@ -3,8 +3,7 @@ package runtime
 import (
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -77,7 +76,7 @@ func (s hubStreamSink) OnToolResult(toolCallID, toolName string, result map[stri
 	})
 }
 
-func terminalEventFromRecord(rec readmodel.EventRecord) api.ChatStreamEvent {
+func terminalEventFromRecord(rec runtimemodel.EventRecord) api.ChatStreamEvent {
 	apiRec := api.EventRecord{
 		EventID:           rec.EventID,
 		Status:            rec.Status,
@@ -117,8 +116,8 @@ func terminalEventFromRecord(rec readmodel.EventRecord) api.ChatStreamEvent {
 	}
 }
 
-func terminalEventFromFinalize(finalize store.RunFinalize) api.ChatStreamEvent {
-	rec := readmodel.EventRecord{
+func terminalEventFromFinalize(finalize runtimemodel.RunFinalize) api.ChatStreamEvent {
+	rec := runtimemodel.EventRecord{
 		EventID:        finalize.EventID,
 		Status:         finalize.EventStatus,
 		RunID:          finalize.RunID,
