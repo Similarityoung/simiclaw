@@ -65,7 +65,7 @@ func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest) api.IngestR
 	return resp
 }
 
-func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventRecord {
+func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -73,7 +73,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		if code != http.StatusOK {
 			t.Fatalf("event query expected 200, got %d body=%s", code, string(body))
 		}
-		var event model.EventRecord
+		var event api.EventRecord
 		if err := json.Unmarshal(body, &event); err != nil {
 			t.Fatalf("decode event: %v", err)
 		}
@@ -83,7 +83,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timeout waiting for event %s", eventID)
-	return model.EventRecord{}
+	return api.EventRecord{}
 }
 
 func doRequest(t *testing.T, app *bootstrap.App, method, path string, body []byte) ([]byte, int) {

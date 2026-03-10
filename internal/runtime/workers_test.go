@@ -3,16 +3,17 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -241,7 +242,7 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 	if failed.Type != api.ChatStreamEventError || failed.Error == nil {
 		t.Fatalf("expected failed terminal event, got %+v", failed)
 	}
-	done := terminalEventFromRecord(model.EventRecord{
+	done := terminalEventFromRecord(readmodel.EventRecord{
 		EventID:   "evt_done",
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),

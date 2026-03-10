@@ -36,7 +36,7 @@ type ChatStreamEvent struct {
 	Result                map[string]any      `json:"result,omitempty"`
 	Truncated             bool                `json:"truncated,omitempty"`
 	IngestResponse        *IngestResponse     `json:"ingest_response,omitempty"`
-	EventRecord           *model.EventRecord  `json:"event_record,omitempty"`
+	EventRecord           *EventRecord        `json:"event_record,omitempty"`
 	Error                 *model.ErrorBlock   `json:"error,omitempty"`
 }
 

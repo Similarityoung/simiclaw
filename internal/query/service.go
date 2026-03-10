@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -45,7 +46,7 @@ type SessionListQuery struct {
 }
 
 type EventPage struct {
-	Items []model.EventRecord
+	Items []readmodel.EventRecord
 	Next  *EventCursorAnchor
 }
 
@@ -55,14 +56,14 @@ type RunPage struct {
 }
 
 type SessionPage struct {
-	Items []model.SessionRecord
+	Items []readmodel.SessionRecord
 	Next  *SessionCursorAnchor
 }
 
 type Repository interface {
-	ListEventsPage(ctx context.Context, filter store.EventListFilter) ([]model.EventRecord, error)
+	ListEventsPage(ctx context.Context, filter store.EventListFilter) ([]readmodel.EventRecord, error)
 	ListRunsPage(ctx context.Context, filter store.RunListFilter) ([]model.RunTrace, error)
-	ListSessionsPage(ctx context.Context, filter store.SessionListFilter) ([]model.SessionRecord, error)
+	ListSessionsPage(ctx context.Context, filter store.SessionListFilter) ([]readmodel.SessionRecord, error)
 }
 
 type Service struct {
@@ -124,7 +125,7 @@ func (s *Service) ListSessions(ctx context.Context, query SessionListQuery) (Ses
 	return buildSessionPage(items, query.Limit), nil
 }
 
-func buildEventPage(items []model.EventRecord, limit int) EventPage {
+func buildEventPage(items []readmodel.EventRecord, limit int) EventPage {
 	if limit <= 0 || len(items) <= limit {
 		return EventPage{Items: items}
 	}
@@ -154,7 +155,7 @@ func buildRunPage(items []model.RunTrace, limit int) RunPage {
 	}
 }
 
-func buildSessionPage(items []model.SessionRecord, limit int) SessionPage {
+func buildSessionPage(items []readmodel.SessionRecord, limit int) SessionPage {
 	if limit <= 0 || len(items) <= limit {
 		return SessionPage{Items: items}
 	}

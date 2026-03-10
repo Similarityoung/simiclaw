@@ -37,5 +37,5 @@ func (s *Server) handleGetEventByID(w http.ResponseWriter, r *http.Request, even
 		writeAPIError(w, &gateway.APIError{StatusCode: 404, Code: model.ErrorCodeNotFound, Message: "event not found"})
 		return
 	}
-	writeJSON(w, 200, rec)
+	writeJSON(w, 200, toAPIEventRecord(rec))
 }

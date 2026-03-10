@@ -37,9 +37,9 @@ type Options struct {
 }
 
 type ChatClient interface {
-	SendAndWait(ctx context.Context, req api.IngestRequest) (model.EventRecord, error)
-	SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
-	PollEvent(ctx context.Context, eventID string) (model.EventRecord, error)
+	SendAndWait(ctx context.Context, req api.IngestRequest) (api.EventRecord, error)
+	SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error)
+	PollEvent(ctx context.Context, eventID string) (api.EventRecord, error)
 }
 
 type replInput struct {
@@ -218,7 +218,7 @@ func formatError(err error) string {
 	return err.Error()
 }
 
-func sendOneTurn(ctx context.Context, client ChatClient, req api.IngestRequest, useStream bool, renderer *streamRenderer) (model.EventRecord, error) {
+func sendOneTurn(ctx context.Context, client ChatClient, req api.IngestRequest, useStream bool, renderer *streamRenderer) (api.EventRecord, error) {
 	if !useStream {
 		return client.SendAndWait(ctx, req)
 	}
@@ -233,6 +233,6 @@ func sendOneTurn(ctx context.Context, client ChatClient, req api.IngestRequest, 
 	case errors.As(err, &recoverable) && recoverable.EventID != "":
 		return client.PollEvent(ctx, recoverable.EventID)
 	default:
-		return model.EventRecord{}, err
+		return api.EventRecord{}, err
 	}
 }

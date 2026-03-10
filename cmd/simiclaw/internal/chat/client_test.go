@@ -147,7 +147,7 @@ func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T
 				Type:     api.ChatStreamEventDone,
 				EventID:  "evt_3",
 				Sequence: 2,
-				EventRecord: &model.EventRecord{
+				EventRecord: &api.EventRecord{
 					EventID:      "evt_3",
 					Status:       model.EventStatusProcessed,
 					OutboxStatus: model.OutboxStatusPending,
@@ -160,7 +160,7 @@ func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T
 			}
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/events/evt_3":
 			attempt := pollCount.Add(1)
-			rec := model.EventRecord{
+			rec := api.EventRecord{
 				EventID:      "evt_3",
 				Status:       model.EventStatusProcessed,
 				OutboxStatus: model.OutboxStatusPending,

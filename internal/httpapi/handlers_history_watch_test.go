@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +15,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -168,8 +168,8 @@ func findSessionKeyByConversation(t *testing.T, app *bootstrap.App, conversation
 }
 
 func fetchHistoryPage(t *testing.T, baseURL, sessionKey, cursor string, limit int, visibleOnly bool) struct {
-	Items      []model.MessageRecord `json:"items"`
-	NextCursor string                `json:"next_cursor"`
+	Items      []api.MessageRecord `json:"items"`
+	NextCursor string              `json:"next_cursor"`
 } {
 	t.Helper()
 	url := fmt.Sprintf("%s/v1/sessions/%s/history?limit=%d", baseURL, sessionKey, limit)
@@ -189,8 +189,8 @@ func fetchHistoryPage(t *testing.T, baseURL, sessionKey, cursor string, limit in
 		t.Fatalf("history status=%d body=%s", resp.StatusCode, string(body))
 	}
 	var out struct {
-		Items      []model.MessageRecord `json:"items"`
-		NextCursor string                `json:"next_cursor"`
+		Items      []api.MessageRecord `json:"items"`
+		NextCursor string              `json:"next_cursor"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode history: %v", err)

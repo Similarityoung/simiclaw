@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -66,10 +67,19 @@ func (s *Server) handleGetSessionHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := map[string]any{"items": items}
+	apiItems := make([]api.MessageRecord, 0, len(items))
+	for _, item := range items {
+		apiItems = append(apiItems, toAPIMessageRecord(item))
+	}
+
+	resp := map[string]any{"items": apiItems}
 	if len(items) > limit {
 		trimmed := items[1:]
-		resp["items"] = trimmed
+		apiTrimmed := make([]api.MessageRecord, 0, len(trimmed))
+		for _, item := range trimmed {
+			apiTrimmed = append(apiTrimmed, toAPIMessageRecord(item))
+		}
+		resp["items"] = apiTrimmed
 		first := trimmed[0]
 		resp["next_cursor"] = encodeCursor(messageCursor{
 			V:             1,

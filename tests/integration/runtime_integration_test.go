@@ -523,7 +523,7 @@ func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest, want int) a
 	return resp
 }
 
-func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventRecord {
+func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -531,7 +531,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		if code != http.StatusOK {
 			t.Fatalf("event query expected 200, got %d body=%s", code, string(body))
 		}
-		var event model.EventRecord
+		var event api.EventRecord
 		if err := json.Unmarshal(body, &event); err != nil {
 			t.Fatalf("decode event: %v", err)
 		}
@@ -544,7 +544,7 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) model.EventReco
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timeout polling event %s", eventID)
-	return model.EventRecord{}
+	return api.EventRecord{}
 }
 
 func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace {
@@ -561,7 +561,7 @@ func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace 
 }
 
 func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, visibleOnly bool) struct {
-	Items []model.MessageRecord `json:"items"`
+	Items []api.MessageRecord `json:"items"`
 } {
 	t.Helper()
 	path := "/v1/sessions/" + sessionKey + "/history"
@@ -573,7 +573,7 @@ func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, vi
 		t.Fatalf("history query expected 200, got %d body=%s", code, string(body))
 	}
 	var out struct {
-		Items []model.MessageRecord `json:"items"`
+		Items []api.MessageRecord `json:"items"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("decode history: %v", err)
@@ -581,13 +581,13 @@ func fetchSessionHistory(t *testing.T, app *bootstrap.App, sessionKey string, vi
 	return out
 }
 
-func getSession(t *testing.T, app *bootstrap.App, sessionKey string) model.SessionRecord {
+func getSession(t *testing.T, app *bootstrap.App, sessionKey string) api.SessionRecord {
 	t.Helper()
 	body, code := doRequest(t, app, http.MethodGet, "/v1/sessions/"+sessionKey, nil)
 	if code != http.StatusOK {
 		t.Fatalf("session query expected 200, got %d body=%s", code, string(body))
 	}
-	var session model.SessionRecord
+	var session api.SessionRecord
 	if err := json.Unmarshal(body, &session); err != nil {
 		t.Fatalf("decode session: %v", err)
 	}

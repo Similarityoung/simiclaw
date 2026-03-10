@@ -2,10 +2,10 @@ package streaming
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -51,7 +51,7 @@ func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 	hub := NewHub()
 	terminal := hub.PublishTerminal("evt_2", api.ChatStreamEvent{
 		Type: api.ChatStreamEventDone,
-		EventRecord: &model.EventRecord{
+		EventRecord: &api.EventRecord{
 			EventID: "evt_2",
 			Status:  model.EventStatusProcessed,
 		},

@@ -79,7 +79,7 @@ func (r *streamRenderer) HandleStreamEvent(event api.ChatStreamEvent) error {
 	}
 }
 
-func (r *streamRenderer) Finish(rec model.EventRecord) error {
+func (r *streamRenderer) Finish(rec api.EventRecord) error {
 	reply := rec.AssistantReply
 	if rec.Status == model.EventStatusFailed {
 		return r.closeBotLine()

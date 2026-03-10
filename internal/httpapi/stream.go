@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -118,14 +119,15 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 	return nil
 }
 
-func terminalEventFromRecord(rec model.EventRecord) *api.ChatStreamEvent {
+func terminalEventFromRecord(rec readmodel.EventRecord) *api.ChatStreamEvent {
+	apiRec := toAPIEventRecord(rec)
 	switch rec.Status {
 	case model.EventStatusFailed:
 		return &api.ChatStreamEvent{
 			Type:        api.ChatStreamEventError,
 			EventID:     rec.EventID,
 			At:          rec.UpdatedAt,
-			EventRecord: &rec,
+			EventRecord: &apiRec,
 			Error:       rec.Error,
 		}
 	case model.EventStatusProcessed, model.EventStatusSuppressed:
@@ -133,7 +135,7 @@ func terminalEventFromRecord(rec model.EventRecord) *api.ChatStreamEvent {
 			Type:        api.ChatStreamEventDone,
 			EventID:     rec.EventID,
 			At:          rec.UpdatedAt,
-			EventRecord: &rec,
+			EventRecord: &apiRec,
 		}
 	default:
 		return nil

@@ -72,14 +72,6 @@ type ClaimedEvent struct {
 	RunMode model.RunMode
 }
 
-type LookupEvent struct {
-	EventID     string
-	PayloadHash string
-	ReceivedAt  time.Time
-	SessionKey  string
-	SessionID   string
-}
-
 type HistoryMessage struct {
 	Role       string
 	Content    string

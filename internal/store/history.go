@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"strings"
 	"time"
 
@@ -123,7 +124,7 @@ func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, li
 	return hits, rows.Err()
 }
 
-func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]model.MessageRecord, error) {
+func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]readmodel.MessageRecord, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -152,10 +153,10 @@ func (db *DB) ListMessages(ctx context.Context, sessionID string, limit int, bef
 	}
 	defer rows.Close()
 
-	out := make([]model.MessageRecord, 0, limit)
+	out := make([]readmodel.MessageRecord, 0, limit)
 	for rows.Next() {
 		var (
-			rec            model.MessageRecord
+			rec            readmodel.MessageRecord
 			visible        int
 			toolArgsJSON   string
 			toolResultJSON string
@@ -208,7 +209,7 @@ func reverseHistory(items []HistoryMessage) {
 	}
 }
 
-func reverseMessages(items []model.MessageRecord) {
+func reverseMessages(items []readmodel.MessageRecord) {
 	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
 		items[i], items[j] = items[j], items[i]
 	}

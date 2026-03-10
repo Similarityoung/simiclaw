@@ -13,11 +13,11 @@ import (
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func TestModelInitWithConversationLoadsExistingHistory(t *testing.T) {
-	cli := newTUITestClient(t, map[string][]model.SessionRecord{
+	cli := newTUITestClient(t, map[string][]api.SessionRecord{
 		"conv-existing": {
 			{
 				SessionKey:     "sk_group",
@@ -39,7 +39,7 @@ func TestModelInitWithConversationLoadsExistingHistory(t *testing.T) {
 				UpdatedAt:       time.Now().UTC(),
 			},
 		},
-	}, map[string][]model.MessageRecord{
+	}, map[string][]api.MessageRecord{
 		"sk_dm": {
 			{Role: "user", Content: "hello", Visible: true},
 			{Role: "assistant", Content: "world", Visible: true},
@@ -69,7 +69,7 @@ func TestModelInitWithConversationLoadsExistingHistory(t *testing.T) {
 }
 
 func TestHandleNamingKeyRejectsExistingConversationID(t *testing.T) {
-	cli := newTUITestClient(t, map[string][]model.SessionRecord{
+	cli := newTUITestClient(t, map[string][]api.SessionRecord{
 		"dup-conversation": {
 			{
 				SessionKey:      "sk_dup",
@@ -109,7 +109,7 @@ func TestHandleNamingKeyRejectsExistingConversationID(t *testing.T) {
 }
 
 func TestModelInitWithNewConversationRejectsExistingConversationID(t *testing.T) {
-	cli := newTUITestClient(t, map[string][]model.SessionRecord{
+	cli := newTUITestClient(t, map[string][]api.SessionRecord{
 		"dup-conversation": {
 			{
 				SessionKey:      "sk_dup",
@@ -143,7 +143,7 @@ func TestModelInitWithNewConversationRejectsExistingConversationID(t *testing.T)
 	}
 }
 
-func newTUITestClient(t *testing.T, sessionsByConversation map[string][]model.SessionRecord, historyBySession map[string][]model.MessageRecord) *sharedclient.Client {
+func newTUITestClient(t *testing.T, sessionsByConversation map[string][]api.SessionRecord, historyBySession map[string][]api.MessageRecord) *sharedclient.Client {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/sessions", func(w http.ResponseWriter, r *http.Request) {

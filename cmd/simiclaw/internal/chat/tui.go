@@ -41,7 +41,7 @@ type modelState struct {
 	mode         viewMode
 	width        int
 	height       int
-	sessions     []model.SessionRecord
+	sessions     []api.SessionRecord
 	selectorIdx  int
 	selectorBusy bool
 	loading      bool
@@ -63,14 +63,14 @@ type modelState struct {
 }
 
 type sessionsLoadedMsg struct {
-	Items []model.SessionRecord
+	Items []api.SessionRecord
 	Err   error
 }
 
 type sessionOpenedMsg struct {
-	Session      *model.SessionRecord
+	Session      *api.SessionRecord
 	Conversation string
-	Messages     []model.MessageRecord
+	Messages     []api.MessageRecord
 	Err          error
 }
 
@@ -679,7 +679,7 @@ func checkConversationAvailableCmd(cli *client.Client, conversation string) tea.
 	}
 }
 
-func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*model.SessionRecord, error) {
+func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*api.SessionRecord, error) {
 	conversation = strings.TrimSpace(conversation)
 	if conversation == "" {
 		return nil, nil
@@ -771,7 +771,7 @@ func waitForAsyncMsg(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func eventToTerminalFrame(rec model.EventRecord) api.ChatStreamEvent {
+func eventToTerminalFrame(rec api.EventRecord) api.ChatStreamEvent {
 	frame := api.ChatStreamEvent{
 		Type:        api.ChatStreamEventDone,
 		EventID:     rec.EventID,

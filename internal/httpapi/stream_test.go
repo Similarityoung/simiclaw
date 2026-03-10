@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -41,7 +41,7 @@ func TestChatStreamAcceptedThenDone(t *testing.T) {
 
 	app.StreamHub.PublishTerminal(accepted.EventID, api.ChatStreamEvent{
 		Type: api.ChatStreamEventDone,
-		EventRecord: &model.EventRecord{
+		EventRecord: &api.EventRecord{
 			EventID:        accepted.EventID,
 			Status:         model.EventStatusProcessed,
 			AssistantReply: "done",
@@ -74,7 +74,7 @@ func TestChatStreamAcceptedThenError(t *testing.T) {
 			Code:    model.ErrorCodeInternal,
 			Message: "boom",
 		},
-		EventRecord: &model.EventRecord{
+		EventRecord: &api.EventRecord{
 			EventID:   accepted.EventID,
 			Status:    model.EventStatusFailed,
 			UpdatedAt: time.Now().UTC(),

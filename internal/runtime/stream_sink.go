@@ -1,11 +1,12 @@
 package runtime
 
 import (
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -76,14 +77,34 @@ func (s hubStreamSink) OnToolResult(toolCallID, toolName string, result map[stri
 	})
 }
 
-func terminalEventFromRecord(rec model.EventRecord) api.ChatStreamEvent {
+func terminalEventFromRecord(rec readmodel.EventRecord) api.ChatStreamEvent {
+	apiRec := api.EventRecord{
+		EventID:           rec.EventID,
+		Status:            rec.Status,
+		OutboxStatus:      rec.OutboxStatus,
+		SessionKey:        rec.SessionKey,
+		SessionID:         rec.SessionID,
+		RunID:             rec.RunID,
+		RunMode:           rec.RunMode,
+		AssistantReply:    rec.AssistantReply,
+		OutboxID:          rec.OutboxID,
+		ProcessingLease:   rec.ProcessingLease,
+		ReceivedAt:        rec.ReceivedAt,
+		CreatedAt:         rec.CreatedAt,
+		UpdatedAt:         rec.UpdatedAt,
+		PayloadHash:       rec.PayloadHash,
+		Provider:          rec.Provider,
+		Model:             rec.Model,
+		ProviderRequestID: rec.ProviderRequestID,
+		Error:             rec.Error,
+	}
 	switch rec.Status {
 	case model.EventStatusFailed:
 		return api.ChatStreamEvent{
 			Type:        api.ChatStreamEventError,
 			EventID:     rec.EventID,
 			At:          nonZeroTime(rec.UpdatedAt),
-			EventRecord: &rec,
+			EventRecord: &apiRec,
 			Error:       rec.Error,
 		}
 	default:
@@ -91,13 +112,13 @@ func terminalEventFromRecord(rec model.EventRecord) api.ChatStreamEvent {
 			Type:        api.ChatStreamEventDone,
 			EventID:     rec.EventID,
 			At:          nonZeroTime(rec.UpdatedAt),
-			EventRecord: &rec,
+			EventRecord: &apiRec,
 		}
 	}
 }
 
 func terminalEventFromFinalize(finalize store.RunFinalize) api.ChatStreamEvent {
-	rec := model.EventRecord{
+	rec := readmodel.EventRecord{
 		EventID:        finalize.EventID,
 		Status:         finalize.EventStatus,
 		RunID:          finalize.RunID,

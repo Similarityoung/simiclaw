@@ -15,14 +15,14 @@ import (
 
 func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T) {
 	client := &stubChatClient{
-		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error) {
 			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
 				Type:                  api.ChatStreamEventAccepted,
 				EventID:               "evt_1",
 				Sequence:              1,
 				StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			}); err != nil {
-				return model.EventRecord{}, err
+				return api.EventRecord{}, err
 			}
 			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
 				Type:     api.ChatStreamEventTextDelta,
@@ -30,15 +30,15 @@ func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T
 				Sequence: 2,
 				Delta:    "hel",
 			}); err != nil {
-				return model.EventRecord{}, err
+				return api.EventRecord{}, err
 			}
-			return model.EventRecord{}, &StreamRecoverableError{
+			return api.EventRecord{}, &StreamRecoverableError{
 				EventID: "evt_1",
 				Err:     errors.New("unexpected EOF"),
 			}
 		},
-		pollEvent: func(context.Context, string) (model.EventRecord, error) {
-			return model.EventRecord{
+		pollEvent: func(context.Context, string) (api.EventRecord, error) {
+			return api.EventRecord{
 				EventID:        "evt_1",
 				Status:         model.EventStatusProcessed,
 				AssistantReply: "hello world",
@@ -59,16 +59,16 @@ func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T
 
 func TestRunREPLEmptyDoneStillCompletesTurn(t *testing.T) {
 	client := &stubChatClient{
-		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error) {
 			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
 				Type:                  api.ChatStreamEventAccepted,
 				EventID:               "evt_2",
 				Sequence:              1,
 				StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			}); err != nil {
-				return model.EventRecord{}, err
+				return api.EventRecord{}, err
 			}
-			return model.EventRecord{
+			return api.EventRecord{
 				EventID:        "evt_2",
 				Status:         model.EventStatusProcessed,
 				AssistantReply: "",
@@ -88,28 +88,28 @@ func TestRunREPLEmptyDoneStillCompletesTurn(t *testing.T) {
 }
 
 type stubChatClient struct {
-	sendAndWait func(ctx context.Context, req api.IngestRequest) (model.EventRecord, error)
-	sendStream  func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
-	pollEvent   func(ctx context.Context, eventID string) (model.EventRecord, error)
+	sendAndWait func(ctx context.Context, req api.IngestRequest) (api.EventRecord, error)
+	sendStream  func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error)
+	pollEvent   func(ctx context.Context, eventID string) (api.EventRecord, error)
 }
 
-func (s *stubChatClient) SendAndWait(ctx context.Context, req api.IngestRequest) (model.EventRecord, error) {
+func (s *stubChatClient) SendAndWait(ctx context.Context, req api.IngestRequest) (api.EventRecord, error) {
 	if s.sendAndWait == nil {
-		return model.EventRecord{}, errors.New("unexpected SendAndWait")
+		return api.EventRecord{}, errors.New("unexpected SendAndWait")
 	}
 	return s.sendAndWait(ctx, req)
 }
 
-func (s *stubChatClient) SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+func (s *stubChatClient) SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error) {
 	if s.sendStream == nil {
-		return model.EventRecord{}, errors.New("unexpected SendStream")
+		return api.EventRecord{}, errors.New("unexpected SendStream")
 	}
 	return s.sendStream(ctx, req, handler)
 }
 
-func (s *stubChatClient) PollEvent(ctx context.Context, eventID string) (model.EventRecord, error) {
+func (s *stubChatClient) PollEvent(ctx context.Context, eventID string) (api.EventRecord, error) {
 	if s.pollEvent == nil {
-		return model.EventRecord{}, errors.New("unexpected PollEvent")
+		return api.EventRecord{}, errors.New("unexpected PollEvent")
 	}
 	return s.pollEvent(ctx, eventID)
 }
