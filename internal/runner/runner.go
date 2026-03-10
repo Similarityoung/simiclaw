@@ -50,13 +50,17 @@ type RunOutput struct {
 }
 
 type ProviderRunner struct {
-	workspace    string
-	db           *store.DB
-	registry     *tools.Registry
-	providers    *provider.Factory
-	writer       *memory.Writer
-	prompts      *prompt.Builder
-	historyLimit int
+	workspace       string
+	db              *store.DB
+	registry        *tools.Registry
+	providers       *provider.Factory
+	writer          *memory.Writer
+	prompts         *prompt.Builder
+	historyLimit    int
+	historyLoader   runHistoryLoader
+	promptAssembler llmPromptAssembler
+	toolExecutor    llmToolExecutor
+	traceAssembler  runTraceAssembler
 }
 
 var idSeq atomic.Uint64
@@ -66,15 +70,21 @@ func NewProviderRunner(workspace string, db *store.DB, registry *tools.Registry,
 		registry = tools.NewRegistry()
 		tools.RegisterBuiltins(registry)
 	}
-	return &ProviderRunner{
+	prompts := prompt.NewBuilder(workspace)
+	runner := &ProviderRunner{
 		workspace:    workspace,
 		db:           db,
 		registry:     registry,
 		providers:    providers,
 		writer:       memory.NewWriter(workspace),
-		prompts:      prompt.NewBuilder(workspace),
+		prompts:      prompts,
 		historyLimit: 20,
 	}
+	runner.historyLoader = runHistoryLoader{db: db, historyLimit: runner.historyLimit}
+	runner.promptAssembler = llmPromptAssembler{prompts: prompts, registry: runner.registry}
+	runner.toolExecutor = llmToolExecutor{workspace: workspace, registry: runner.registry}
+	runner.traceAssembler = runTraceAssembler{}
+	return runner
 }
 
 func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int, sink StreamSink) (RunOutput, error) {
@@ -203,26 +213,16 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 	defaultModel := r.providers.DefaultModel()
 	llmProvider, actualModel, err := r.providers.Resolve(defaultModel)
 	if err != nil {
-		trace.Status = model.RunStatusFailed
-		trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
-		trace.FinishedAt = time.Now().UTC()
-		trace.LatencyMS = time.Since(now).Milliseconds()
+		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
-	history, err := r.db.RecentMessagesForPrompt(ctx, event.ActiveSessionID, r.historyLimit)
+	history, err := r.historyLoader.Load(ctx, event.ActiveSessionID, event.Payload.Text)
 	if err != nil {
-		trace.Status = model.RunStatusFailed
-		trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
-		trace.FinishedAt = time.Now().UTC()
-		trace.LatencyMS = time.Since(now).Milliseconds()
+		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
-	ragHits, _ := r.db.SearchMessagesFTS(ctx, event.ActiveSessionID, strings.TrimSpace(event.Payload.Text), 5)
-	trace.ContextManifest = &model.ContextManifest{
-		HistoryRange: model.HistoryRange{Mode: "tail", TailLimit: r.historyLimit},
-	}
-	trace.RAGHits = ragHits
+	r.traceAssembler.AttachContext(trace, history)
 
 	messages := []OutputMessage{{
 		Role:    "user",
@@ -230,29 +230,9 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		Visible: opts.userVisible,
 		Meta:    cloneMap(opts.messageMeta),
 	}}
-	systemPrompt := r.prompts.Build(prompt.BuildInput{Context: prompt.RunContext{
-		Now:          now,
-		Conversation: event.Conversation,
-		SessionKey:   event.SessionKey,
-		SessionID:    event.ActiveSessionID,
-		PayloadType:  event.Payload.Type,
-	}})
-	chatMessages := make([]provider.ChatMessage, 0, len(history)+2)
-	chatMessages = append(chatMessages, provider.ChatMessage{Role: "system", Content: systemPrompt})
-	chatMessages = append(chatMessages, historyToChatMessages(history)...)
-	chatMessages = append(chatMessages, provider.ChatMessage{Role: "user", Content: strings.TrimSpace(event.Payload.Text)})
-
-	toolDefs := make([]provider.ToolDefinition, 0)
-	for _, def := range r.registry.Definitions() {
-		if !toolAllowed(def.Schema.Name, opts.allowedTools) {
-			continue
-		}
-		toolDefs = append(toolDefs, provider.ToolDefinition{
-			Name:        def.Schema.Name,
-			Description: def.Schema.Description,
-			Parameters:  def.Schema.Parameters,
-		})
-	}
+	assembly := r.promptAssembler.Assemble(event, now, history.history, opts.allowedTools)
+	chatMessages := assembly.chatMessages
+	toolDefs := assembly.toolDefs
 
 	var (
 		totalUsage    provider.Usage
@@ -267,10 +247,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			Tools:    toolDefs,
 		}, providerStreamSink{sink: sink})
 		if err != nil {
-			trace.Status = model.RunStatusFailed
-			trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
-			trace.FinishedAt = time.Now().UTC()
-			trace.LatencyMS = time.Since(now).Milliseconds()
+			r.traceAssembler.Fail(trace, now, err)
 			return RunOutput{
 				RunMode:  opts.runMode,
 				Messages: messages,
@@ -303,69 +280,14 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			ToolCalls: cloneToolCalls(last.ToolCalls),
 		})
 		for _, call := range last.ToolCalls {
-			displayArgs, argsTruncated := sanitizeDisplayMap(call.Args)
-			sink.OnToolStart(call.ToolCallID, call.Name, displayArgs, argsTruncated)
-
-			var res tools.Result
-			switch {
-			case !toolAllowed(call.Name, opts.allowedTools):
-				res = tools.Result{Error: &model.ErrorBlock{
-					Code:    model.ErrorCodeForbidden,
-					Message: fmt.Sprintf("tool %q is not allowed for payload_type=%s", call.Name, event.Payload.Type),
-				}}
-			case strings.EqualFold(strings.TrimSpace(event.Payload.Type), "cron_fire"):
-				if errBlock := cronFireToolPolicyError(call, toolUseCounts); errBlock != nil {
-					res = tools.Result{Error: errBlock}
-				} else {
-					res = callToolSafely(ctx, r.registry, tools.Context{
-						Workspace:    r.workspace,
-						Conversation: event.Conversation,
-					}, call.Name, call.Args)
-					toolUseCounts[call.Name]++
-				}
-			default:
-				res = callToolSafely(ctx, r.registry, tools.Context{
-					Workspace:    r.workspace,
-					Conversation: event.Conversation,
-				}, call.Name, call.Args)
-			}
-			exec := model.ToolExecution{
-				ToolCallID: call.ToolCallID,
-				Name:       call.Name,
-				Args:       call.Args,
-				Result:     res.Output,
-				Error:      res.Error,
-			}
-			trace.ToolExecutions = append(trace.ToolExecutions, exec)
-			trace.Actions = append(trace.Actions, model.Action{
-				ActionID:             nextID("act", now),
-				ActionIndex:          len(trace.Actions),
-				ActionIdempotencyKey: fmt.Sprintf("%s:%d", event.EventID, len(trace.Actions)),
-				Type:                 "InvokeTool",
-				Risk:                 toolRisk(call.Name),
-				Payload:              map[string]any{"tool_name": call.Name},
-			})
-			payload := map[string]any{}
-			if res.Output != nil {
-				payload = res.Output
-			}
-			displayResult, resultTruncated := sanitizeDisplayMap(payload)
-			sink.OnToolResult(call.ToolCallID, call.Name, displayResult, resultTruncated, res.Error)
-			content := toolResultString(res.Output, res.Error)
-			messages = append(messages, OutputMessage{
-				Role:       "tool",
-				Content:    content,
-				Visible:    opts.toolVisible,
-				ToolCallID: call.ToolCallID,
-				ToolName:   call.Name,
-				ToolArgs:   call.Args,
-				ToolResult: payload,
-				Meta:       cloneMap(opts.messageMeta),
-			})
+			step := r.toolExecutor.Execute(ctx, event, call, opts, toolUseCounts, sink, len(trace.Actions), now)
+			trace.ToolExecutions = append(trace.ToolExecutions, step.execution)
+			trace.Actions = append(trace.Actions, step.action)
+			messages = append(messages, step.message)
 			chatMessages = append(chatMessages, provider.ChatMessage{
-				Role:       "tool",
-				Content:    content,
-				ToolCallID: call.ToolCallID,
+				Role:       step.chat.role,
+				Content:    step.chat.content,
+				ToolCallID: step.chat.toolCallID,
 			})
 		}
 	}
@@ -382,18 +304,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		})
 	}
 
-	trace.Provider = last.Provider
-	trace.Model = last.Model
-	trace.PromptTokens = totalUsage.PromptTokens
-	trace.CompletionTokens = totalUsage.CompletionTokens
-	trace.TotalTokens = totalUsage.TotalTokens
-	trace.FinishReason = last.FinishReason
-	trace.RawFinishReason = last.RawFinishReason
-	trace.ProviderRequestID = last.ProviderRequestID
-	trace.OutputText = reply
-	trace.ToolCalls = last.ToolCalls
-	trace.FinishedAt = time.Now().UTC()
-	trace.LatencyMS = time.Since(now).Milliseconds()
+	r.traceAssembler.Complete(trace, now, totalUsage, last, reply)
 
 	assistantReply := reply
 	if opts.suppressOutput {
