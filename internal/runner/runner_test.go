@@ -655,6 +655,27 @@ func TestProviderRunnerNoReplyWritesCanonicalMemoryPaths(t *testing.T) {
 	}
 }
 
+func TestMaxToolRoundsReplyIgnoresPartialAssistantPreambleWhenToolCallsRemain(t *testing.T) {
+	got := maxToolRoundsReply(provider.ChatResult{
+		Text: "太好了！我找到了这个网页。让我查看具体内容：",
+		ToolCalls: []model.ToolCall{{
+			ToolCallID: "call_1",
+			Name:       "web_search",
+			Args:       map[string]any{"query": "site:example.com"},
+		}},
+	})
+	if got != "工具调用轮次已达上限。" {
+		t.Fatalf("unexpected reply: %q", got)
+	}
+}
+
+func TestMaxToolRoundsReplyPreservesPlainAssistantTextWithoutToolCalls(t *testing.T) {
+	got := maxToolRoundsReply(provider.ChatResult{Text: "总结完成"})
+	if got != "总结完成" {
+		t.Fatalf("unexpected reply: %q", got)
+	}
+}
+
 func newTestRunner(t *testing.T, llm config.LLMConfig, registry *tools.Registry) *ProviderRunner {
 	t.Helper()
 	workspace := t.TempDir()

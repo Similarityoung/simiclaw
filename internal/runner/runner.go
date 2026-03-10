@@ -285,10 +285,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			break
 		}
 		if round == maxToolRounds {
-			reply = strings.TrimSpace(last.Text)
-			if reply == "" {
-				reply = "工具调用轮次已达上限。"
-			}
+			reply = maxToolRoundsReply(last)
 			break
 		}
 
@@ -410,6 +407,17 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		AssistantReply: assistantReply,
 		SuppressOutput: opts.suppressOutput,
 	}, nil
+}
+
+func maxToolRoundsReply(last provider.ChatResult) string {
+	if len(last.ToolCalls) > 0 {
+		return "工具调用轮次已达上限。"
+	}
+	reply := strings.TrimSpace(last.Text)
+	if reply == "" {
+		return "工具调用轮次已达上限。"
+	}
+	return reply
 }
 
 func cronFireToolPolicyError(call model.ToolCall, counts map[string]int) *model.ErrorBlock {
