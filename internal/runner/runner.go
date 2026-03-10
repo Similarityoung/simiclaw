@@ -48,7 +48,7 @@ type RunOutput struct {
 
 type HistoryReader interface {
 	RecentMessagesForPrompt(ctx context.Context, sessionID string, limit int) ([]store.HistoryMessage, error)
-	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]model.RAGHit, error)
+	SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]api.RAGHit, error)
 }
 
 type ProviderRunner struct {
