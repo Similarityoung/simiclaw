@@ -246,7 +246,9 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 	}
 	_ = s.db.CompleteScheduledJob(s.ctx, job, now)
 	if !result.Duplicate && !result.Enqueued && s.loop != nil {
-		s.loop.TryEnqueue(result.EventID)
+		if err := s.db.MarkEventQueued(s.ctx, result.EventID, now); err == nil {
+			s.loop.TryEnqueue(result.EventID)
+		}
 	}
 	_ = s.db.BeatHeartbeat(s.ctx, string(kind), now)
 }

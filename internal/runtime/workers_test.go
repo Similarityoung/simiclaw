@@ -24,6 +24,12 @@ func (q *captureEnqueuer) TryEnqueue(eventID string) bool {
 	return true
 }
 
+type rejectEnqueuer struct{}
+
+func (q *rejectEnqueuer) TryEnqueue(string) bool {
+	return false
+}
+
 type captureSender struct {
 	messages []model.OutboxMessage
 }
@@ -122,6 +128,69 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 	if event.Status != model.EventStatusQueued {
 		t.Fatalf("expected queued event, got %+v", event)
+	}
+}
+
+func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	now := time.Date(2026, 3, 10, 16, 0, 0, 0, time.UTC)
+	conv := model.Conversation{ConversationID: "cron-fallback", ChannelType: "dm", ParticipantID: "u2"}
+	payloadJSON, err := json.Marshal(store.ScheduledJobPayload{
+		Source:       "cron",
+		TenantID:     "local",
+		Conversation: conv,
+		Payload:      model.EventPayload{Type: "cron_fire", Text: "fallback enqueue"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if _, err := db.Writer().ExecContext(
+		context.Background(),
+		`INSERT INTO scheduled_jobs (
+			job_id, name, kind, status, payload_json, next_run_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"cron:fallback",
+		"fallback",
+		string(model.ScheduledJobKindCron),
+		string(model.ScheduledJobStatusActive),
+		string(payloadJSON),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert scheduled job: %v", err)
+	}
+
+	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
+	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
+	supervisor := &Supervisor{
+		db:     db,
+		ingest: ingestService,
+		loop:   loop,
+		ctx:    context.Background(),
+	}
+
+	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
+
+	if got := loop.InboundDepth(); got != 1 {
+		t.Fatalf("expected one event queued into fallback loop, got depth=%d", got)
+	}
+	ids, err := db.ListRunnableEventIDs(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListRunnableEventIDs: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected one runnable event after fallback mark-queued, got %+v", ids)
+	}
+	event, ok, err := db.GetEvent(context.Background(), ids[0])
+	if err != nil {
+		t.Fatalf("GetEvent: %v", err)
+	}
+	if !ok {
+		t.Fatalf("fallback event not found")
+	}
+	if event.Status != model.EventStatusQueued {
+		t.Fatalf("expected fallback event to be queued, got %+v", event)
 	}
 }
 

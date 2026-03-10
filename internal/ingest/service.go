@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -24,8 +24,9 @@ const (
 )
 
 var (
-	tgKeyRE  = regexp.MustCompile(`^telegram:update:[0-9]+$`)
-	cliKeyRE = regexp.MustCompile(`^cli:[^:]+:[0-9]+$`)
+	tgKeyRE             = regexp.MustCompile(`^telegram:update:[0-9]+$`)
+	cliKeyRE            = regexp.MustCompile(`^cli:[^:]+:[0-9]+$`)
+	windowsVolumePathRE = regexp.MustCompile(`^[A-Za-z]:/`)
 )
 
 type Command struct {
@@ -104,6 +105,9 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 	now := cmd.ReceivedAt.UTC()
 	if now.IsZero() {
 		now = s.now()
+	}
+	if cmd.Request.Payload.NativeRef != "" {
+		cmd.Request.Payload.NativeRef = normalizeNativeRef(cmd.Request.Payload.NativeRef)
 	}
 
 	ts, err := validateRequest(cmd.Request, now)
@@ -212,8 +216,12 @@ func validateRequest(req model.IngestRequest, now time.Time) (time.Time, *Error)
 		return time.Time{}, &Error{Code: model.ErrorCodeInvalidArgument, Message: "invalid cli idempotency_key format"}
 	}
 	if req.Payload.NativeRef != "" {
-		clean := filepath.Clean(req.Payload.NativeRef)
-		if strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) || !strings.HasPrefix(clean, "runtime/native/") {
+		clean := normalizeNativeRef(req.Payload.NativeRef)
+		if clean == ".." ||
+			strings.HasPrefix(clean, "../") ||
+			strings.HasPrefix(clean, "/") ||
+			windowsVolumePathRE.MatchString(clean) ||
+			!strings.HasPrefix(clean, "runtime/native/") {
 			return time.Time{}, &Error{Code: model.ErrorCodeInvalidArgument, Message: "native_ref must stay within runtime/native/**"}
 		}
 	}
@@ -231,6 +239,10 @@ func validateRequest(req model.IngestRequest, now time.Time) (time.Time, *Error)
 		return time.Time{}, &Error{Code: model.ErrorCodeInvalidArgument, Message: "timestamp drift exceeds 10m"}
 	}
 	return ts, nil
+}
+
+func normalizeNativeRef(ref string) string {
+	return path.Clean(strings.ReplaceAll(ref, "\\", "/"))
 }
 
 func canonicalPayloadHash(req model.IngestRequest) (string, error) {

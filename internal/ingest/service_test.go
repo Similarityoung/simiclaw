@@ -41,6 +41,50 @@ func TestValidateRequestRejectsBadNativeRef(t *testing.T) {
 	}
 }
 
+func TestValidateRequestAllowsWindowsNativeRefSeparators(t *testing.T) {
+	now := time.Now().UTC()
+	_, err := validateRequest(model.IngestRequest{
+		Source: "cli",
+		Conversation: model.Conversation{
+			ConversationID: "conv_1",
+			ChannelType:    "dm",
+			ParticipantID:  "u1",
+		},
+		IdempotencyKey: "cli:conv_1:1",
+		Timestamp:      now.Format(time.RFC3339),
+		Payload: model.EventPayload{
+			Type:      "message",
+			Text:      "hi",
+			NativeRef: `runtime\native\events\evt_1.json`,
+		},
+	}, now)
+	if err != nil {
+		t.Fatalf("expected windows-style native_ref to pass validation, got %v", err)
+	}
+}
+
+func TestValidateRequestRejectsWindowsNativeRefTraversal(t *testing.T) {
+	now := time.Now().UTC()
+	_, err := validateRequest(model.IngestRequest{
+		Source: "cli",
+		Conversation: model.Conversation{
+			ConversationID: "conv_1",
+			ChannelType:    "dm",
+			ParticipantID:  "u1",
+		},
+		IdempotencyKey: "cli:conv_1:1",
+		Timestamp:      now.Format(time.RFC3339),
+		Payload: model.EventPayload{
+			Type:      "message",
+			Text:      "hi",
+			NativeRef: `..\runtime\native\evt_1.json`,
+		},
+	}, now)
+	if err == nil {
+		t.Fatalf("expected windows traversal native_ref to be rejected")
+	}
+}
+
 func TestValidateRequestIdempotencyFormat(t *testing.T) {
 	now := time.Now().UTC()
 	_, err := validateRequest(model.IngestRequest{
