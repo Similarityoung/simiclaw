@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
@@ -22,8 +23,8 @@ func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 		t.Fatalf("unexpected terminal for sub2: %+v", terminal)
 	}
 
-	published := hub.Publish("evt_1", model.ChatStreamEvent{
-		Type:    model.ChatStreamEventStatus,
+	published := hub.Publish("evt_1", api.ChatStreamEvent{
+		Type:    api.ChatStreamEventStatus,
 		Status:  "processing",
 		Message: "claimed",
 	})
@@ -48,8 +49,8 @@ func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 
 func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 	hub := NewHub()
-	terminal := hub.PublishTerminal("evt_2", model.ChatStreamEvent{
-		Type: model.ChatStreamEventDone,
+	terminal := hub.PublishTerminal("evt_2", api.ChatStreamEvent{
+		Type: api.ChatStreamEventDone,
 		EventRecord: &model.EventRecord{
 			EventID: "evt_2",
 			Status:  model.EventStatusProcessed,
@@ -65,7 +66,7 @@ func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 	if replayed == nil {
 		t.Fatalf("expected replayed terminal")
 	}
-	if replayed.Type != model.ChatStreamEventDone {
+	if replayed.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done terminal, got %+v", replayed)
 	}
 	if replayed.Sequence != terminal.Sequence {

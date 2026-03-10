@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"path/filepath"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source: "telegram",
 		Conversation: model.Conversation{
 			ConversationID: "scope-test",
@@ -183,7 +184,7 @@ func TestListMessagesCursorFallbackAndToolPayloadDecode(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "messages-cursor",

@@ -3,6 +3,7 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"time"
 
@@ -10,30 +11,30 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
-func NormalizeTextUpdate(update tele.Update, receivedAt time.Time) (model.IngestRequest, error) {
+func NormalizeTextUpdate(update tele.Update, receivedAt time.Time) (api.IngestRequest, error) {
 	if update.ID == 0 {
-		return model.IngestRequest{}, fmt.Errorf("update_id is required")
+		return api.IngestRequest{}, fmt.Errorf("update_id is required")
 	}
 	if update.Message == nil {
-		return model.IngestRequest{}, fmt.Errorf("telegram text update requires message")
+		return api.IngestRequest{}, fmt.Errorf("telegram text update requires message")
 	}
 	msg := update.Message
 	if msg.Chat == nil {
-		return model.IngestRequest{}, fmt.Errorf("telegram message chat is required")
+		return api.IngestRequest{}, fmt.Errorf("telegram message chat is required")
 	}
 	if msg.Sender == nil {
-		return model.IngestRequest{}, fmt.Errorf("telegram message sender is required")
+		return api.IngestRequest{}, fmt.Errorf("telegram message sender is required")
 	}
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
-		return model.IngestRequest{}, fmt.Errorf("telegram message text is required")
+		return api.IngestRequest{}, fmt.Errorf("telegram message text is required")
 	}
 	native, err := json.Marshal(update)
 	if err != nil {
-		return model.IngestRequest{}, err
+		return api.IngestRequest{}, err
 	}
 	receivedAt = receivedAt.UTC()
-	return model.IngestRequest{
+	return api.IngestRequest{
 		Source: "telegram",
 		Conversation: model.Conversation{
 			ConversationID: fmt.Sprintf("tg_chat_%d", msg.Chat.ID),

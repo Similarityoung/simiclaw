@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"testing"
 	"time"
@@ -14,17 +15,17 @@ import (
 
 func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T) {
 	client := &stubChatClient{
-		sendStream: func(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
-			if err := handler.HandleStreamEvent(model.ChatStreamEvent{
-				Type:                  model.ChatStreamEventAccepted,
+		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
+				Type:                  api.ChatStreamEventAccepted,
 				EventID:               "evt_1",
 				Sequence:              1,
-				StreamProtocolVersion: model.ChatStreamProtocolVersion,
+				StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			}); err != nil {
 				return model.EventRecord{}, err
 			}
-			if err := handler.HandleStreamEvent(model.ChatStreamEvent{
-				Type:     model.ChatStreamEventTextDelta,
+			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
+				Type:     api.ChatStreamEventTextDelta,
 				EventID:  "evt_1",
 				Sequence: 2,
 				Delta:    "hel",
@@ -58,12 +59,12 @@ func TestRunREPLRecoversFromStreamInterruptionWithoutDuplicatePrint(t *testing.T
 
 func TestRunREPLEmptyDoneStillCompletesTurn(t *testing.T) {
 	client := &stubChatClient{
-		sendStream: func(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
-			if err := handler.HandleStreamEvent(model.ChatStreamEvent{
-				Type:                  model.ChatStreamEventAccepted,
+		sendStream: func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+			if err := handler.HandleStreamEvent(api.ChatStreamEvent{
+				Type:                  api.ChatStreamEventAccepted,
 				EventID:               "evt_2",
 				Sequence:              1,
-				StreamProtocolVersion: model.ChatStreamProtocolVersion,
+				StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			}); err != nil {
 				return model.EventRecord{}, err
 			}
@@ -87,19 +88,19 @@ func TestRunREPLEmptyDoneStillCompletesTurn(t *testing.T) {
 }
 
 type stubChatClient struct {
-	sendAndWait func(ctx context.Context, req model.IngestRequest) (model.EventRecord, error)
-	sendStream  func(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
+	sendAndWait func(ctx context.Context, req api.IngestRequest) (model.EventRecord, error)
+	sendStream  func(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
 	pollEvent   func(ctx context.Context, eventID string) (model.EventRecord, error)
 }
 
-func (s *stubChatClient) SendAndWait(ctx context.Context, req model.IngestRequest) (model.EventRecord, error) {
+func (s *stubChatClient) SendAndWait(ctx context.Context, req api.IngestRequest) (model.EventRecord, error) {
 	if s.sendAndWait == nil {
 		return model.EventRecord{}, errors.New("unexpected SendAndWait")
 	}
 	return s.sendAndWait(ctx, req)
 }
 
-func (s *stubChatClient) SendStream(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
+func (s *stubChatClient) SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error) {
 	if s.sendStream == nil {
 		return model.EventRecord{}, errors.New("unexpected SendStream")
 	}

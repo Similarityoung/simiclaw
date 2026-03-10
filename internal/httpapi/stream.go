@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 const streamKeepaliveInterval = 15 * time.Second
 
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
-	var req model.IngestRequest
+	var req api.IngestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
@@ -38,12 +39,12 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	initSSEHeaders(w)
-	acceptedEvent := model.ChatStreamEvent{
-		Type:                  model.ChatStreamEventAccepted,
+	acceptedEvent := api.ChatStreamEvent{
+		Type:                  api.ChatStreamEventAccepted,
 		EventID:               accepted.Result.EventID,
 		Sequence:              1,
 		At:                    time.Now().UTC(),
-		StreamProtocolVersion: model.ChatStreamProtocolVersion,
+		StreamProtocolVersion: api.ChatStreamProtocolVersion,
 		IngestResponse:        &accepted.Response,
 	}
 	if err := writeSSEEvent(w, flusher, acceptedEvent); err != nil {
@@ -94,7 +95,7 @@ func initSSEHeaders(w http.ResponseWriter) {
 	headers.Set("X-Accel-Buffering", "no")
 }
 
-func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event model.ChatStreamEvent) error {
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event api.ChatStreamEvent) error {
 	b, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -117,19 +118,19 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 	return nil
 }
 
-func terminalEventFromRecord(rec model.EventRecord) *model.ChatStreamEvent {
+func terminalEventFromRecord(rec model.EventRecord) *api.ChatStreamEvent {
 	switch rec.Status {
 	case model.EventStatusFailed:
-		return &model.ChatStreamEvent{
-			Type:        model.ChatStreamEventError,
+		return &api.ChatStreamEvent{
+			Type:        api.ChatStreamEventError,
 			EventID:     rec.EventID,
 			At:          rec.UpdatedAt,
 			EventRecord: &rec,
 			Error:       rec.Error,
 		}
 	case model.EventStatusProcessed, model.EventStatusSuppressed:
-		return &model.ChatStreamEvent{
-			Type:        model.ChatStreamEventDone,
+		return &api.ChatStreamEvent{
+			Type:        api.ChatStreamEventDone,
 			EventID:     rec.EventID,
 			At:          rec.UpdatedAt,
 			EventRecord: &rec,

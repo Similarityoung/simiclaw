@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -93,8 +94,8 @@ func newHTTPAPITestServer(t *testing.T) (*bootstrap.App, *httptest.Server) {
 	return app, srv
 }
 
-func buildCLIRequest(conversation string, seq int, payloadType, text string) model.IngestRequest {
-	return model.IngestRequest{
+func buildCLIRequest(conversation string, seq int, payloadType, text string) api.IngestRequest {
+	return api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: conversation,
@@ -110,7 +111,7 @@ func buildCLIRequest(conversation string, seq int, payloadType, text string) mod
 	}
 }
 
-func ingestTestEvent(t *testing.T, baseURL string, req model.IngestRequest) string {
+func ingestTestEvent(t *testing.T, baseURL string, req api.IngestRequest) string {
 	t.Helper()
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -125,7 +126,7 @@ func ingestTestEvent(t *testing.T, baseURL string, req model.IngestRequest) stri
 		data, _ := io.ReadAll(resp.Body)
 		t.Fatalf("ingest status=%d body=%s", resp.StatusCode, string(data))
 	}
-	var out model.IngestResponse
+	var out api.IngestResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}

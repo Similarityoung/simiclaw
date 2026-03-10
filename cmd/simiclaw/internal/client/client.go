@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"net/http"
 	"net/url"
@@ -145,15 +146,15 @@ func (c *Client) Health(ctx context.Context) (HealthReport, error) {
 	return HealthReport{Health: health, Ready: ready}, nil
 }
 
-func (c *Client) Ingest(ctx context.Context, req model.IngestRequest) (model.IngestResponse, error) {
-	var out model.IngestResponse
+func (c *Client) Ingest(ctx context.Context, req api.IngestRequest) (api.IngestResponse, error) {
+	var out api.IngestResponse
 	if err := c.postJSON(ctx, "/v1/events:ingest", req, &out); err != nil {
 		return out, err
 	}
 	return out, nil
 }
 
-func (c *Client) StreamChat(ctx context.Context, req model.IngestRequest, onEvent func(model.ChatStreamEvent) error) (model.EventRecord, error) {
+func (c *Client) StreamChat(ctx context.Context, req api.IngestRequest, onEvent func(api.ChatStreamEvent) error) (model.EventRecord, error) {
 	rec, err := c.streamChat(ctx, req, onEvent)
 	if err == nil {
 		return rec, nil
@@ -177,7 +178,7 @@ func (c *Client) StreamChat(ctx context.Context, req model.IngestRequest, onEven
 	return model.EventRecord{}, err
 }
 
-func (c *Client) streamChat(ctx context.Context, req model.IngestRequest, onEvent func(model.ChatStreamEvent) error) (model.EventRecord, error) {
+func (c *Client) streamChat(ctx context.Context, req api.IngestRequest, onEvent func(api.ChatStreamEvent) error) (model.EventRecord, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return model.EventRecord{}, err
@@ -224,7 +225,7 @@ func (c *Client) streamChat(ctx context.Context, req model.IngestRequest, onEven
 			}
 			return model.EventRecord{}, err
 		}
-		var event model.ChatStreamEvent
+		var event api.ChatStreamEvent
 		if err := json.Unmarshal(data, &event); err != nil {
 			if acceptedEventID != "" {
 				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: err}
@@ -238,14 +239,14 @@ func (c *Client) streamChat(ctx context.Context, req model.IngestRequest, onEven
 			}
 			return model.EventRecord{}, err
 		}
-		if event.Type == model.ChatStreamEventAccepted {
+		if event.Type == api.ChatStreamEventAccepted {
 			acceptedEventID = event.EventID
 			if onEvent != nil {
 				if err := onEvent(event); err != nil {
 					return model.EventRecord{}, err
 				}
 			}
-			if event.StreamProtocolVersion != model.ChatStreamProtocolVersion {
+			if event.StreamProtocolVersion != api.ChatStreamProtocolVersion {
 				return model.EventRecord{}, &StreamRecoverableError{EventID: acceptedEventID, Err: ErrStreamProtocolMismatch}
 			}
 			continue
@@ -271,17 +272,17 @@ func (c *Client) streamChat(ctx context.Context, req model.IngestRequest, onEven
 	}
 }
 
-func (c *Client) ingestAndWait(ctx context.Context, req model.IngestRequest, onEvent func(model.ChatStreamEvent) error) (model.EventRecord, error) {
+func (c *Client) ingestAndWait(ctx context.Context, req api.IngestRequest, onEvent func(api.ChatStreamEvent) error) (model.EventRecord, error) {
 	resp, err := c.Ingest(ctx, req)
 	if err != nil {
 		return model.EventRecord{}, err
 	}
 	if onEvent != nil {
-		accepted := model.ChatStreamEvent{
-			Type:                  model.ChatStreamEventAccepted,
+		accepted := api.ChatStreamEvent{
+			Type:                  api.ChatStreamEventAccepted,
 			EventID:               resp.EventID,
 			At:                    time.Now().UTC(),
-			StreamProtocolVersion: model.ChatStreamProtocolVersion,
+			StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			IngestResponse:        &resp,
 		}
 		if err := onEvent(accepted); err != nil {
@@ -491,7 +492,7 @@ func decodeAPIError(resp *http.Response) error {
 	if err != nil {
 		return &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("http status %d", resp.StatusCode)}
 	}
-	var parsed model.ErrorResponse
+	var parsed api.ErrorResponse
 	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Error.Code != "" {
 		return &APIError{StatusCode: resp.StatusCode, Code: parsed.Error.Code, Message: parsed.Error.Message}
 	}
@@ -513,12 +514,12 @@ func isTerminalEvent(rec model.EventRecord) bool {
 	}
 }
 
-func eventFromRecord(rec model.EventRecord) model.ChatStreamEvent {
-	eventType := model.ChatStreamEventDone
+func eventFromRecord(rec model.EventRecord) api.ChatStreamEvent {
+	eventType := api.ChatStreamEventDone
 	if rec.Status == model.EventStatusFailed {
-		eventType = model.ChatStreamEventError
+		eventType = api.ChatStreamEventError
 	}
-	return model.ChatStreamEvent{
+	return api.ChatStreamEvent{
 		Type:        eventType,
 		EventID:     rec.EventID,
 		At:          time.Now().UTC(),

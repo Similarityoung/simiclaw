@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"testing"
 	"time"
@@ -211,12 +212,12 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	for _, want := range []model.ChatStreamEventType{
-		model.ChatStreamEventStatus,
-		model.ChatStreamEventReasoningDelta,
-		model.ChatStreamEventTextDelta,
-		model.ChatStreamEventToolStart,
-		model.ChatStreamEventToolResult,
+	for _, want := range []api.ChatStreamEventType{
+		api.ChatStreamEventStatus,
+		api.ChatStreamEventReasoningDelta,
+		api.ChatStreamEventTextDelta,
+		api.ChatStreamEventToolStart,
+		api.ChatStreamEventToolResult,
 	} {
 		event, ok := sub.Next(ctx)
 		if !ok {
@@ -237,7 +238,7 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 		Error:       &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: "boom"},
 		Now:         time.Now().UTC(),
 	})
-	if failed.Type != model.ChatStreamEventError || failed.Error == nil {
+	if failed.Type != api.ChatStreamEventError || failed.Error == nil {
 		t.Fatalf("expected failed terminal event, got %+v", failed)
 	}
 	done := terminalEventFromRecord(model.EventRecord{
@@ -245,7 +246,7 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),
 	})
-	if done.Type != model.ChatStreamEventDone {
+	if done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done terminal event, got %+v", done)
 	}
 	if nonZeroTime(time.Time{}).IsZero() {
@@ -267,7 +268,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",

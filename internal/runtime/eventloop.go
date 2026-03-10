@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,8 +223,8 @@ func (l *EventLoop) processEvent(eventID string) {
 				logging.Error(err),
 			)
 			if l.streamHub != nil {
-				l.streamHub.PublishTerminal(claimed.Event.EventID, model.ChatStreamEvent{
-					Type:  model.ChatStreamEventError,
+				l.streamHub.PublishTerminal(claimed.Event.EventID, api.ChatStreamEvent{
+					Type:  api.ChatStreamEventError,
 					Error: &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()},
 				})
 			}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,7 +86,7 @@ func TestTerminalEventFromRecordVariants(t *testing.T) {
 		UpdatedAt: time.Now().UTC(),
 		Error:     &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: "boom"},
 	})
-	if failed == nil || failed.Type != model.ChatStreamEventError {
+	if failed == nil || failed.Type != api.ChatStreamEventError {
 		t.Fatalf("expected error terminal event, got %+v", failed)
 	}
 	done := terminalEventFromRecord(model.EventRecord{
@@ -93,7 +94,7 @@ func TestTerminalEventFromRecordVariants(t *testing.T) {
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),
 	})
-	if done == nil || done.Type != model.ChatStreamEventDone {
+	if done == nil || done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done terminal event, got %+v", done)
 	}
 	if terminalEventFromRecord(model.EventRecord{Status: model.EventStatusQueued}) != nil {

@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func (q *captureQueue) TryEnqueue(eventID string) bool {
 
 func TestValidateRequestRejectsBadNativeRef(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
+	_, err := validateRequest(api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -43,7 +44,7 @@ func TestValidateRequestRejectsBadNativeRef(t *testing.T) {
 
 func TestValidateRequestAllowsWindowsNativeRefSeparators(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
+	_, err := validateRequest(api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -65,7 +66,7 @@ func TestValidateRequestAllowsWindowsNativeRefSeparators(t *testing.T) {
 
 func TestValidateRequestRejectsWindowsNativeRefTraversal(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
+	_, err := validateRequest(api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -87,7 +88,7 @@ func TestValidateRequestRejectsWindowsNativeRefTraversal(t *testing.T) {
 
 func TestValidateRequestIdempotencyFormat(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
+	_, err := validateRequest(api.IngestRequest{
 		Source: "telegram",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -104,7 +105,7 @@ func TestValidateRequestIdempotencyFormat(t *testing.T) {
 }
 
 func TestCanonicalPayloadHashStable(t *testing.T) {
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -129,7 +130,7 @@ func TestCanonicalPayloadHashStable(t *testing.T) {
 }
 
 func TestCanonicalPayloadHashIgnoresDMScope(t *testing.T) {
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: "conv_1",
@@ -197,7 +198,7 @@ func TestScopeResolverPrefersSessionKeyHint(t *testing.T) {
 	}
 
 	resolver := NewScopeResolver("local", db)
-	req, scope, ingestErr := resolver.Resolve(ctx, model.IngestRequest{
+	req, scope, ingestErr := resolver.Resolve(ctx, api.IngestRequest{
 		Source:         "web",
 		Conversation:   conv,
 		SessionKeyHint: oldSessionKey,
@@ -214,11 +215,11 @@ func TestScopeResolverPrefersSessionKeyHint(t *testing.T) {
 }
 
 func TestSessionRateLimitKeyIgnoresDMScope(t *testing.T) {
-	reqA := model.IngestRequest{
+	reqA := api.IngestRequest{
 		Conversation: model.Conversation{ConversationID: "conv_1", ChannelType: "dm", ParticipantID: "u1"},
 		DMScope:      "scope_old",
 	}
-	reqB := model.IngestRequest{
+	reqB := api.IngestRequest{
 		Conversation: model.Conversation{ConversationID: "conv_1", ChannelType: "dm", ParticipantID: "u1"},
 		DMScope:      "scope_new",
 	}
@@ -242,7 +243,7 @@ func TestServiceDuplicateSameScopeSamePayload(t *testing.T) {
 	queue := &captureQueue{}
 	svc := newIngestService(t, db, queue)
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "dup", ChannelType: "dm", ParticipantID: "u1"},
 		DMScope:        "scope_a",
@@ -276,7 +277,7 @@ func TestServiceDifferentScopesStayIsolated(t *testing.T) {
 	queue := &captureQueue{}
 	svc := newIngestService(t, db, queue)
 
-	reqA := model.IngestRequest{
+	reqA := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "scope", ChannelType: "dm", ParticipantID: "u1"},
 		DMScope:        "scope_a",
@@ -310,7 +311,7 @@ func TestServiceSameIdempotencyKeyDifferentPayloadConflicts(t *testing.T) {
 	db := newIngestTestDB(t)
 	svc := newIngestService(t, db, &captureQueue{})
 
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conflict", ChannelType: "dm", ParticipantID: "u1"},
 		DMScope:        "scope_a",
@@ -349,7 +350,7 @@ func TestServiceInheritsConversationScopeWithoutManualDMScope(t *testing.T) {
 	}
 
 	result, err := svc.Ingest(context.Background(), Command{
-		Request: model.IngestRequest{
+		Request: api.IngestRequest{
 			Source:         "cli",
 			Conversation:   conv,
 			IdempotencyKey: "cli:inherit:1",

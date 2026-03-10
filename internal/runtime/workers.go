@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -228,7 +229,7 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 	if err != nil || !ok {
 		return
 	}
-	req := model.IngestRequest{
+	req := api.IngestRequest{
 		Source:         job.Payload.Source,
 		Conversation:   job.Payload.Conversation,
 		IdempotencyKey: fmt.Sprintf("%s:%d", job.JobID, now.Unix()),

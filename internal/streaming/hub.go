@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 const (
@@ -26,14 +26,14 @@ type Subscription struct {
 }
 
 type queuedEvent struct {
-	event     model.ChatStreamEvent
+	event     api.ChatStreamEvent
 	droppable bool
 }
 
 type eventState struct {
 	nextSequence int64
 	subscribers  map[*Subscription]struct{}
-	terminal     *model.ChatStreamEvent
+	terminal     *api.ChatStreamEvent
 	updatedAt    time.Time
 }
 
@@ -89,7 +89,7 @@ func (h *Hub) Release(sub *Subscription) {
 	sub.close()
 }
 
-func (h *Hub) Attach(sub *Subscription, eventID string) *model.ChatStreamEvent {
+func (h *Hub) Attach(sub *Subscription, eventID string) *api.ChatStreamEvent {
 	if sub == nil {
 		return nil
 	}
@@ -109,15 +109,15 @@ func (h *Hub) Attach(sub *Subscription, eventID string) *model.ChatStreamEvent {
 	return nil
 }
 
-func (h *Hub) Publish(eventID string, event model.ChatStreamEvent) model.ChatStreamEvent {
+func (h *Hub) Publish(eventID string, event api.ChatStreamEvent) api.ChatStreamEvent {
 	return h.publish(eventID, event, false)
 }
 
-func (h *Hub) PublishTerminal(eventID string, event model.ChatStreamEvent) model.ChatStreamEvent {
+func (h *Hub) PublishTerminal(eventID string, event api.ChatStreamEvent) api.ChatStreamEvent {
 	return h.publish(eventID, event, true)
 }
 
-func (h *Hub) publish(eventID string, event model.ChatStreamEvent, terminal bool) model.ChatStreamEvent {
+func (h *Hub) publish(eventID string, event api.ChatStreamEvent, terminal bool) api.ChatStreamEvent {
 	now := time.Now().UTC()
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -136,9 +136,9 @@ func (h *Hub) publish(eventID string, event model.ChatStreamEvent, terminal bool
 		state.nextSequence++
 	}
 	state.updatedAt = now
-	droppable := event.Type == model.ChatStreamEventStatus ||
-		event.Type == model.ChatStreamEventReasoningDelta ||
-		event.Type == model.ChatStreamEventTextDelta
+	droppable := event.Type == api.ChatStreamEventStatus ||
+		event.Type == api.ChatStreamEventReasoningDelta ||
+		event.Type == api.ChatStreamEventTextDelta
 	for sub := range state.subscribers {
 		if terminal {
 			sub.enqueue(event, false)
@@ -181,7 +181,7 @@ func (h *Hub) pruneLocked(now time.Time) {
 	}
 }
 
-func (s *Subscription) Next(ctx context.Context) (model.ChatStreamEvent, bool) {
+func (s *Subscription) Next(ctx context.Context) (api.ChatStreamEvent, bool) {
 	for {
 		s.mu.Lock()
 		if len(s.pending) > 0 {
@@ -193,20 +193,20 @@ func (s *Subscription) Next(ctx context.Context) (model.ChatStreamEvent, bool) {
 		}
 		if s.closed {
 			s.mu.Unlock()
-			return model.ChatStreamEvent{}, false
+			return api.ChatStreamEvent{}, false
 		}
 		notify := s.notify
 		s.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
-			return model.ChatStreamEvent{}, false
+			return api.ChatStreamEvent{}, false
 		case <-notify:
 		}
 	}
 }
 
-func (s *Subscription) enqueue(event model.ChatStreamEvent, droppable bool) bool {
+func (s *Subscription) enqueue(event api.ChatStreamEvent, droppable bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

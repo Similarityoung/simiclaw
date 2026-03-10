@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"io"
 	"os"
 	"strings"
@@ -36,8 +37,8 @@ type Options struct {
 }
 
 type ChatClient interface {
-	SendAndWait(ctx context.Context, req model.IngestRequest) (model.EventRecord, error)
-	SendStream(ctx context.Context, req model.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
+	SendAndWait(ctx context.Context, req api.IngestRequest) (model.EventRecord, error)
+	SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (model.EventRecord, error)
 	PollEvent(ctx context.Context, eventID string) (model.EventRecord, error)
 }
 
@@ -217,7 +218,7 @@ func formatError(err error) string {
 	return err.Error()
 }
 
-func sendOneTurn(ctx context.Context, client ChatClient, req model.IngestRequest, useStream bool, renderer *streamRenderer) (model.EventRecord, error) {
+func sendOneTurn(ctx context.Context, client ChatClient, req api.IngestRequest, useStream bool, renderer *streamRenderer) (model.EventRecord, error) {
 	if !useStream {
 		return client.SendAndWait(ctx, req)
 	}

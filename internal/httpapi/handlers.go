@@ -3,12 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	"net/http"
 )
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
-	var req model.IngestRequest
+	var req api.IngestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 400, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})

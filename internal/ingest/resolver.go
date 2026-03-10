@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -23,7 +24,7 @@ func NewScopeResolver(tenantID string, repo SessionReader) *DefaultScopeResolver
 	return &DefaultScopeResolver{tenantID: tenantID, repo: repo}
 }
 
-func (r *DefaultScopeResolver) Resolve(ctx context.Context, req model.IngestRequest) (model.IngestRequest, string, *Error) {
+func (r *DefaultScopeResolver) Resolve(ctx context.Context, req api.IngestRequest) (api.IngestRequest, string, *Error) {
 	if req.Payload.Type == "message" && session.IsNewSessionCommand(req.Payload.Text) {
 		scope := session.NewScopeFromID(req.IdempotencyKey)
 		req.DMScope = scope
@@ -32,7 +33,7 @@ func (r *DefaultScopeResolver) Resolve(ctx context.Context, req model.IngestRequ
 	}
 
 	if scope, ok, err := r.scopeFromSessionHint(ctx, req); err != nil {
-		return model.IngestRequest{}, "", err
+		return api.IngestRequest{}, "", err
 	} else if ok {
 		req.DMScope = scope
 		return req, scope, nil
@@ -46,7 +47,7 @@ func (r *DefaultScopeResolver) Resolve(ctx context.Context, req model.IngestRequ
 
 	scope, ok, err := r.repo.GetConversationDMScope(ctx, r.tenantID, req.Conversation)
 	if err != nil {
-		return model.IngestRequest{}, "", &Error{
+		return api.IngestRequest{}, "", &Error{
 			Code:    model.ErrorCodeInternal,
 			Message: err.Error(),
 		}
@@ -58,7 +59,7 @@ func (r *DefaultScopeResolver) Resolve(ctx context.Context, req model.IngestRequ
 	return req, scope, nil
 }
 
-func (r *DefaultScopeResolver) scopeFromSessionHint(ctx context.Context, req model.IngestRequest) (string, bool, *Error) {
+func (r *DefaultScopeResolver) scopeFromSessionHint(ctx context.Context, req api.IngestRequest) (string, bool, *Error) {
 	if req.SessionKeyHint == "" {
 		return "", false, nil
 	}

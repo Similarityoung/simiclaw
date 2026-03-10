@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,14 +51,14 @@ func runSmokeV1(t *testing.T) {
 	}
 }
 
-func ingest(t *testing.T, app *bootstrap.App, req model.IngestRequest) model.IngestResponse {
+func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest) api.IngestResponse {
 	t.Helper()
 	body, _ := json.Marshal(req)
 	respBody, code := doRequest(t, app, http.MethodPost, "/v1/events:ingest", body)
 	if code != http.StatusAccepted {
 		t.Fatalf("ingest expected 202, got %d body=%s", code, string(respBody))
 	}
-	var resp model.IngestResponse
+	var resp api.IngestResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}

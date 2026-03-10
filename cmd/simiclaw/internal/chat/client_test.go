@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -18,11 +19,11 @@ func TestHTTPClientSendStreamReturnsRecoverableErrorAfterAccepted(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintf(w, "event: accepted\n")
-		accepted, _ := json.Marshal(model.ChatStreamEvent{
-			Type:                  model.ChatStreamEventAccepted,
+		accepted, _ := json.Marshal(api.ChatStreamEvent{
+			Type:                  api.ChatStreamEventAccepted,
 			EventID:               "evt_1",
 			Sequence:              1,
-			StreamProtocolVersion: model.ChatStreamProtocolVersion,
+			StreamProtocolVersion: api.ChatStreamProtocolVersion,
 		})
 		fmt.Fprintf(w, "data: %s\n\n", accepted)
 		if f, ok := w.(http.Flusher); ok {
@@ -32,7 +33,7 @@ func TestHTTPClientSendStreamReturnsRecoverableErrorAfterAccepted(t *testing.T) 
 	defer server.Close()
 
 	client := NewHTTPClient(server.URL, "", 3*time.Second, 10*time.Millisecond, 100*time.Millisecond)
-	_, err := client.SendStream(context.Background(), model.IngestRequest{
+	_, err := client.SendStream(context.Background(), api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "c1", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:c1:1",
@@ -57,7 +58,7 @@ func TestHTTPClientSendStreamReportsUnsupportedWhenNotSSE(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient(server.URL, "", 3*time.Second, 10*time.Millisecond, 100*time.Millisecond)
-	_, err := client.SendStream(context.Background(), model.IngestRequest{
+	_, err := client.SendStream(context.Background(), api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "c1", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:c1:1",
@@ -74,11 +75,11 @@ func TestHTTPClientSendStreamTimesOutWaitingForHeaders(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintf(w, "event: accepted\n")
-		accepted, _ := json.Marshal(model.ChatStreamEvent{
-			Type:                  model.ChatStreamEventAccepted,
+		accepted, _ := json.Marshal(api.ChatStreamEvent{
+			Type:                  api.ChatStreamEventAccepted,
 			EventID:               "evt_2",
 			Sequence:              1,
-			StreamProtocolVersion: model.ChatStreamProtocolVersion,
+			StreamProtocolVersion: api.ChatStreamProtocolVersion,
 		})
 		fmt.Fprintf(w, "data: %s\n\n", accepted)
 	}))
@@ -86,7 +87,7 @@ func TestHTTPClientSendStreamTimesOutWaitingForHeaders(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, "", 50*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond)
 	start := time.Now()
-	_, err := client.SendStream(context.Background(), model.IngestRequest{
+	_, err := client.SendStream(context.Background(), api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "c2", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:c2:1",
@@ -113,7 +114,7 @@ func TestHTTPClientSendStreamTimesOutWaitingForAcceptedEvent(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, "", 50*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond)
 	start := time.Now()
-	_, err := client.SendStream(context.Background(), model.IngestRequest{
+	_, err := client.SendStream(context.Background(), api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "c3", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:c3:1",
@@ -134,16 +135,16 @@ func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat:stream":
 			w.Header().Set("Content-Type", "text/event-stream")
-			accepted, _ := json.Marshal(model.ChatStreamEvent{
-				Type:                  model.ChatStreamEventAccepted,
+			accepted, _ := json.Marshal(api.ChatStreamEvent{
+				Type:                  api.ChatStreamEventAccepted,
 				EventID:               "evt_3",
 				Sequence:              1,
-				StreamProtocolVersion: model.ChatStreamProtocolVersion,
+				StreamProtocolVersion: api.ChatStreamProtocolVersion,
 			})
 			fmt.Fprintf(w, "event: accepted\n")
 			fmt.Fprintf(w, "data: %s\n\n", accepted)
-			done, _ := json.Marshal(model.ChatStreamEvent{
-				Type:     model.ChatStreamEventDone,
+			done, _ := json.Marshal(api.ChatStreamEvent{
+				Type:     api.ChatStreamEventDone,
 				EventID:  "evt_3",
 				Sequence: 2,
 				EventRecord: &model.EventRecord{
@@ -178,7 +179,7 @@ func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T
 	defer server.Close()
 
 	client := NewHTTPClient(server.URL, "", 100*time.Millisecond, 10*time.Millisecond, 200*time.Millisecond)
-	rec, err := client.SendStream(context.Background(), model.IngestRequest{
+	rec, err := client.SendStream(context.Background(), api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "c4", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:c4:1",
@@ -198,4 +199,4 @@ func TestHTTPClientSendStreamPollsUntilEventReallyTerminalAfterDone(t *testing.T
 
 type noopStreamHandler struct{}
 
-func (noopStreamHandler) HandleStreamEvent(model.ChatStreamEvent) error { return nil }
+func (noopStreamHandler) HandleStreamEvent(api.ChatStreamEvent) error { return nil }

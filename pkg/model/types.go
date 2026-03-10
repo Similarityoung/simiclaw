@@ -93,31 +93,6 @@ type InternalEvent struct {
 	ActiveSessionID string       `json:"active_session_id"`
 }
 
-type IngestRequest struct {
-	Source         string       `json:"source"`
-	Conversation   Conversation `json:"conversation"`
-	DMScope        string       `json:"dm_scope,omitempty"`
-	SessionKeyHint string       `json:"session_key,omitempty"`
-	IdempotencyKey string       `json:"idempotency_key"`
-	Timestamp      string       `json:"timestamp"`
-	Payload        EventPayload `json:"payload"`
-}
-
-type IngestResponse struct {
-	EventID         string      `json:"event_id"`
-	SessionKey      string      `json:"session_key"`
-	ActiveSessionID string      `json:"active_session_id"`
-	ReceivedAt      string      `json:"received_at"`
-	PayloadHash     string      `json:"payload_hash"`
-	Status          string      `json:"status"`
-	StatusURL       string      `json:"status_url"`
-	Error           *ErrorBlock `json:"error,omitempty"`
-}
-
-type ErrorResponse struct {
-	Error ErrorBlock `json:"error"`
-}
-
 type ErrorBlock struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`

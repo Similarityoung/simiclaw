@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
 
 	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
@@ -14,7 +15,7 @@ import (
 
 var nilSentinel = errors.New("no-op")
 
-func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req model.IngestRequest, payloadHash string, now time.Time) (IngestResult, error) {
+func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req api.IngestRequest, payloadHash string, now time.Time) (IngestResult, error) {
 	var result IngestResult
 	err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
 		var existing LookupEvent

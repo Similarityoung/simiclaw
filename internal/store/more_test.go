@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func TestLookupInboundListCollectionsAndCheckReadWrite(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "list", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:list:1",
@@ -86,7 +87,7 @@ func TestListMessagesAndOutboxTransitions(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "messages", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:messages:1",
@@ -236,7 +237,7 @@ func TestSearchMessagesFTSAndGetters(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "fts", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:fts:1",

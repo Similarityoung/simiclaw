@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"math"
 	"path"
 	"regexp"
@@ -30,7 +31,7 @@ var (
 )
 
 type Command struct {
-	Request    model.IngestRequest
+	Request    api.IngestRequest
 	ReceivedAt time.Time
 }
 
@@ -56,7 +57,7 @@ func (e *Error) Error() string {
 }
 
 type Repository interface {
-	IngestEvent(ctx context.Context, tenantID, sessionKey string, req model.IngestRequest, payloadHash string, now time.Time) (store.IngestResult, error)
+	IngestEvent(ctx context.Context, tenantID, sessionKey string, req api.IngestRequest, payloadHash string, now time.Time) (store.IngestResult, error)
 	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
 }
 
@@ -65,7 +66,7 @@ type Enqueuer interface {
 }
 
 type ScopeResolver interface {
-	Resolve(ctx context.Context, req model.IngestRequest) (model.IngestRequest, string, *Error)
+	Resolve(ctx context.Context, req api.IngestRequest) (api.IngestRequest, string, *Error)
 }
 
 type Service struct {
@@ -187,7 +188,7 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 	return result, nil
 }
 
-func validateRequest(req model.IngestRequest, now time.Time) (time.Time, *Error) {
+func validateRequest(req api.IngestRequest, now time.Time) (time.Time, *Error) {
 	if req.Source == "" {
 		return time.Time{}, invalidArgument("field source is required", "source")
 	}
@@ -245,7 +246,7 @@ func normalizeNativeRef(ref string) string {
 	return path.Clean(strings.ReplaceAll(ref, "\\", "/"))
 }
 
-func canonicalPayloadHash(req model.IngestRequest) (string, error) {
+func canonicalPayloadHash(req api.IngestRequest) (string, error) {
 	shape := struct {
 		Source         string             `json:"source"`
 		Conversation   model.Conversation `json:"conversation"`
@@ -265,7 +266,7 @@ func canonicalPayloadHash(req model.IngestRequest) (string, error) {
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
-func sessionRateLimitKey(tenantID string, req model.IngestRequest) (string, error) {
+func sessionRateLimitKey(tenantID string, req api.IngestRequest) (string, error) {
 	return session.ComputeKey(tenantID, req.Conversation, session.DefaultScope)
 }
 
