@@ -36,6 +36,10 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	registry := tools.NewRegistry()
 	tools.RegisterBuiltins(registry)
+	tools.RegisterWebSearch(registry, tools.WebSearchOptions{
+		Timeout:    cfg.WebSearch.Timeout.Duration,
+		MaxResults: cfg.WebSearch.MaxResults,
+	})
 	providers, err := provider.NewFactory(cfg.LLM)
 	if err != nil {
 		_ = db.Close()
