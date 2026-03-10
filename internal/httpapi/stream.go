@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -119,7 +119,7 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 	return nil
 }
 
-func terminalEventFromRecord(rec readmodel.EventRecord) *api.ChatStreamEvent {
+func terminalEventFromRecord(rec querymodel.EventRecord) *api.ChatStreamEvent {
 	apiRec := toAPIEventRecord(rec)
 	switch rec.Status {
 	case model.EventStatusFailed:

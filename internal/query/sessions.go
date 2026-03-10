@@ -2,75 +2,58 @@ package query
 
 import (
 	"context"
-	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 )
 
-func (s *Service) GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error) {
-	return s.repo.GetSession(ctx, sessionKey)
+func (s *Service) GetSession(ctx context.Context, sessionKey string) (querymodel.SessionRecord, bool, error) {
+	return s.repo.GetSessionRecord(ctx, sessionKey)
 }
 
-func (s *Service) ListSessionHistory(ctx context.Context, query SessionHistoryQuery) (MessagePage, error) {
-	before, beforeID := messageCursorFilter(query.Cursor)
-	items, err := s.repo.ListMessages(ctx, query.SessionID, pageFetchLimit(query.Limit), before, beforeID, query.VisibleOnly)
+func (s *Service) ListSessionHistory(ctx context.Context, filter querymodel.SessionHistoryFilter) (querymodel.MessagePage, error) {
+	filter.Limit = pageFetchLimit(filter.Limit)
+	items, err := s.repo.ListMessageRecords(ctx, filter)
 	if err != nil {
-		return MessagePage{}, err
+		return querymodel.MessagePage{}, err
 	}
-	return buildMessagePage(items, query.Limit), nil
+	return buildMessagePage(items, filter.Limit-1), nil
 }
 
-func (s *Service) ListSessions(ctx context.Context, query SessionListQuery) (SessionPage, error) {
-	filter := store.SessionListFilter{
-		SessionKey:     query.SessionKey,
-		ConversationID: query.ConversationID,
-		Limit:          pageFetchLimit(query.Limit),
-	}
-	if query.Cursor != nil {
-		filter.CursorLastActivityAt = query.Cursor.LastActivityAt
-		filter.CursorLastSessionKey = query.Cursor.SessionKey
-	}
-	items, err := s.repo.ListSessionsPage(ctx, filter)
+func (s *Service) ListSessions(ctx context.Context, filter querymodel.SessionFilter) (querymodel.SessionPage, error) {
+	filter.Limit = pageFetchLimit(filter.Limit)
+	items, err := s.repo.ListSessionRecords(ctx, filter)
 	if err != nil {
-		return SessionPage{}, err
+		return querymodel.SessionPage{}, err
 	}
-	return buildSessionPage(items, query.Limit), nil
+	return buildSessionPage(items, filter.Limit-1), nil
 }
 
-func buildSessionPage(items []readmodel.SessionRecord, limit int) SessionPage {
+func buildSessionPage(items []querymodel.SessionRecord, limit int) querymodel.SessionPage {
 	if limit <= 0 || len(items) <= limit {
-		return SessionPage{Items: items}
+		return querymodel.SessionPage{Items: items}
 	}
 	trimmed := items[:limit]
 	last := trimmed[len(trimmed)-1]
-	return SessionPage{
+	return querymodel.SessionPage{
 		Items: trimmed,
-		Next: &SessionCursorAnchor{
+		Next: &querymodel.SessionCursorAnchor{
 			LastActivityAt: last.LastActivityAt,
 			SessionKey:     last.SessionKey,
 		},
 	}
 }
 
-func buildMessagePage(items []readmodel.MessageRecord, limit int) MessagePage {
+func buildMessagePage(items []querymodel.MessageRecord, limit int) querymodel.MessagePage {
 	if limit <= 0 || len(items) <= limit {
-		return MessagePage{Items: items}
+		return querymodel.MessagePage{Items: items}
 	}
 	trimmed := items[1:]
 	first := trimmed[0]
-	return MessagePage{
+	return querymodel.MessagePage{
 		Items: trimmed,
-		Next: &MessageCursorAnchor{
+		Next: &querymodel.MessageCursorAnchor{
 			CreatedAt: first.CreatedAt,
 			MessageID: first.MessageID,
 		},
 	}
-}
-
-func messageCursorFilter(cursor *MessageCursorAnchor) (time.Time, string) {
-	if cursor == nil {
-		return time.Time{}, ""
-	}
-	return cursor.CreatedAt, cursor.MessageID
 }

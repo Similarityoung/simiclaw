@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	querysvc "github.com/similarityyoung/simiclaw/internal/query"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -55,15 +54,15 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	page, err := s.query.ListRuns(r.Context(), querysvc.RunListQuery{
+	page, err := s.query.ListRuns(r.Context(), querymodel.RunFilter{
 		SessionKey: r.URL.Query().Get("session_key"),
 		SessionID:  r.URL.Query().Get("session_id"),
 		Limit:      limit,
-		Cursor: func() *querysvc.RunCursorAnchor {
+		Cursor: func() *querymodel.RunCursorAnchor {
 			if !hasCursor {
 				return nil
 			}
-			return &querysvc.RunCursorAnchor{StartedAt: curTime, RunID: cur.LastRunID}
+			return &querymodel.RunCursorAnchor{StartedAt: curTime, RunID: cur.LastRunID}
 		}(),
 	})
 	if err != nil {
@@ -137,10 +136,10 @@ func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, trace)
+	writeJSON(w, http.StatusOK, toAPIRunTrace(trace))
 }
 
-func toRunSummary(trace api.RunTrace) runSummary {
+func toRunSummary(trace querymodel.RunTrace) runSummary {
 	return runSummary{
 		RunID:      trace.RunID,
 		EventID:    trace.EventID,

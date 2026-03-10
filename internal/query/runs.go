@@ -3,40 +3,31 @@ package query
 import (
 	"context"
 
-	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 )
 
-func (s *Service) GetRun(ctx context.Context, runID string) (api.RunTrace, bool, error) {
-	return s.repo.GetRun(ctx, runID)
+func (s *Service) GetRun(ctx context.Context, runID string) (querymodel.RunTrace, bool, error) {
+	return s.repo.GetRunTrace(ctx, runID)
 }
 
-func (s *Service) ListRuns(ctx context.Context, query RunListQuery) (RunPage, error) {
-	filter := store.RunListFilter{
-		SessionKey: query.SessionKey,
-		SessionID:  query.SessionID,
-		Limit:      pageFetchLimit(query.Limit),
-	}
-	if query.Cursor != nil {
-		filter.CursorStartedAt = query.Cursor.StartedAt
-		filter.CursorRunID = query.Cursor.RunID
-	}
-	items, err := s.repo.ListRunsPage(ctx, filter)
+func (s *Service) ListRuns(ctx context.Context, filter querymodel.RunFilter) (querymodel.RunPage, error) {
+	filter.Limit = pageFetchLimit(filter.Limit)
+	items, err := s.repo.ListRunTraces(ctx, filter)
 	if err != nil {
-		return RunPage{}, err
+		return querymodel.RunPage{}, err
 	}
-	return buildRunPage(items, query.Limit), nil
+	return buildRunPage(items, filter.Limit-1), nil
 }
 
-func buildRunPage(items []api.RunTrace, limit int) RunPage {
+func buildRunPage(items []querymodel.RunTrace, limit int) querymodel.RunPage {
 	if limit <= 0 || len(items) <= limit {
-		return RunPage{Items: items}
+		return querymodel.RunPage{Items: items}
 	}
 	trimmed := items[:limit]
 	last := trimmed[len(trimmed)-1]
-	return RunPage{
+	return querymodel.RunPage{
 		Items: trimmed,
-		Next: &RunCursorAnchor{
+		Next: &querymodel.RunCursorAnchor{
 			StartedAt: last.StartedAt,
 			RunID:     last.RunID,
 		},

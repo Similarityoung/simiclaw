@@ -11,7 +11,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -81,7 +81,7 @@ func TestReadSSEEventAndTrimLine(t *testing.T) {
 }
 
 func TestTerminalEventFromRecordVariants(t *testing.T) {
-	failed := terminalEventFromRecord(readmodel.EventRecord{
+	failed := terminalEventFromRecord(querymodel.EventRecord{
 		EventID:   "evt_failed",
 		Status:    model.EventStatusFailed,
 		UpdatedAt: time.Now().UTC(),
@@ -90,7 +90,7 @@ func TestTerminalEventFromRecordVariants(t *testing.T) {
 	if failed == nil || failed.Type != api.ChatStreamEventError {
 		t.Fatalf("expected error terminal event, got %+v", failed)
 	}
-	done := terminalEventFromRecord(readmodel.EventRecord{
+	done := terminalEventFromRecord(querymodel.EventRecord{
 		EventID:   "evt_done",
 		Status:    model.EventStatusProcessed,
 		UpdatedAt: time.Now().UTC(),
@@ -98,7 +98,7 @@ func TestTerminalEventFromRecordVariants(t *testing.T) {
 	if done == nil || done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done terminal event, got %+v", done)
 	}
-	if terminalEventFromRecord(readmodel.EventRecord{Status: model.EventStatusQueued}) != nil {
+	if terminalEventFromRecord(querymodel.EventRecord{Status: model.EventStatusQueued}) != nil {
 		t.Fatalf("expected nil terminal event for queued record")
 	}
 }

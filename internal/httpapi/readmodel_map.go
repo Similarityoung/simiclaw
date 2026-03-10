@@ -1,11 +1,11 @@
 package httpapi
 
 import (
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
-func toAPIEventRecord(rec readmodel.EventRecord) api.EventRecord {
+func toAPIEventRecord(rec querymodel.EventRecord) api.EventRecord {
 	return api.EventRecord{
 		EventID:           rec.EventID,
 		Status:            rec.Status,
@@ -28,7 +28,7 @@ func toAPIEventRecord(rec readmodel.EventRecord) api.EventRecord {
 	}
 }
 
-func toAPISessionRecord(rec readmodel.SessionRecord) api.SessionRecord {
+func toAPISessionRecord(rec querymodel.SessionRecord) api.SessionRecord {
 	return api.SessionRecord{
 		SessionKey:            rec.SessionKey,
 		ActiveSessionID:       rec.ActiveSessionID,
@@ -48,7 +48,7 @@ func toAPISessionRecord(rec readmodel.SessionRecord) api.SessionRecord {
 	}
 }
 
-func toAPIMessageRecord(rec readmodel.MessageRecord) api.MessageRecord {
+func toAPIMessageRecord(rec querymodel.MessageRecord) api.MessageRecord {
 	return api.MessageRecord{
 		MessageID:  rec.MessageID,
 		SessionKey: rec.SessionKey,
@@ -63,5 +63,35 @@ func toAPIMessageRecord(rec readmodel.MessageRecord) api.MessageRecord {
 		ToolResult: rec.ToolResult,
 		Meta:       rec.Meta,
 		CreatedAt:  rec.CreatedAt,
+	}
+}
+
+func toAPIRunTrace(trace querymodel.RunTrace) api.RunTrace {
+	return api.RunTrace{
+		RunID:             trace.RunID,
+		EventID:           trace.EventID,
+		SessionKey:        trace.SessionKey,
+		SessionID:         trace.SessionID,
+		RunMode:           trace.RunMode,
+		Status:            trace.Status,
+		ContextManifest:   trace.ContextManifest,
+		RAGHits:           trace.RAGHits,
+		ToolExecutions:    trace.ToolExecutions,
+		Actions:           trace.Actions,
+		StartedAt:         trace.StartedAt,
+		FinishedAt:        trace.FinishedAt,
+		Provider:          trace.Provider,
+		Model:             trace.Model,
+		PromptTokens:      trace.PromptTokens,
+		CompletionTokens:  trace.CompletionTokens,
+		TotalTokens:       trace.TotalTokens,
+		LatencyMS:         trace.LatencyMS,
+		FinishReason:      trace.FinishReason,
+		RawFinishReason:   trace.RawFinishReason,
+		ProviderRequestID: trace.ProviderRequestID,
+		OutputText:        trace.OutputText,
+		ToolCalls:         trace.ToolCalls,
+		Error:             trace.Error,
+		Diagnostics:       trace.Diagnostics,
 	}
 }

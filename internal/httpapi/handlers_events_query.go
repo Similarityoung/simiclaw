@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	querysvc "github.com/similarityyoung/simiclaw/internal/query"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -53,15 +53,15 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		cursorTime = t
 	}
 
-	page, err := s.query.ListEvents(r.Context(), querysvc.EventListQuery{
+	page, err := s.query.ListEvents(r.Context(), querymodel.EventFilter{
 		SessionKey: r.URL.Query().Get("session_key"),
 		Status:     model.EventStatus(r.URL.Query().Get("status")),
 		Limit:      limit,
-		Cursor: func() *querysvc.EventCursorAnchor {
+		Cursor: func() *querymodel.EventCursorAnchor {
 			if !hasCursor {
 				return nil
 			}
-			return &querysvc.EventCursorAnchor{CreatedAt: cursorTime, EventID: cur.LastEventID}
+			return &querymodel.EventCursorAnchor{CreatedAt: cursorTime, EventID: cur.LastEventID}
 		}(),
 	})
 	if err != nil {
