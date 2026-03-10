@@ -97,6 +97,11 @@
 - `HEARTBEAT.md`
 - `skills/<name>/SKILL.md`
 
+运行时内置的公网信息工具包括：
+
+- `web_search`：按查询词发现最新公开网页结果
+- `web_fetch`：在已有具体 URL 时抓取页面正文、标题和响应元数据
+
 此外，workspace 内现提供两个文本写工具：
 
 - `workspace_patch`：对已有文本做精确单次查找替换，或在显式 `create=true` 时创建新文本文件
@@ -148,7 +153,7 @@ canonical 路径如下：
 - `pkg/config`：配置模型
 - `pkg/logging`：日志封装
 - `pkg/model`：共享类型
-- `pkg/tools`：未来 tools / skills 扩展边界
+- `pkg/tools`：tools / skills 扩展边界，内含 `memory_*`、`web_search`、`web_fetch` 和 workspace 写工具
 
 ## 快速开始
 

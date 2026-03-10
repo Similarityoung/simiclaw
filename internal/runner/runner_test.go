@@ -180,7 +180,7 @@ func TestProviderRunnerBuiltinsIncludeWorkspaceWriteTools(t *testing.T) {
 	for _, def := range defs {
 		names[def.Schema.Name] = true
 	}
-	if !names["workspace_patch"] || !names["workspace_delete"] || !names["web_search"] {
+	if !names["workspace_patch"] || !names["workspace_delete"] || !names["web_search"] || !names["web_fetch"] {
 		t.Fatalf("expected workspace write tools in builtins, got %+v", names)
 	}
 }
