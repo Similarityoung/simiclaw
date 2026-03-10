@@ -2,9 +2,9 @@ package query
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -22,6 +22,11 @@ type RunCursorAnchor struct {
 type SessionCursorAnchor struct {
 	LastActivityAt time.Time
 	SessionKey     string
+}
+
+type MessageCursorAnchor struct {
+	CreatedAt time.Time
+	MessageID string
 }
 
 type EventListQuery struct {
@@ -45,6 +50,13 @@ type SessionListQuery struct {
 	Cursor         *SessionCursorAnchor
 }
 
+type SessionHistoryQuery struct {
+	SessionID   string
+	VisibleOnly bool
+	Limit       int
+	Cursor      *MessageCursorAnchor
+}
+
 type EventPage struct {
 	Items []readmodel.EventRecord
 	Next  *EventCursorAnchor
@@ -60,7 +72,17 @@ type SessionPage struct {
 	Next  *SessionCursorAnchor
 }
 
+type MessagePage struct {
+	Items []readmodel.MessageRecord
+	Next  *MessageCursorAnchor
+}
+
 type Repository interface {
+	GetEvent(ctx context.Context, eventID string) (readmodel.EventRecord, bool, error)
+	LookupInbound(ctx context.Context, key string) (readmodel.LookupEvent, bool, error)
+	GetRun(ctx context.Context, runID string) (model.RunTrace, bool, error)
+	GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error)
+	ListMessages(ctx context.Context, sessionID string, limit int, before time.Time, beforeMessageID string, visibleOnly bool) ([]readmodel.MessageRecord, error)
 	ListEventsPage(ctx context.Context, filter store.EventListFilter) ([]readmodel.EventRecord, error)
 	ListRunsPage(ctx context.Context, filter store.RunListFilter) ([]model.RunTrace, error)
 	ListSessionsPage(ctx context.Context, filter store.SessionListFilter) ([]readmodel.SessionRecord, error)
@@ -72,102 +94,6 @@ type Service struct {
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
-}
-
-func (s *Service) ListEvents(ctx context.Context, query EventListQuery) (EventPage, error) {
-	filter := store.EventListFilter{
-		SessionKey: query.SessionKey,
-		Status:     query.Status,
-		Limit:      pageFetchLimit(query.Limit),
-	}
-	if query.Cursor != nil {
-		filter.CursorCreatedAt = query.Cursor.CreatedAt
-		filter.CursorEventID = query.Cursor.EventID
-	}
-	items, err := s.repo.ListEventsPage(ctx, filter)
-	if err != nil {
-		return EventPage{}, err
-	}
-	return buildEventPage(items, query.Limit), nil
-}
-
-func (s *Service) ListRuns(ctx context.Context, query RunListQuery) (RunPage, error) {
-	filter := store.RunListFilter{
-		SessionKey: query.SessionKey,
-		SessionID:  query.SessionID,
-		Limit:      pageFetchLimit(query.Limit),
-	}
-	if query.Cursor != nil {
-		filter.CursorStartedAt = query.Cursor.StartedAt
-		filter.CursorRunID = query.Cursor.RunID
-	}
-	items, err := s.repo.ListRunsPage(ctx, filter)
-	if err != nil {
-		return RunPage{}, err
-	}
-	return buildRunPage(items, query.Limit), nil
-}
-
-func (s *Service) ListSessions(ctx context.Context, query SessionListQuery) (SessionPage, error) {
-	filter := store.SessionListFilter{
-		SessionKey:     query.SessionKey,
-		ConversationID: query.ConversationID,
-		Limit:          pageFetchLimit(query.Limit),
-	}
-	if query.Cursor != nil {
-		filter.CursorLastActivityAt = query.Cursor.LastActivityAt
-		filter.CursorLastSessionKey = query.Cursor.SessionKey
-	}
-	items, err := s.repo.ListSessionsPage(ctx, filter)
-	if err != nil {
-		return SessionPage{}, err
-	}
-	return buildSessionPage(items, query.Limit), nil
-}
-
-func buildEventPage(items []readmodel.EventRecord, limit int) EventPage {
-	if limit <= 0 || len(items) <= limit {
-		return EventPage{Items: items}
-	}
-	trimmed := items[:limit]
-	last := trimmed[len(trimmed)-1]
-	return EventPage{
-		Items: trimmed,
-		Next: &EventCursorAnchor{
-			CreatedAt: last.CreatedAt,
-			EventID:   last.EventID,
-		},
-	}
-}
-
-func buildRunPage(items []model.RunTrace, limit int) RunPage {
-	if limit <= 0 || len(items) <= limit {
-		return RunPage{Items: items}
-	}
-	trimmed := items[:limit]
-	last := trimmed[len(trimmed)-1]
-	return RunPage{
-		Items: trimmed,
-		Next: &RunCursorAnchor{
-			StartedAt: last.StartedAt,
-			RunID:     last.RunID,
-		},
-	}
-}
-
-func buildSessionPage(items []readmodel.SessionRecord, limit int) SessionPage {
-	if limit <= 0 || len(items) <= limit {
-		return SessionPage{Items: items}
-	}
-	trimmed := items[:limit]
-	last := trimmed[len(trimmed)-1]
-	return SessionPage{
-		Items: trimmed,
-		Next: &SessionCursorAnchor{
-			LastActivityAt: last.LastActivityAt,
-			SessionKey:     last.SessionKey,
-		},
-	}
 }
 
 func pageFetchLimit(limit int) int {

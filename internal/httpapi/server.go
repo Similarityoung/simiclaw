@@ -7,13 +7,11 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
-	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 )
 
 type Server struct {
 	cfg        config.Config
-	db         *store.DB
 	gateway    *gateway.Service
 	query      *querysvc.Service
 	supervisor *runtime.Supervisor
@@ -21,10 +19,9 @@ type Server struct {
 	handler    http.Handler
 }
 
-func New(cfg config.Config, db *store.DB, gatewayService *gateway.Service, queryService *querysvc.Service, supervisor *runtime.Supervisor, streamHub *streaming.Hub) *Server {
+func New(cfg config.Config, gatewayService *gateway.Service, queryService *querysvc.Service, supervisor *runtime.Supervisor, streamHub *streaming.Hub) *Server {
 	server := &Server{
 		cfg:        cfg,
-		db:         db,
 		gateway:    gatewayService,
 		query:      queryService,
 		supervisor: supervisor,

@@ -55,7 +55,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		_ = writeSSEEvent(w, flusher, *terminal)
 		return
 	}
-	if eventRec, ok, err := s.db.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
+	if eventRec, ok, err := s.query.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
 		if terminalEvent := terminalEventFromRecord(eventRec); terminalEvent != nil {
 			s.streamHub.PublishTerminal(accepted.Result.EventID, *terminalEvent)
 		}

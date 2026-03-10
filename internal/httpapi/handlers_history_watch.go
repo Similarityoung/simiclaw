@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -19,7 +20,7 @@ type messageCursor struct {
 
 func (s *Server) handleGetSessionHistory(w http.ResponseWriter, r *http.Request) {
 	sessionKey := r.PathValue("session_key")
-	sessionRec, ok, err := s.db.GetSession(r.Context(), sessionKey)
+	sessionRec, ok, err := s.query.GetSession(r.Context(), sessionKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -61,30 +62,36 @@ func (s *Server) handleGetSessionHistory(w http.ResponseWriter, r *http.Request)
 		visibleOnly = parsed
 	}
 
-	items, err := s.db.ListMessages(r.Context(), sessionRec.ActiveSessionID, limit+1, before, cur.LastMessageID, visibleOnly)
+	page, err := s.query.ListSessionHistory(r.Context(), querysvc.SessionHistoryQuery{
+		SessionID:   sessionRec.ActiveSessionID,
+		VisibleOnly: visibleOnly,
+		Limit:       limit,
+		Cursor: func() *querysvc.MessageCursorAnchor {
+			if before.IsZero() && cur.LastMessageID == "" {
+				return nil
+			}
+			return &querysvc.MessageCursorAnchor{
+				CreatedAt: before,
+				MessageID: cur.LastMessageID,
+			}
+		}(),
+	})
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 
-	apiItems := make([]api.MessageRecord, 0, len(items))
-	for _, item := range items {
+	apiItems := make([]api.MessageRecord, 0, len(page.Items))
+	for _, item := range page.Items {
 		apiItems = append(apiItems, toAPIMessageRecord(item))
 	}
 
 	resp := map[string]any{"items": apiItems}
-	if len(items) > limit {
-		trimmed := items[1:]
-		apiTrimmed := make([]api.MessageRecord, 0, len(trimmed))
-		for _, item := range trimmed {
-			apiTrimmed = append(apiTrimmed, toAPIMessageRecord(item))
-		}
-		resp["items"] = apiTrimmed
-		first := trimmed[0]
+	if page.Next != nil {
 		resp["next_cursor"] = encodeCursor(messageCursor{
 			V:             1,
-			LastCreatedAt: first.CreatedAt.Format(time.RFC3339Nano),
-			LastMessageID: first.MessageID,
+			LastCreatedAt: page.Next.CreatedAt.Format(time.RFC3339Nano),
+			LastMessageID: page.Next.MessageID,
 		})
 	}
 

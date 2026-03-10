@@ -93,6 +93,34 @@ func TestChatStreamAcceptedThenError(t *testing.T) {
 	}
 }
 
+func TestChatStreamReplaysTerminalStateForExistingEvent(t *testing.T) {
+	app, server := newHTTPAPITestServer(t)
+
+	req := buildCLIRequest("stream-replay", 1, "message", "hello replay")
+	eventID := ingestTestEvent(t, server.URL, req)
+	waitEventTerminal(t, app, eventID)
+
+	resp := postStreamRequest(t, server.URL, req)
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	accepted := readStreamEvent(t, reader)
+	if accepted.Type != api.ChatStreamEventAccepted {
+		t.Fatalf("expected accepted event, got %+v", accepted)
+	}
+	if accepted.EventID != eventID {
+		t.Fatalf("expected accepted event_id %q, got %+v", eventID, accepted)
+	}
+
+	done := readStreamEvent(t, reader)
+	if done.Type != api.ChatStreamEventDone {
+		t.Fatalf("expected replayed terminal done event, got %+v", done)
+	}
+	if done.EventRecord == nil || done.EventRecord.EventID != eventID {
+		t.Fatalf("unexpected replayed terminal event: %+v", done)
+	}
+}
+
 func newStreamTestApp(t *testing.T) *bootstrap.App {
 	t.Helper()
 	cfg := config.Default()

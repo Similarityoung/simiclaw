@@ -86,7 +86,7 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := s.db.GetRun(r.Context(), runID)
+	trace, ok, err := s.query.GetRun(r.Context(), runID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
@@ -104,7 +104,7 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("run_id")
-	trace, ok, err := s.db.GetRun(r.Context(), runID)
+	trace, ok, err := s.query.GetRun(r.Context(), runID)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
