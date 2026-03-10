@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	"github.com/similarityyoung/simiclaw/internal/provider"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 )
 
-func historyToChatMessages(history []store.HistoryMessage) []provider.ChatMessage {
+func historyToChatMessages(history []runnermodel.HistoryMessage) []provider.ChatMessage {
 	out := make([]provider.ChatMessage, 0, len(history))
 	pendingToolCalls := map[string]bool{}
 	for _, msg := range history {

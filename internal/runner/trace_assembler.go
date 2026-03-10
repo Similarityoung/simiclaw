@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -11,8 +12,8 @@ import (
 type runTraceAssembler struct{}
 
 func (runTraceAssembler) AttachContext(trace *api.RunTrace, history loadedHistory) {
-	trace.ContextManifest = history.manifest
-	trace.RAGHits = history.ragHits
+	trace.ContextManifest = toAPIContextManifest(history.manifest)
+	trace.RAGHits = toAPIRAGHits(history.ragHits)
 }
 
 func (runTraceAssembler) Fail(trace *api.RunTrace, startedAt time.Time, err error) {
@@ -35,4 +36,30 @@ func (runTraceAssembler) Complete(trace *api.RunTrace, startedAt time.Time, usag
 	trace.ToolCalls = last.ToolCalls
 	trace.FinishedAt = time.Now().UTC()
 	trace.LatencyMS = time.Since(startedAt).Milliseconds()
+}
+
+func toAPIContextManifest(in *runnermodel.ContextManifest) *api.ContextManifest {
+	if in == nil {
+		return nil
+	}
+	return &api.ContextManifest{
+		HistoryRange: api.HistoryRange{
+			Mode:      in.HistoryRange.Mode,
+			TailLimit: in.HistoryRange.TailLimit,
+		},
+	}
+}
+
+func toAPIRAGHits(in []runnermodel.RAGHit) []api.RAGHit {
+	out := make([]api.RAGHit, 0, len(in))
+	for _, hit := range in {
+		out = append(out, api.RAGHit{
+			Path:    hit.Path,
+			Scope:   hit.Scope,
+			Lines:   hit.Lines,
+			Score:   hit.Score,
+			Preview: hit.Preview,
+		})
+	}
+	return out
 }
