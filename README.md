@@ -147,15 +147,27 @@ canonical 路径如下：
 - `internal/config`：配置模型
 - `internal/provider`：LLM provider 抽象与实现
 - `internal/query`：events / runs / sessions 读服务
+- `internal/query/model`：query 内部 filter / cursor / page / read DTO
 - `internal/runner`：执行编排
+- `internal/runner/model`：runner 内部历史与上下文 DTO
 - `internal/runtime`：EventLoop、Supervisor、后台 workers
+- `internal/runtime/model`：runtime 内部 claim / finalize / worker DTO
 - `internal/session`：session key 归一化与计算
 - `internal/store`：SQLite 启动、schema、读写与恢复
+- `internal/readmodel`：仅供 `store` 内部使用的查询投影与扫描结构
 - `internal/systemprompt`：运行时 system prompt 资源
 - `internal/tools`：tools / skills 扩展边界，内含 `memory_*`、`web_search`、`web_fetch` 和 workspace 写工具
 - `internal/ui/messages`：CLI 等用户可见文案资源
+- `pkg/api`：HTTP / SSE / CLI client 稳定 wire model
 - `pkg/logging`：日志封装
 - `pkg/model`：共享类型
+
+## 边界约定
+
+- `pkg/api` 只承载对外 HTTP / SSE / CLI wire model。
+- `internal/query/model`、`internal/runner/model`、`internal/runtime/model` 是各子系统自己的内部端口 DTO，不对外承诺稳定性。
+- `internal/readmodel` 只给 `internal/store` 内部查询投影和扫描使用，不作为服务层或传输层契约。
+- `httpapi` 继续显式把内部 query/runtime 结果映射到 `pkg/api`，不直接把内部模型透出。
 
 ## 快速开始
 
