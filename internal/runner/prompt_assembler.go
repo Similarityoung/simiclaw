@@ -7,8 +7,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
 type llmPromptAssembly struct {

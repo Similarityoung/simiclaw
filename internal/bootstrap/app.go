@@ -16,8 +16,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/config"
-	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
 type App struct {

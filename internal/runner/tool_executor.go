@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	"github.com/similarityyoung/simiclaw/pkg/tools"
 )
 
 type executedToolStep struct {
