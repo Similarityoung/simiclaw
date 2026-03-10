@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -16,6 +18,8 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
+	"golang.org/x/text/encoding/htmlindex"
+	"golang.org/x/text/transform"
 )
 
 const (
@@ -93,6 +97,11 @@ type httpWebFetchRepository struct {
 	allowPrivateHosts bool
 }
 
+type validatedWebFetchRoundTripper struct {
+	base              http.RoundTripper
+	allowPrivateHosts bool
+}
+
 type webFetchError struct {
 	Code    string
 	Message string
@@ -158,20 +167,62 @@ func newHTTPWebFetchRepository(opts WebFetchOptions) webFetchRepository {
 	if timeout <= 0 {
 		timeout = defaultWebFetchTimeout
 	}
-	client := opts.Client
-	if client == nil {
-		client = newWebFetchHTTPClient(timeout, opts.AllowPrivateHosts)
-	}
 	return &httpWebFetchRepository{
-		client:            client,
+		client:            newWebFetchHTTPClient(opts.Client, timeout, opts.AllowPrivateHosts),
 		bodyLimitBytes:    normalizeWebFetchBodyLimit(opts.BodyLimitBytes),
 		allowPrivateHosts: opts.AllowPrivateHosts,
 	}
 }
 
-func newWebFetchHTTPClient(timeout time.Duration, allowPrivateHosts bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	dialer := &net.Dialer{Timeout: timeout}
+func newWebFetchHTTPClient(base *http.Client, timeout time.Duration, allowPrivateHosts bool) *http.Client {
+	if base == nil {
+		base = &http.Client{}
+	}
+	client := *base
+	if client.Timeout <= 0 {
+		client.Timeout = timeout
+	}
+	client.Transport = newWebFetchTransport(base.Transport, timeout, allowPrivateHosts)
+	baseCheckRedirect := base.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxWebFetchRedirects {
+			return errors.New("too many redirects")
+		}
+		if err := validateWebFetchTarget(req.Context(), req.URL, allowPrivateHosts); err != nil {
+			return err
+		}
+		if baseCheckRedirect != nil {
+			return baseCheckRedirect(req, via)
+		}
+		return nil
+	}
+	return &client
+}
+
+func newWebFetchTransport(base http.RoundTripper, timeout time.Duration, allowPrivateHosts bool) http.RoundTripper {
+	switch transport := base.(type) {
+	case nil:
+		cloned := http.DefaultTransport.(*http.Transport).Clone()
+		protectWebFetchTransport(cloned, timeout, allowPrivateHosts)
+		return &validatedWebFetchRoundTripper{base: cloned, allowPrivateHosts: allowPrivateHosts}
+	case *http.Transport:
+		cloned := transport.Clone()
+		protectWebFetchTransport(cloned, timeout, allowPrivateHosts)
+		return &validatedWebFetchRoundTripper{base: cloned, allowPrivateHosts: allowPrivateHosts}
+	default:
+		return &validatedWebFetchRoundTripper{base: transport, allowPrivateHosts: allowPrivateHosts}
+	}
+}
+
+func protectWebFetchTransport(transport *http.Transport, timeout time.Duration, allowPrivateHosts bool) {
+	if transport == nil {
+		return
+	}
+	baseDialContext := transport.DialContext
+	if baseDialContext == nil {
+		dialer := &net.Dialer{Timeout: timeout}
+		baseDialContext = dialer.DialContext
+	}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
@@ -180,19 +231,28 @@ func newWebFetchHTTPClient(timeout time.Duration, allowPrivateHosts bool) *http.
 		if err := validateWebFetchHost(ctx, host, allowPrivateHosts); err != nil {
 			return nil, err
 		}
-		return dialer.DialContext(ctx, network, address)
+		return baseDialContext(ctx, network, address)
 	}
-	client := &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= maxWebFetchRedirects {
-			return errors.New("too many redirects")
+	if transport.DialTLSContext != nil {
+		baseDialTLSContext := transport.DialTLSContext
+		transport.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				host = address
+			}
+			if err := validateWebFetchHost(ctx, host, allowPrivateHosts); err != nil {
+				return nil, err
+			}
+			return baseDialTLSContext(ctx, network, address)
 		}
-		return validateWebFetchTarget(req.Context(), req.URL, allowPrivateHosts)
 	}
-	return client
+}
+
+func (t *validatedWebFetchRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := validateWebFetchTarget(req.Context(), req.URL, t.allowPrivateHosts); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
 }
 
 func (t *webFetchTool) handle(ctx context.Context, _ Context, args map[string]any) Result {
@@ -370,7 +430,7 @@ func (r *httpWebFetchRepository) Fetch(ctx context.Context, targetURL string) (w
 }
 
 func buildWebFetchDocument(requestURL string, finalURL *url.URL, rawContentType string, statusCode int, body []byte) (webFetchDocument, error) {
-	contentType := normalizeWebFetchContentType(rawContentType, body)
+	contentType, charsetName := normalizeWebFetchContentType(rawContentType, body)
 	if !isSupportedWebFetchContentType(contentType) {
 		return webFetchDocument{}, &webFetchError{
 			Code:    model.ErrorCodeInvalidArgument,
@@ -378,10 +438,11 @@ func buildWebFetchDocument(requestURL string, finalURL *url.URL, rawContentType 
 		}
 	}
 
-	text := extractWebFetchText(contentType, string(body))
+	decodedBody := decodeWebFetchBody(body, charsetName)
+	text := extractWebFetchText(contentType, decodedBody)
 	title := ""
 	if contentType == "text/html" || contentType == "application/xhtml+xml" {
-		title = extractWebFetchTitle(string(body))
+		title = extractWebFetchTitle(decodedBody)
 	}
 	if text == "" && title != "" {
 		text = title
@@ -517,12 +578,30 @@ func classifyWebFetchError(err error) error {
 	return err
 }
 
-func normalizeWebFetchContentType(raw string, body []byte) string {
-	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(raw))
+func normalizeWebFetchContentType(raw string, body []byte) (string, string) {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(raw))
 	if err == nil && mediaType != "" {
-		return strings.ToLower(mediaType)
+		return strings.ToLower(mediaType), strings.ToLower(strings.TrimSpace(params["charset"]))
 	}
-	return strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(body), ";")[0]))
+	return strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(body), ";")[0])), ""
+}
+
+func decodeWebFetchBody(body []byte, charsetName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(charsetName))
+	switch normalized {
+	case "", "utf-8", "utf8", "us-ascii":
+		return string(body)
+	}
+	encoding, err := htmlindex.Get(normalized)
+	if err != nil {
+		return string(body)
+	}
+	reader := transform.NewReader(bytes.NewReader(body), encoding.NewDecoder())
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		return string(body)
+	}
+	return string(decoded)
 }
 
 func isSupportedWebFetchContentType(contentType string) bool {
@@ -573,18 +652,29 @@ func normalizeWebFetchMaxChars(v int) int {
 }
 
 func resolveWebFetchMaxChars(raw any, fallback int) int {
-	maxAllowed := normalizeWebFetchMaxChars(fallback)
+	defaultChars := normalizeWebFetchMaxChars(fallback)
 	switch value := raw.(type) {
 	case int:
-		return minInt(normalizeWebFetchMaxChars(value), maxAllowed)
+		return clampRequestedWebFetchMaxChars(value)
 	case int32:
-		return minInt(normalizeWebFetchMaxChars(int(value)), maxAllowed)
+		return clampRequestedWebFetchMaxChars(int(value))
 	case int64:
-		return minInt(normalizeWebFetchMaxChars(int(value)), maxAllowed)
+		return clampRequestedWebFetchMaxChars(int(value))
 	case float64:
-		return minInt(normalizeWebFetchMaxChars(int(value)), maxAllowed)
+		return clampRequestedWebFetchMaxChars(int(value))
 	default:
-		return maxAllowed
+		return defaultChars
+	}
+}
+
+func clampRequestedWebFetchMaxChars(v int) int {
+	switch {
+	case v < minWebFetchMaxChars:
+		return minWebFetchMaxChars
+	case v > maxWebFetchMaxChars:
+		return maxWebFetchMaxChars
+	default:
+		return v
 	}
 }
 

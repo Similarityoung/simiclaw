@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,12 @@ import (
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func TestWebFetchSuccessHTML(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +129,42 @@ func TestWebFetchRejectsPrivateHostsByDefault(t *testing.T) {
 	}
 }
 
+func TestWebFetchRejectsPrivateRedirectWithCustomClient(t *testing.T) {
+	reg := NewRegistry()
+	RegisterWebFetch(reg, WebFetchOptions{
+		Client: &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Hostname() {
+				case "1.1.1.1":
+					return &http.Response{
+						StatusCode: http.StatusFound,
+						Header:     http.Header{"Location": []string{"http://127.0.0.1/private"}},
+						Body:       io.NopCloser(strings.NewReader("redirect")),
+						Request:    req,
+					}, nil
+				case "127.0.0.1":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+						Body:       io.NopCloser(strings.NewReader("secret")),
+						Request:    req,
+					}, nil
+				default:
+					t.Fatalf("unexpected host: %s", req.URL.Host)
+					return nil, nil
+				}
+			}),
+		},
+	})
+
+	res := reg.Call(context.Background(), Context{}, "web_fetch", map[string]any{
+		"url": "https://1.1.1.1/public",
+	})
+	if res.Error == nil || res.Error.Code != model.ErrorCodeForbidden {
+		t.Fatalf("expected forbidden redirect error, got %+v", res.Error)
+	}
+}
+
 func TestWebFetchRejectsUnsupportedContentType(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -135,6 +179,32 @@ func TestWebFetchRejectsUnsupportedContentType(t *testing.T) {
 	})
 	if res.Error == nil || res.Error.Code != model.ErrorCodeInvalidArgument {
 		t.Fatalf("expected invalid argument error, got %+v", res.Error)
+	}
+}
+
+func TestWebFetchDecodesTextUsingResponseCharset(t *testing.T) {
+	reg := NewRegistry()
+	RegisterWebFetch(reg, WebFetchOptions{
+		Client: &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/plain; charset=gbk"}},
+					Body:       io.NopCloser(bytes.NewReader([]byte{0xC4, 0xE3, 0xBA, 0xC3})),
+					Request:    req,
+				}, nil
+			}),
+		},
+	})
+
+	res := reg.Call(context.Background(), Context{}, "web_fetch", map[string]any{
+		"url": "https://1.1.1.1/gbk",
+	})
+	if res.Error != nil {
+		t.Fatalf("unexpected tool error: %+v", res.Error)
+	}
+	if got := res.Output["text"]; got != "你好" {
+		t.Fatalf("unexpected decoded text: %#v", got)
 	}
 }
 
@@ -161,5 +231,37 @@ func TestWebFetchTruncatesToRequestedMaxChars(t *testing.T) {
 	}
 	if res.Output["truncated"] != true {
 		t.Fatalf("expected truncated result, got %#v", res.Output["truncated"])
+	}
+}
+
+func TestWebFetchAllowsRequestedMaxCharsAboveDefault(t *testing.T) {
+	reg := NewRegistry()
+	RegisterWebFetch(reg, WebFetchOptions{
+		Client: &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+					Body:       io.NopCloser(strings.NewReader(strings.Repeat("a", 12000))),
+					Request:    req,
+				}, nil
+			}),
+		},
+	})
+
+	res := reg.Call(context.Background(), Context{}, "web_fetch", map[string]any{
+		"url":       "https://1.1.1.1/long",
+		"max_chars": 12000,
+	})
+	if res.Error != nil {
+		t.Fatalf("unexpected tool error: %+v", res.Error)
+	}
+
+	text, _ := res.Output["text"].(string)
+	if len(text) != 12000 {
+		t.Fatalf("unexpected text length: %d", len(text))
+	}
+	if res.Output["truncated"] != false {
+		t.Fatalf("expected non-truncated result, got %#v", res.Output["truncated"])
 	}
 }
