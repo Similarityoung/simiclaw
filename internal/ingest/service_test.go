@@ -197,7 +197,7 @@ func TestScopeResolverPrefersSessionKeyHint(t *testing.T) {
 		t.Fatalf("insert conversation scope: %v", err)
 	}
 
-	resolver := NewScopeResolver("local", db)
+	resolver := NewScopeResolver("local", NewStoreSessionReader(db))
 	req, scope, ingestErr := resolver.Resolve(ctx, api.IngestRequest{
 		Source:         "web",
 		Conversation:   conv,
@@ -374,7 +374,7 @@ func TestServiceInheritsConversationScopeWithoutManualDMScope(t *testing.T) {
 
 func newIngestService(t *testing.T, db *store.DB, queue *captureQueue) *Service {
 	t.Helper()
-	return NewService("local", db, queue, NewScopeResolver("local", db), 100, 100, 100, 100)
+	return NewService("local", db, queue, NewScopeResolver("local", NewStoreSessionReader(db)), 100, 100, 100, 100)
 }
 
 func newIngestTestDB(t *testing.T) *store.DB {

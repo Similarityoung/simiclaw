@@ -99,7 +99,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 
 	queue := &captureEnqueuer{}
-	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
+	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -164,7 +164,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
-	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", db), 100, 100, 100, 100)
+	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -333,7 +333,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
-	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, db), 100, 100, 100, 100)
+	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()

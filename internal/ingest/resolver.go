@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/session"
@@ -11,9 +10,16 @@ import (
 
 const payloadTypeNewSession = "new_session"
 
+type SessionScopeRecord struct {
+	ConversationID string
+	ChannelType    string
+	ParticipantID  string
+	DMScope        string
+}
+
 type SessionReader interface {
 	GetConversationDMScope(ctx context.Context, tenantID string, conv model.Conversation) (string, bool, error)
-	GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error)
+	GetScopeSession(ctx context.Context, sessionKey string) (SessionScopeRecord, bool, error)
 }
 
 type DefaultScopeResolver struct {
@@ -64,7 +70,7 @@ func (r *DefaultScopeResolver) scopeFromSessionHint(ctx context.Context, req api
 	if req.SessionKeyHint == "" {
 		return "", false, nil
 	}
-	rec, ok, err := r.repo.GetSession(ctx, req.SessionKeyHint)
+	rec, ok, err := r.repo.GetScopeSession(ctx, req.SessionKeyHint)
 	if err != nil {
 		return "", false, &Error{
 			Code:    model.ErrorCodeInternal,
