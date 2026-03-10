@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -24,10 +25,10 @@ func (s providerStreamSink) OnTextDelta(delta string) {
 
 type safeStreamSink struct {
 	inner StreamSink
-	trace *model.RunTrace
+	trace *api.RunTrace
 }
 
-func newSafeStreamSink(inner StreamSink, trace *model.RunTrace) StreamSink {
+func newSafeStreamSink(inner StreamSink, trace *api.RunTrace) StreamSink {
 	if inner == nil {
 		return noopStreamSink{}
 	}
