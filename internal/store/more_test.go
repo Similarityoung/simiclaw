@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -66,17 +67,17 @@ func TestLookupInboundListCollectionsAndCheckReadWrite(t *testing.T) {
 		t.Fatalf("CheckReadWrite: %v", err)
 	}
 
-	events, err := db.ListEvents(ctx)
+	events, err := db.ListEventsPage(ctx, EventListFilter{Limit: 10})
 	if err != nil || len(events) == 0 {
-		t.Fatalf("ListEvents err=%v events=%+v", err, events)
+		t.Fatalf("ListEventsPage err=%v events=%+v", err, events)
 	}
-	runs, err := db.ListRuns(ctx)
+	runs, err := db.ListRunsPage(ctx, RunListFilter{Limit: 10})
 	if err != nil || len(runs) == 0 {
-		t.Fatalf("ListRuns err=%v runs=%+v", err, runs)
+		t.Fatalf("ListRunsPage err=%v runs=%+v", err, runs)
 	}
-	sessions, err := db.ListSessions(ctx)
+	sessions, err := db.ListSessionsPage(ctx, SessionListFilter{Limit: 10})
 	if err != nil || len(sessions) == 0 {
-		t.Fatalf("ListSessions err=%v sessions=%+v", err, sessions)
+		t.Fatalf("ListSessionsPage err=%v sessions=%+v", err, sessions)
 	}
 }
 
@@ -209,33 +210,79 @@ func TestCronJobsHeartbeatsAndHelpers(t *testing.T) {
 }
 
 func TestFSAndJSONHelpers(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "records.jsonl")
-	if err := AppendJSONL(path, map[string]any{"a": 1}, map[string]any{"b": 2}); err != nil {
-		t.Fatalf("AppendJSONL: %v", err)
-	}
-	lines, err := ReadJSONLines[map[string]any](path)
-	if err != nil || len(lines) != 2 {
-		t.Fatalf("ReadJSONLines err=%v lines=%+v", err, lines)
-	}
-
 	jsonPath := filepath.Join(t.TempDir(), "config.json")
-	if err := AtomicWriteJSON(jsonPath, map[string]string{"status": "ok"}, 0o644); err != nil {
-		t.Fatalf("AtomicWriteJSON: %v", err)
+	body, err := json.MarshalIndent(map[string]string{"status": "ok"}, "", "  ")
+	if err != nil {
+		t.Fatalf("json.MarshalIndent: %v", err)
+	}
+	body = append(body, '\n')
+	if err := AtomicWriteFile(jsonPath, body, 0o644); err != nil {
+		t.Fatalf("AtomicWriteFile: %v", err)
 	}
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	var decoded map[string]string
-	if err := decodeJSON(data, &decoded); err != nil {
-		t.Fatalf("decodeJSON: %v", err)
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
 	}
 	if decoded["status"] != "ok" {
 		t.Fatalf("unexpected decoded content: %+v", decoded)
 	}
+}
 
-	missing, err := ReadJSONLines[map[string]any](filepath.Join(t.TempDir(), "missing.jsonl"))
-	if err != nil || missing != nil {
-		t.Fatalf("expected nil missing lines, got err=%v lines=%+v", err, missing)
+func TestSearchMessagesFTSAndGetters(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "fts", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:fts:1",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "alpha search"},
+	}, "sha256:fts", now)
+	if err != nil {
+		t.Fatalf("IngestEvent: %v", err)
+	}
+	if err := db.MarkEventQueued(ctx, result.EventID, now); err != nil {
+		t.Fatalf("MarkEventQueued: %v", err)
+	}
+	claimed, ok, err := db.ClaimEvent(ctx, result.EventID, "run_fts", now)
+	if err != nil || !ok {
+		t.Fatalf("ClaimEvent ok=%v err=%v", ok, err)
+	}
+	if err := db.FinalizeRun(ctx, RunFinalize{
+		RunID:       claimed.RunID,
+		EventID:     claimed.Event.EventID,
+		SessionKey:  claimed.Event.SessionKey,
+		SessionID:   claimed.Event.ActiveSessionID,
+		RunMode:     model.RunModeNormal,
+		RunStatus:   model.RunStatusCompleted,
+		EventStatus: model.EventStatusProcessed,
+		Messages: []StoredMessage{
+			{MessageID: "msg_fts_user", SessionKey: claimed.Event.SessionKey, SessionID: claimed.Event.ActiveSessionID, RunID: claimed.RunID, Role: "user", Content: "alpha search", Visible: true, CreatedAt: now},
+		},
+		Now: now,
+	}); err != nil {
+		t.Fatalf("FinalizeRun: %v", err)
+	}
+
+	hits, err := db.SearchMessagesFTS(ctx, claimed.Event.ActiveSessionID, "alpha", 5)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("SearchMessagesFTS err=%v hits=%+v", err, hits)
+	}
+	empty, err := db.SearchMessagesFTS(ctx, claimed.Event.ActiveSessionID, "", 5)
+	if err != nil || empty != nil {
+		t.Fatalf("expected empty query to return nil, err=%v hits=%+v", err, empty)
+	}
+	run, ok, err := db.GetRun(ctx, claimed.RunID)
+	if err != nil || !ok || run.RunID != claimed.RunID {
+		t.Fatalf("GetRun ok=%v err=%v run=%+v", ok, err, run)
+	}
+	session, ok, err := db.GetSession(ctx, claimed.Event.SessionKey)
+	if err != nil || !ok || session.SessionKey != claimed.Event.SessionKey {
+		t.Fatalf("GetSession ok=%v err=%v session=%+v", ok, err, session)
 	}
 }

@@ -309,3 +309,98 @@ func TestTelegramTargetIDValidation(t *testing.T) {
 		t.Fatalf("expected chat id 42, got %q err=%v", got, err)
 	}
 }
+
+func TestHubStreamSinkHandlesNilHubAndEmptyDeltas(t *testing.T) {
+	sink := newHubStreamSink(nil, "evt_nil")
+	sink.OnStatus("processing", "noop")
+	sink.OnReasoningDelta("")
+	sink.OnTextDelta("")
+	sink.OnToolStart("call", "tool", nil, false)
+	sink.OnToolResult("call", "tool", nil, false, nil)
+}
+
+func TestReadyStateWhenLoopDown(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.Default()
+	cfg.Workspace = workspace
+	if err := store.InitWorkspace(workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
+		t.Fatalf("InitWorkspace: %v", err)
+	}
+	db, err := store.Open(workspace, cfg.DBBusyTimeout.Duration)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 1, 1)
+	supervisor := NewSupervisor(cfg, db, nil, loop, &captureSender{})
+	state, err := supervisor.ReadyState(context.Background())
+	if err == nil || state["event_loop"] != "down" {
+		t.Fatalf("expected loop-down readiness failure, err=%v state=%+v", err, state)
+	}
+}
+
+func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	now := time.Now().UTC()
+	if _, err := db.Writer().ExecContext(
+		context.Background(),
+		`INSERT INTO scheduled_jobs (
+			job_id, name, kind, status, payload_json, next_run_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, '{}', ?, ?, ?)`,
+		"cron:broken",
+		"broken",
+		string(model.ScheduledJobKindCron),
+		string(model.ScheduledJobStatusActive),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+		now.Add(-time.Minute).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert scheduled job: %v", err)
+	}
+
+	supervisor := &Supervisor{db: db, ctx: context.Background()}
+	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
+
+	var lastError string
+	if err := db.Reader().QueryRow(`SELECT last_error FROM scheduled_jobs WHERE job_id = 'cron:broken'`).Scan(&lastError); err != nil {
+		t.Fatalf("read scheduled job: %v", err)
+	}
+	if lastError == "" {
+		t.Fatalf("expected scheduled job failure to be recorded")
+	}
+}
+
+func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
+	loop := NewEventLoop(nil, fixedOutputRunner{}, nil, 0, 0)
+	if cap(loop.queue) != 1024 || loop.maxRounds != 4 {
+		t.Fatalf("expected default queue/maxRounds, got cap=%d maxRounds=%d", cap(loop.queue), loop.maxRounds)
+	}
+	if !loop.TryEnqueue("evt_1") {
+		t.Fatalf("expected first enqueue to succeed")
+	}
+
+	full := NewEventLoop(nil, fixedOutputRunner{}, nil, 1, 1)
+	if !full.TryEnqueue("evt_1") {
+		t.Fatalf("expected bounded queue first enqueue to succeed")
+	}
+	if full.TryEnqueue("evt_2") {
+		t.Fatalf("expected bounded queue second enqueue to fail")
+	}
+}
+
+func newRuntimeTestDB(t *testing.T) *store.DB {
+	t.Helper()
+	workspace := t.TempDir()
+	if err := store.InitWorkspace(workspace, false, store.DefaultBusyTimeout()); err != nil {
+		t.Fatalf("InitWorkspace: %v", err)
+	}
+	db, err := store.Open(workspace, store.DefaultBusyTimeout())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	return db
+}

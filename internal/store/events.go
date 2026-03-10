@@ -159,23 +159,6 @@ func (db *DB) GetEvent(ctx context.Context, eventID string) (model.EventRecord, 
 	return rec, true, rows.Err()
 }
 
-func (db *DB) ListEvents(ctx context.Context) ([]model.EventRecord, error) {
-	rows, err := db.reader.QueryContext(ctx, eventSelectSQL+` ORDER BY created_at DESC, event_id DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.EventRecord
-	for rows.Next() {
-		rec, err := scanEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, rec)
-	}
-	return out, rows.Err()
-}
-
 func (db *DB) ListRunnableEventIDs(ctx context.Context, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 64

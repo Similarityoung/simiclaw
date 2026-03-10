@@ -26,23 +26,6 @@ func (db *DB) GetSession(ctx context.Context, sessionKey string) (model.SessionR
 	return rec, true, rows.Err()
 }
 
-func (db *DB) ListSessions(ctx context.Context) ([]model.SessionRecord, error) {
-	rows, err := db.reader.QueryContext(ctx, sessionSelectSQL+` ORDER BY last_activity_at DESC, session_key DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.SessionRecord
-	for rows.Next() {
-		rec, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, rec)
-	}
-	return out, rows.Err()
-}
-
 func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv model.Conversation, dmScope string, now time.Time) (string, error) {
 	var sessionID string
 	err := tx.QueryRowContext(ctx, `SELECT active_session_id FROM sessions WHERE session_key = ?`, sessionKey).Scan(&sessionID)
