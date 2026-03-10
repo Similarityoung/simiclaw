@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -81,6 +82,10 @@ func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {
 	}
 }
 
+func TestRunnerProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/runner")
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -132,4 +137,29 @@ func itoa(v int) string {
 		v /= 10
 	}
 	return string(buf[i:])
+}
+
+func assertNoStoreDBReference(t *testing.T, dir string) {
+	t.Helper()
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, dir)
+	if len(files) == 0 {
+		t.Fatalf("expected production files under %s", dir)
+	}
+
+	var violations []string
+	for _, rel := range files {
+		abs := filepath.Join(root, rel)
+		src, err := os.ReadFile(abs)
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if strings.Contains(string(src), "*store.DB") {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("%s production code must not reference *store.DB:\n%s", dir, strings.Join(violations, "\n"))
+	}
 }
