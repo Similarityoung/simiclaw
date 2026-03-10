@@ -12,8 +12,9 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.37.0
-	modernc.org/sqlite v1.46.1
+	golang.org/x/text v0.21.0
 	gopkg.in/telebot.v4 v4.0.0-beta.7
+	modernc.org/sqlite v1.46.1
 )
 
 require (
@@ -45,7 +46,6 @@ require (
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
