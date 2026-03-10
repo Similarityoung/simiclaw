@@ -6,6 +6,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
+	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 func (db *DB) ClaimLoopEvent(ctx context.Context, eventID, runID string, now time.Time) (runtimemodel.ClaimedEvent, bool, error) {
@@ -103,5 +104,78 @@ func toRuntimeEventRecord(rec readmodel.EventRecord) runtimemodel.EventRecord {
 		Model:             rec.Model,
 		ProviderRequestID: rec.ProviderRequestID,
 		Error:             rec.Error,
+	}
+}
+
+func (db *DB) ClaimRuntimeOutbox(ctx context.Context, owner string, now time.Time) (runtimemodel.ClaimedOutbox, bool, error) {
+	msg, ok, err := db.ClaimOutbox(ctx, owner, now)
+	if err != nil || !ok {
+		return runtimemodel.ClaimedOutbox{}, ok, err
+	}
+	return runtimemodel.ClaimedOutbox{
+		OutboxID:     msg.OutboxID,
+		EventID:      msg.EventID,
+		SessionKey:   msg.SessionKey,
+		Channel:      msg.Channel,
+		TargetID:     msg.TargetID,
+		Body:         msg.Body,
+		AttemptCount: msg.AttemptCount,
+		CreatedAt:    msg.CreatedAt,
+	}, true, nil
+}
+
+func (db *DB) ClaimRuntimeScheduledJob(ctx context.Context, kind model.ScheduledJobKind, owner string, now time.Time) (runtimemodel.ClaimedJob, bool, error) {
+	job, ok, err := db.ClaimScheduledJob(ctx, kind, owner, now)
+	if err != nil || !ok {
+		return runtimemodel.ClaimedJob{}, ok, err
+	}
+	return toRuntimeClaimedJob(job), true, nil
+}
+
+func (db *DB) CompleteRuntimeScheduledJob(ctx context.Context, job runtimemodel.ClaimedJob, now time.Time) error {
+	return db.CompleteScheduledJob(ctx, toStoreClaimedJob(job), now)
+}
+
+func toRuntimeClaimedJob(job ClaimedJob) runtimemodel.ClaimedJob {
+	return runtimemodel.ClaimedJob{
+		JobID:        job.JobID,
+		Name:         job.Name,
+		Kind:         job.Kind,
+		Status:       job.Status,
+		Payload:      toRuntimeScheduledJobPayload(job.Payload),
+		AttemptCount: job.AttemptCount,
+		NextRunAt:    job.NextRunAt,
+	}
+}
+
+func toRuntimeScheduledJobPayload(payload ScheduledJobPayload) runtimemodel.ScheduledJobPayload {
+	return runtimemodel.ScheduledJobPayload{
+		Source:          payload.Source,
+		TenantID:        payload.TenantID,
+		Conversation:    payload.Conversation,
+		Payload:         payload.Payload,
+		IntervalSeconds: payload.IntervalSeconds,
+	}
+}
+
+func toStoreClaimedJob(job runtimemodel.ClaimedJob) ClaimedJob {
+	return ClaimedJob{
+		JobID:        job.JobID,
+		Name:         job.Name,
+		Kind:         job.Kind,
+		Status:       job.Status,
+		Payload:      toStoreScheduledJobPayload(job.Payload),
+		AttemptCount: job.AttemptCount,
+		NextRunAt:    job.NextRunAt,
+	}
+}
+
+func toStoreScheduledJobPayload(payload runtimemodel.ScheduledJobPayload) ScheduledJobPayload {
+	return ScheduledJobPayload{
+		Source:          payload.Source,
+		TenantID:        payload.TenantID,
+		Conversation:    payload.Conversation,
+		Payload:         payload.Payload,
+		IntervalSeconds: payload.IntervalSeconds,
 	}
 }

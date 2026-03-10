@@ -79,3 +79,32 @@ type EventRecord struct {
 	ProviderRequestID string                `json:"provider_request_id,omitempty"`
 	Error             *pkgmodel.ErrorBlock  `json:"error,omitempty"`
 }
+
+type ClaimedOutbox struct {
+	OutboxID     string
+	EventID      string
+	SessionKey   string
+	Channel      string
+	TargetID     string
+	Body         string
+	AttemptCount int
+	CreatedAt    time.Time
+}
+
+type ScheduledJobPayload struct {
+	Source          string
+	TenantID        string
+	Conversation    pkgmodel.Conversation
+	Payload         pkgmodel.EventPayload
+	IntervalSeconds int64
+}
+
+type ClaimedJob struct {
+	JobID        string
+	Name         string
+	Kind         pkgmodel.ScheduledJobKind
+	Status       pkgmodel.ScheduledJobStatus
+	Payload      ScheduledJobPayload
+	AttemptCount int
+	NextRunAt    time.Time
+}
