@@ -8,8 +8,10 @@ import (
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
+	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -48,7 +50,18 @@ func NewApp(cfg config.Config) (*App, error) {
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
 	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
-	gatewayService := gateway.NewService(cfg, db, eventLoop)
+	ingestService := ingest.NewService(
+		cfg.TenantID,
+		db,
+		eventLoop,
+		ingest.NewScopeResolver(cfg.TenantID, db),
+		cfg.RateLimitTenantRPS,
+		cfg.RateLimitTenantBurst,
+		cfg.RateLimitSessionRPS,
+		cfg.RateLimitSessionBurst,
+	)
+	gatewayService := gateway.NewService(ingestService)
+	queryService := querysvc.NewService(db)
 
 	var telegramRuntime *telegramchannel.Runtime
 	if cfg.Channels.Telegram.Enabled {
@@ -60,8 +73,8 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, db, eventLoop, sender)
-	server := httpapi.New(cfg, db, gatewayService, supervisor, streamHub)
+	supervisor := runtime.NewSupervisor(cfg, db, ingestService, eventLoop, sender)
+	server := httpapi.New(cfg, db, gatewayService, queryService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
 		DB:         db,

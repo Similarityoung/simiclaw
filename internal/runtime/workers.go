@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
-	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -27,6 +27,7 @@ const (
 type Supervisor struct {
 	cfg     config.Config
 	db      *store.DB
+	ingest  EventIngestor
 	loop    *EventLoop
 	sender  outbound.Sender
 	ctx     context.Context
@@ -35,11 +36,16 @@ type Supervisor struct {
 	healthy atomic.Bool
 }
 
-func NewSupervisor(cfg config.Config, db *store.DB, loop *EventLoop, sender outbound.Sender) *Supervisor {
+type EventIngestor interface {
+	Ingest(ctx context.Context, cmd ingest.Command) (ingest.Result, *ingest.Error)
+}
+
+func NewSupervisor(cfg config.Config, db *store.DB, ingestor EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Supervisor{
 		cfg:    cfg,
 		db:     db,
+		ingest: ingestor,
 		loop:   loop,
 		sender: sender,
 		ctx:    ctx,
@@ -222,11 +228,6 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 	if err != nil || !ok {
 		return
 	}
-	sessionKey, err := session.ComputeKey(job.Payload.TenantID, job.Payload.Conversation, "default")
-	if err != nil {
-		_ = s.db.FailScheduledJob(s.ctx, job.JobID, err.Error(), now.Add(30*time.Second), now)
-		return
-	}
 	req := model.IngestRequest{
 		Source:         job.Payload.Source,
 		Conversation:   job.Payload.Conversation,
@@ -234,13 +235,18 @@ func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        job.Payload.Payload,
 	}
-	result, err := s.db.IngestEvent(s.ctx, job.Payload.TenantID, sessionKey, req, req.IdempotencyKey, now)
-	if err != nil && err != store.ErrIdempotencyConflict {
-		_ = s.db.FailScheduledJob(s.ctx, job.JobID, err.Error(), now.Add(30*time.Second), now)
+	if s.ingest == nil {
+		_ = s.db.FailScheduledJob(s.ctx, job.JobID, "ingest service unavailable", now.Add(30*time.Second), now)
+		return
+	}
+	result, ingestErr := s.ingest.Ingest(s.ctx, ingest.Command{Request: req, ReceivedAt: now})
+	if ingestErr != nil {
+		_ = s.db.FailScheduledJob(s.ctx, job.JobID, ingestErr.Error(), now.Add(30*time.Second), now)
 		return
 	}
 	_ = s.db.CompleteScheduledJob(s.ctx, job, now)
-	_ = s.db.MarkEventQueued(s.ctx, result.EventID, now)
-	s.loop.TryEnqueue(result.EventID)
+	if !result.Duplicate && !result.Enqueued && s.loop != nil {
+		s.loop.TryEnqueue(result.EventID)
+	}
 	_ = s.db.BeatHeartbeat(s.ctx, string(kind), now)
 }

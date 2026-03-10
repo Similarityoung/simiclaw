@@ -5,197 +5,164 @@ import (
 	"testing"
 	"time"
 
-	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
+	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func TestValidateRequestRejectsBadNativeRef(t *testing.T) {
+type fakeRepo struct {
+	result     store.IngestResult
+	err        error
+	markQueued int
+}
+
+func (r *fakeRepo) IngestEvent(context.Context, string, string, model.IngestRequest, string, time.Time) (store.IngestResult, error) {
+	return r.result, r.err
+}
+
+func (r *fakeRepo) MarkEventQueued(context.Context, string, time.Time) error {
+	r.markQueued++
+	return nil
+}
+
+type fakeQueue struct{}
+
+func (fakeQueue) TryEnqueue(string) bool { return true }
+
+type fakeResolver struct{}
+
+func (fakeResolver) Resolve(_ context.Context, req model.IngestRequest) (model.IngestRequest, string, *ingest.Error) {
+	if req.DMScope == "" {
+		req.DMScope = "default"
+	}
+	return req, req.DMScope, nil
+}
+
+func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
-		Source: "cli",
-		Conversation: model.Conversation{
-			ConversationID: "conv_1",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
+	repo := &fakeRepo{
+		result: store.IngestResult{
+			EventID:     "evt_dup",
+			SessionKey:  "local:dm:u1",
+			SessionID:   "ses_dup",
+			ReceivedAt:  now,
+			PayloadHash: "sha256:test",
+			Duplicate:   true,
 		},
-		IdempotencyKey: "cli:conv_1:1",
-		Timestamp:      now.Format(time.RFC3339),
-		Payload: model.EventPayload{
-			Type:      "message",
-			Text:      "hi",
-			NativeRef: "../../etc/passwd",
-		},
-	}, now)
-	if err == nil {
-		t.Fatalf("expected invalid native_ref error")
 	}
-}
+	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
 
-func TestValidateRequestIdempotencyFormat(t *testing.T) {
-	now := time.Now().UTC()
-	_, err := validateRequest(model.IngestRequest{
-		Source: "telegram",
-		Conversation: model.Conversation{
-			ConversationID: "conv_1",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
-		},
-		IdempotencyKey: "telegram:update:abc",
-		Timestamp:      now.Format(time.RFC3339),
-		Payload:        model.EventPayload{Type: "message", Text: "hi"},
-	}, now)
-	if err == nil {
-		t.Fatalf("expected idempotency format error")
-	}
-}
-
-func TestCanonicalPayloadHashStable(t *testing.T) {
-	req := model.IngestRequest{
-		Source: "cli",
-		Conversation: model.Conversation{
-			ConversationID: "conv_1",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
-		},
-		IdempotencyKey: "cli:conv_1:1",
-		Timestamp:      "2026-03-03T12:00:00Z",
-		Payload:        model.EventPayload{Type: "message", Text: "hello"},
-	}
-	h1, err := canonicalPayloadHash(req)
-	if err != nil {
-		t.Fatalf("hash error: %v", err)
-	}
-	h2, err := canonicalPayloadHash(req)
-	if err != nil {
-		t.Fatalf("hash error: %v", err)
-	}
-	if h1 != h2 {
-		t.Fatalf("hash not stable: %s vs %s", h1, h2)
-	}
-}
-
-func TestCanonicalPayloadHashIgnoresDMScope(t *testing.T) {
-	req := model.IngestRequest{
-		Source: "cli",
-		Conversation: model.Conversation{
-			ConversationID: "conv_1",
-			ChannelType:    "dm",
-			ParticipantID:  "u1",
-		},
-		IdempotencyKey: "cli:conv_1:1",
-		Timestamp:      "2026-03-03T12:00:00Z",
-		Payload:        model.EventPayload{Type: "message", Text: "hello"},
-	}
-	base, err := canonicalPayloadHash(req)
-	if err != nil {
-		t.Fatalf("hash error: %v", err)
-	}
-	req.DMScope = "scope_123"
-	withScope, err := canonicalPayloadHash(req)
-	if err != nil {
-		t.Fatalf("hash error: %v", err)
-	}
-	if base != withScope {
-		t.Fatalf("expected dm_scope to be ignored, got %s vs %s", base, withScope)
-	}
-}
-
-func TestResolveRequestScopePrefersSessionKeyHint(t *testing.T) {
-	ctx := context.Background()
-	db := newGatewayTestDB(t)
-	conv := model.Conversation{ConversationID: "conv_1", ChannelType: "dm", ParticipantID: "u1"}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	oldSessionKey, err := sessionpkg.ComputeKey("local", conv, "scope_old")
-	if err != nil {
-		t.Fatalf("compute old session key: %v", err)
-	}
-
-	if _, err := db.Writer().ExecContext(
-		ctx,
-		`INSERT INTO sessions (
-			session_key, active_session_id, conversation_id, channel_type, participant_id, dm_scope,
-			last_activity_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		oldSessionKey,
-		"ses_old",
-		conv.ConversationID,
-		conv.ChannelType,
-		conv.ParticipantID,
-		"scope_old",
-		now,
-		now,
-		now,
-	); err != nil {
-		t.Fatalf("insert session: %v", err)
-	}
-	if _, err := db.Writer().ExecContext(
-		ctx,
-		`INSERT INTO conversation_scopes (tenant_id, conversation_id, channel_type, participant_id, dm_scope, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		"local",
-		conv.ConversationID,
-		conv.ChannelType,
-		conv.ParticipantID,
-		"scope_new",
-		now,
-	); err != nil {
-		t.Fatalf("insert conversation scope: %v", err)
-	}
-
-	svc := &Service{cfg: config.Default(), db: db}
-	req, scope, apiErr := svc.resolveRequestScope(ctx, model.IngestRequest{
-		Source:         "web",
-		Conversation:   conv,
-		SessionKeyHint: oldSessionKey,
-		IdempotencyKey: "web:conv_1:1",
-		Timestamp:      now,
-		Payload:        model.EventPayload{Type: "message", Text: "back to old"},
-	})
+	accepted, apiErr := svc.Accept(context.Background(), validGatewayRequest(now))
 	if apiErr != nil {
-		t.Fatalf("resolve request scope apiErr=%+v", apiErr)
+		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
-	if scope != "scope_old" || req.DMScope != "scope_old" {
-		t.Fatalf("expected session hint scope_old, got scope=%q req=%+v", scope, req)
-	}
-}
-
-func TestSessionRateLimitKeyIgnoresDMScope(t *testing.T) {
-	reqA := model.IngestRequest{
-		Conversation: model.Conversation{ConversationID: "conv_1", ChannelType: "dm", ParticipantID: "u1"},
-		DMScope:      "scope_old",
-	}
-	reqB := model.IngestRequest{
-		Conversation: model.Conversation{ConversationID: "conv_1", ChannelType: "dm", ParticipantID: "u1"},
-		DMScope:      "scope_new",
-	}
-
-	keyA, err := sessionRateLimitKey("local", reqA)
-	if err != nil {
-		t.Fatalf("sessionRateLimitKey A: %v", err)
-	}
-	keyB, err := sessionRateLimitKey("local", reqB)
-	if err != nil {
-		t.Fatalf("sessionRateLimitKey B: %v", err)
-	}
-	if keyA != keyB {
-		t.Fatalf("expected dm_scope-insensitive rate limit key, got %q vs %q", keyA, keyB)
+	if accepted.StatusCode != 200 || accepted.Response.Status != ingestStatusDuplicate {
+		t.Fatalf("expected duplicate ack response, got %+v", accepted)
 	}
 }
 
-func newGatewayTestDB(t *testing.T) *store.DB {
-	t.Helper()
-	workspace := t.TempDir()
-	if err := store.InitWorkspace(workspace, false, store.DefaultBusyTimeout()); err != nil {
-		t.Fatalf("init workspace: %v", err)
+func TestAcceptMapsConflictError(t *testing.T) {
+	repo := &fakeRepo{err: store.ErrIdempotencyConflict}
+	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+
+	_, apiErr := svc.Accept(context.Background(), validGatewayRequest(time.Now().UTC()))
+	if apiErr == nil {
+		t.Fatalf("expected api error")
 	}
-	db, err := store.Open(workspace, store.DefaultBusyTimeout())
-	if err != nil {
-		t.Fatalf("open db: %v", err)
+	if apiErr.StatusCode != 409 || apiErr.Code != model.ErrorCodeConflict {
+		t.Fatalf("expected conflict mapping, got %+v", apiErr)
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-	return db
+}
+
+func TestAcceptReturnsAcceptedResponse(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepo{
+		result: store.IngestResult{
+			EventID:     "evt_ok",
+			SessionKey:  "local:dm:u1",
+			SessionID:   "ses_ok",
+			ReceivedAt:  now,
+			PayloadHash: "sha256:test",
+		},
+	}
+	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+
+	accepted, apiErr := svc.Accept(context.Background(), validGatewayRequest(now))
+	if apiErr != nil {
+		t.Fatalf("Accept apiErr=%+v", apiErr)
+	}
+	if accepted.StatusCode != 202 || accepted.Response.Status != ingestStatusAccepted {
+		t.Fatalf("expected accepted response, got %+v", accepted)
+	}
+	if repo.markQueued != 1 {
+		t.Fatalf("expected MarkEventQueued to run once, got %d", repo.markQueued)
+	}
+}
+
+func TestIngestWrapsAccept(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepo{
+		result: store.IngestResult{
+			EventID:     "evt_ok",
+			SessionKey:  "local:dm:u1",
+			SessionID:   "ses_ok",
+			ReceivedAt:  now,
+			PayloadHash: "sha256:test",
+		},
+	}
+	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+
+	resp, status, apiErr := svc.Ingest(context.Background(), validGatewayRequest(now))
+	if apiErr != nil {
+		t.Fatalf("Ingest apiErr=%+v", apiErr)
+	}
+	if status != 202 || resp.EventID != "evt_ok" {
+		t.Fatalf("unexpected ingest response status=%d resp=%+v", status, resp)
+	}
+}
+
+func TestAPIErrorErrorReturnsMessage(t *testing.T) {
+	err := (&APIError{Message: "boom"}).Error()
+	if err != "boom" {
+		t.Fatalf("expected message, got %q", err)
+	}
+}
+
+func TestMapIngestErrorStatusMappings(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    *ingest.Error
+		status int
+	}{
+		{name: "invalid", err: &ingest.Error{Code: model.ErrorCodeInvalidArgument, Message: "bad"}, status: 400},
+		{name: "rate", err: &ingest.Error{Code: model.ErrorCodeRateLimited, Message: "slow"}, status: 429},
+		{name: "internal", err: &ingest.Error{Code: model.ErrorCodeInternal, Message: "boom"}, status: 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			apiErr := mapIngestError(tc.err)
+			if apiErr == nil || apiErr.StatusCode != tc.status {
+				t.Fatalf("unexpected mapping: %+v", apiErr)
+			}
+		})
+	}
+}
+
+func TestIngestReturnsAPIError(t *testing.T) {
+	repo := &fakeRepo{err: store.ErrIdempotencyConflict}
+	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+
+	_, _, apiErr := svc.Ingest(context.Background(), validGatewayRequest(time.Now().UTC()))
+	if apiErr == nil || apiErr.StatusCode != 409 {
+		t.Fatalf("expected conflict api error, got %+v", apiErr)
+	}
+}
+
+func validGatewayRequest(now time.Time) model.IngestRequest {
+	return model.IngestRequest{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:conv:1",
+		Timestamp:      now.Format(time.RFC3339Nano),
+		Payload:        model.EventPayload{Type: "message", Text: "hello"},
+	}
 }

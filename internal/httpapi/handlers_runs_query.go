@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -53,43 +54,31 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	runs, err := s.db.ListRuns(r.Context())
+	page, err := s.query.ListRuns(r.Context(), querysvc.RunListQuery{
+		SessionKey: r.URL.Query().Get("session_key"),
+		SessionID:  r.URL.Query().Get("session_id"),
+		Limit:      limit,
+		Cursor: func() *querysvc.RunCursorAnchor {
+			if !hasCursor {
+				return nil
+			}
+			return &querysvc.RunCursorAnchor{StartedAt: curTime, RunID: cur.LastRunID}
+		}(),
+	})
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
-	sessionKey := r.URL.Query().Get("session_key")
-	sessionID := r.URL.Query().Get("session_id")
-	items := make([]runSummary, 0, limit+1)
-	for _, trace := range runs {
-		if sessionKey != "" && trace.SessionKey != sessionKey {
-			continue
-		}
-		if sessionID != "" && trace.SessionID != sessionID {
-			continue
-		}
-		if hasCursor {
-			if trace.StartedAt.After(curTime) {
-				continue
-			}
-			if trace.StartedAt.Equal(curTime) && trace.RunID >= cur.LastRunID {
-				continue
-			}
-		}
+	items := make([]runSummary, 0, len(page.Items))
+	for _, trace := range page.Items {
 		items = append(items, toRunSummary(trace))
-		if len(items) == limit+1 {
-			break
-		}
 	}
 	resp := map[string]any{"items": items}
-	if len(items) > limit {
-		trimmed := items[:limit]
-		last := trimmed[len(trimmed)-1]
-		resp["items"] = trimmed
+	if page.Next != nil {
 		resp["next_cursor"] = encodeCursor(runCursor{
 			V:             1,
-			LastStartedAt: last.StartedAt.Format(time.RFC3339Nano),
-			LastRunID:     last.RunID,
+			LastStartedAt: page.Next.StartedAt.Format(time.RFC3339Nano),
+			LastRunID:     page.Next.RunID,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)

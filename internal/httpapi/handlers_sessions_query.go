@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -40,43 +41,28 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		curTime = t
 	}
-	sessions, err := s.db.ListSessions(r.Context())
+	page, err := s.query.ListSessions(r.Context(), querysvc.SessionListQuery{
+		SessionKey:     r.URL.Query().Get("session_key"),
+		ConversationID: r.URL.Query().Get("conversation_id"),
+		Limit:          limit,
+		Cursor: func() *querysvc.SessionCursorAnchor {
+			if !hasCursor {
+				return nil
+			}
+			return &querysvc.SessionCursorAnchor{LastActivityAt: curTime, SessionKey: cur.LastSessionKey}
+		}(),
+	})
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
-	sessionKey := r.URL.Query().Get("session_key")
-	conversationID := r.URL.Query().Get("conversation_id")
-	items := make([]model.SessionRecord, 0, limit+1)
-	for _, rec := range sessions {
-		if sessionKey != "" && rec.SessionKey != sessionKey {
-			continue
-		}
-		if conversationID != "" && rec.ConversationID != conversationID {
-			continue
-		}
-		if hasCursor {
-			if rec.LastActivityAt.After(curTime) {
-				continue
-			}
-			if rec.LastActivityAt.Equal(curTime) && rec.SessionKey >= cur.LastSessionKey {
-				continue
-			}
-		}
-		items = append(items, rec)
-		if len(items) == limit+1 {
-			break
-		}
-	}
+	items := page.Items
 	resp := map[string]any{"items": items}
-	if len(items) > limit {
-		trimmed := items[:limit]
-		last := trimmed[len(trimmed)-1]
-		resp["items"] = trimmed
+	if page.Next != nil {
 		resp["next_cursor"] = encodeCursor(sessionCursor{
 			V:              1,
-			LastActivityAt: last.LastActivityAt.Format(time.RFC3339Nano),
-			LastSessionKey: last.SessionKey,
+			LastActivityAt: page.Next.LastActivityAt.Format(time.RFC3339Nano),
+			LastSessionKey: page.Next.SessionKey,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)

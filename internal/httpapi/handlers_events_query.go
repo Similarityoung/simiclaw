@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -52,30 +53,23 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		cursorTime = t
 	}
 
-	events, err := s.db.ListEvents(r.Context())
+	page, err := s.query.ListEvents(r.Context(), querysvc.EventListQuery{
+		SessionKey: r.URL.Query().Get("session_key"),
+		Status:     model.EventStatus(r.URL.Query().Get("status")),
+		Limit:      limit,
+		Cursor: func() *querysvc.EventCursorAnchor {
+			if !hasCursor {
+				return nil
+			}
+			return &querysvc.EventCursorAnchor{CreatedAt: cursorTime, EventID: cur.LastEventID}
+		}(),
+	})
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
-	sessionKey := r.URL.Query().Get("session_key")
-	status := model.EventStatus(r.URL.Query().Get("status"))
-
-	items := make([]eventListItem, 0, limit+1)
-	for _, rec := range events {
-		if sessionKey != "" && rec.SessionKey != sessionKey {
-			continue
-		}
-		if status != "" && rec.Status != status {
-			continue
-		}
-		if hasCursor {
-			if rec.CreatedAt.After(cursorTime) {
-				continue
-			}
-			if rec.CreatedAt.Equal(cursorTime) && rec.EventID >= cur.LastEventID {
-				continue
-			}
-		}
+	items := make([]eventListItem, 0, len(page.Items))
+	for _, rec := range page.Items {
 		items = append(items, eventListItem{
 			EventID:      rec.EventID,
 			Status:       rec.Status,
@@ -85,20 +79,14 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 			RunID:        rec.RunID,
 			UpdatedAt:    rec.UpdatedAt,
 		})
-		if len(items) == limit+1 {
-			break
-		}
 	}
 
 	resp := map[string]any{"items": items}
-	if len(items) > limit {
-		trimmed := items[:limit]
-		last := trimmed[len(trimmed)-1]
-		resp["items"] = trimmed
+	if page.Next != nil {
 		resp["next_cursor"] = encodeCursor(eventCursor{
 			V:             1,
-			LastCreatedAt: last.UpdatedAt.Format(time.RFC3339Nano),
-			LastEventID:   last.EventID,
+			LastCreatedAt: page.Next.CreatedAt.Format(time.RFC3339Nano),
+			LastEventID:   page.Next.EventID,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
