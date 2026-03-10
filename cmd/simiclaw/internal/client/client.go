@@ -419,8 +419,8 @@ func (c *Client) ListRuns(ctx context.Context, sessionKey, cursor string, limit 
 	return out, nil
 }
 
-func (c *Client) GetRunTrace(ctx context.Context, runID string) (model.RunTrace, error) {
-	var out model.RunTrace
+func (c *Client) GetRunTrace(ctx context.Context, runID string) (api.RunTrace, error) {
+	var out api.RunTrace
 	if err := c.getJSON(ctx, c.httpClient, "/v1/runs/"+url.PathEscape(runID)+"/trace", nil, &out); err != nil {
 		return out, err
 	}

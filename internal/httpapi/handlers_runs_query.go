@@ -8,6 +8,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -139,7 +140,7 @@ func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, trace)
 }
 
-func toRunSummary(trace model.RunTrace) runSummary {
+func toRunSummary(trace api.RunTrace) runSummary {
 	return runSummary{
 		RunID:      trace.RunID,
 		EventID:    trace.EventID,

@@ -2,10 +2,11 @@ package store
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"strings"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -69,7 +70,7 @@ func (db *DB) ListEventsPage(ctx context.Context, filter EventListFilter) ([]rea
 	return out, rows.Err()
 }
 
-func (db *DB) ListRunsPage(ctx context.Context, filter RunListFilter) ([]model.RunTrace, error) {
+func (db *DB) ListRunsPage(ctx context.Context, filter RunListFilter) ([]api.RunTrace, error) {
 	query := runSelectSQL + ` WHERE 1 = 1`
 	args := make([]any, 0, 6)
 	if strings.TrimSpace(filter.SessionKey) != "" {
@@ -94,7 +95,7 @@ func (db *DB) ListRunsPage(ctx context.Context, filter RunListFilter) ([]model.R
 	}
 	defer rows.Close()
 
-	var out []model.RunTrace
+	var out []api.RunTrace
 	for rows.Next() {
 		trace, err := scanRun(rows)
 		if err != nil {

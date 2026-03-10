@@ -547,13 +547,13 @@ func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord
 	return api.EventRecord{}
 }
 
-func getRunTrace(t *testing.T, app *bootstrap.App, runID string) model.RunTrace {
+func getRunTrace(t *testing.T, app *bootstrap.App, runID string) api.RunTrace {
 	t.Helper()
 	body, code := doRequest(t, app, http.MethodGet, "/v1/runs/"+runID+"/trace", nil)
 	if code != http.StatusOK {
 		t.Fatalf("run trace expected 200, got %d body=%s", code, string(body))
 	}
-	var trace model.RunTrace
+	var trace api.RunTrace
 	if err := json.Unmarshal(body, &trace); err != nil {
 		t.Fatalf("decode run trace: %v", err)
 	}
