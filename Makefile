@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/session/... ./internal/store/...
 
-.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1-alpha accept-current
+.PHONY: fmt vet lint test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1 accept-v1-alpha accept-current
 
 fmt:
 	@find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -w
@@ -38,16 +38,28 @@ test-integration:
 
 test-e2e-smoke:
 	@stage=$$(cat VERSION_STAGE); \
-	if [[ "$$stage" != "V1_ALPHA" ]]; then echo "unknown VERSION_STAGE=$$stage"; exit 1; fi; \
-	go test ./tests/e2e/... -run 'SmokeV1Alpha'
+	if [[ "$$stage" == "V1" ]]; then \
+		go test ./tests/e2e/... -run 'SmokeV1'; \
+	elif [[ "$$stage" == "V1_ALPHA" ]]; then \
+		go test ./tests/e2e/... -run 'SmokeV1Alpha'; \
+	else \
+		echo "unknown VERSION_STAGE=$$stage"; exit 1; \
+	fi
 
 test-e2e:
 	go test ./tests/e2e/... -count=1
 
-accept-v1-alpha: test-unit test-unit-race-core test-integration test-e2e-smoke
-	@echo "accept-v1-alpha passed"
+accept-v1: test-unit test-unit-race-core test-integration test-e2e-smoke
+	@echo "accept-v1 passed"
+
+accept-v1-alpha: accept-v1
 
 accept-current:
 	@stage=$$(cat VERSION_STAGE); \
-	if [[ "$$stage" != "V1_ALPHA" ]]; then echo "unknown VERSION_STAGE=$$stage"; exit 1; fi; \
-	$(MAKE) accept-v1-alpha
+	if [[ "$$stage" == "V1" ]]; then \
+		$(MAKE) accept-v1; \
+	elif [[ "$$stage" == "V1_ALPHA" ]]; then \
+		$(MAKE) accept-v1-alpha; \
+	else \
+		echo "unknown VERSION_STAGE=$$stage"; exit 1; \
+	fi

@@ -1,10 +1,10 @@
-# SimiClaw (v1.0 alpha)
+# SimiClaw (v1.0)
 
-单机单进程 Go Agent Runtime，当前阶段为 `V1_ALPHA`。运行时采用 `SQLite-first` 架构，数据库固定为 `workspace/runtime/app.db`，`sessions` 仅作为派生缓存，SQLite 是唯一事实源。
+单机单进程 Go Agent Runtime，当前阶段为 `V1`。运行时采用 `SQLite-first` 架构，数据库固定为 `workspace/runtime/app.db`，`sessions` 仅作为派生缓存，SQLite 是唯一事实源。
 
 ## 当前能力
 
-- CLI：`chat | inspect | init | serve | version | completion`
+- CLI：`chat | inspect | init | serve(gateway alias) | version | completion`
 - HTTP：
   - `POST /v1/chat:stream`
   - `POST /v1/events:ingest`
@@ -265,6 +265,8 @@ SIMICLAW_WEB_PROXY_API_KEY=
 ```bash
 go run ./cmd/simiclaw inspect health
 go run ./cmd/simiclaw inspect sessions --limit 20
+go run ./cmd/simiclaw inspect events --status processing
+go run ./cmd/simiclaw inspect runs --limit 20
 go run ./cmd/simiclaw inspect trace <run-id> --output json
 go run ./cmd/simiclaw completion bash
 ```
@@ -302,9 +304,11 @@ make test-unit
 make test-unit-race-core
 make test-integration
 make test-e2e-smoke
-make accept-v1-alpha
+make accept-v1
 make accept-current
 ```
+
+`make accept-v1-alpha` 仍保留为兼容别名，但正式版入口以 `make accept-v1` 为准。
 
 ### 手动验收（真实模型）
 

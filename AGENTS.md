@@ -1,7 +1,7 @@
 # AGENTS.md — SimiClaw Codebase Guide
 
 Single-binary Go agent runtime built around a SQLite-first state machine.
-Module: `github.com/similarityyoung/simiclaw` | Go 1.25 | Current stage: `V1_ALPHA`
+Module: `github.com/similarityyoung/simiclaw` | Go 1.25 | Current stage: `V1`
 
 ---
 
@@ -32,8 +32,8 @@ make test-e2e-smoke
 # All E2E tests, no cache
 make test-e2e
 
-# Acceptance for v1 alpha
-make accept-v1-alpha
+# Acceptance for v1
+make accept-v1
 
 # Acceptance for current stage
 make accept-current
@@ -45,7 +45,7 @@ make accept-current
 go test ./internal/session/... -run TestComputeKeyDMThreadIgnored -v
 go test ./pkg/config/... -run TestLoad -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
-go test ./tests/e2e/... -run SmokeV1Alpha -v -count=1
+go test ./tests/e2e/... -run SmokeV1 -v -count=1
 ```
 
 ### Build / Run
@@ -78,8 +78,8 @@ Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 ## Project Layout
 
 ```text
-cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, version
-  internal/             CLI-internal packages (chat, gateway, initcmd, version, common)
+cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, inspect, version, completion
+  internal/             CLI-internal packages (chat, gateway, initcmd, inspect, version, common)
 pkg/
   config/               Config struct, defaults, env/file loading
   logging/              Thin zap wrapper
@@ -146,4 +146,4 @@ workspace/
     native/
 ```
 
-Legacy file-runtime traces such as `sessions.json`, `runtime/approvals`, `runtime/outbound_spool`, and `workspace/evolution` must be rejected or removed during migration to alpha.
+Legacy file-runtime traces such as `sessions.json`, `runtime/approvals`, `runtime/outbound_spool`, and `workspace/evolution` must be rejected or removed during migration to the SQLite runtime.

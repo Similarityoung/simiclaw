@@ -37,7 +37,7 @@ make test-integration
 make test-e2e-smoke
 
 # Acceptance entry points
-make accept-v1-alpha
+make accept-v1
 make accept-current
 
 # Run a single unit-style test
@@ -49,7 +49,7 @@ go test ./tests/integration/... -tags=integration -run TestName
 
 ## Architecture map
 
-- `cmd/simiclaw/main.go`: CLI entrypoint. Dispatches `init | serve | gateway | chat | version`.
+- `cmd/simiclaw/main.go`: CLI entrypoint. Dispatches `init | serve | gateway | chat | inspect | version | completion`.
 - `internal/bootstrap/app.go`: application assembly. Wires DB, tools registry, provider factory, stream hub, runner, event loop, supervisor, gateway service, and HTTP server handler.
 - `internal/gateway/service.go` + `internal/gateway/ingest.go`: ingest boundary. Validates requests, computes session key, applies rate limiting and idempotency checks, persists accepted events, and enqueues them.
 - `internal/httpapi/server.go` + `internal/httpapi/routes.go`: HTTP exposure layer for `healthz`, `readyz`, events, runs, sessions, ingest, and streaming chat.
@@ -77,10 +77,10 @@ go test ./tests/integration/... -tags=integration -run TestName
 
 - When changing the core runtime path, start by checking:
   - `tests/integration/runtime_integration_test.go`
-  - `tests/e2e/smoke_alpha_test.go`
+  - `tests/e2e/smoke_v1_test.go`
 - Repository test entry points:
   - unit: `make test-unit`
   - race on core packages: `make test-unit-race-core`
   - integration: `make test-integration` or `go test ./tests/integration/... -tags=integration`
-  - e2e smoke: `make test-e2e-smoke` or `go test ./tests/e2e/... -run 'SmokeV1Alpha'`
-  - acceptance: `make accept-v1-alpha` and `make accept-current`
+  - e2e smoke: `make test-e2e-smoke` or `go test ./tests/e2e/... -run 'SmokeV1'`
+  - acceptance: `make accept-v1` and `make accept-current`

@@ -15,7 +15,16 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
+func TestSmokeV1_InitServeChat(t *testing.T) {
+	runSmokeV1(t)
+}
+
+// Backward-compatible alias for older stage-specific scripts.
 func TestSmokeV1Alpha_InitServeChat(t *testing.T) {
+	runSmokeV1(t)
+}
+
+func runSmokeV1(t *testing.T) {
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
 	if err := store.InitWorkspace(cfg.Workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
@@ -30,13 +39,13 @@ func TestSmokeV1Alpha_InitServeChat(t *testing.T) {
 	}
 	defer app.Stop()
 
-	req := cli.BuildIngestRequest("smoke-v1-alpha", "u1", 1, "hello alpha")
+	req := cli.BuildIngestRequest("smoke-v1", "u1", 1, "hello v1")
 	resp := ingest(t, app, req)
 	event := pollEvent(t, app, resp.EventID)
 	if event.Status != model.EventStatusProcessed || event.OutboxStatus != model.OutboxStatusSent {
 		t.Fatalf("unexpected terminal event: %+v", event)
 	}
-	if event.AssistantReply != "已收到: hello alpha" {
+	if event.AssistantReply != "已收到: hello v1" {
 		t.Fatalf("unexpected assistant reply: %+v", event)
 	}
 }
