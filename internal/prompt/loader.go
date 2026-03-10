@@ -1,8 +1,6 @@
 package prompt
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -143,129 +141,6 @@ func (l promptLoader) loadSkillSummaries() []SkillSummary {
 		return left < right
 	})
 	return entries
-}
-
-func (l promptLoader) snapshotStaticState(variant staticVariant) map[string]string {
-	state := map[string]string{}
-	for _, name := range workspaceContextFiles {
-		state["ctx:"+name] = l.snapshotContextFileFingerprint(name)
-	}
-	state["ctx:"+bootstrapContextFile] = l.snapshotContextFileFingerprint(bootstrapContextFile)
-	if variant.includeHeartbeat {
-		state["ctx:"+heartbeatContextFile] = l.snapshotContextFileFingerprint(heartbeatContextFile)
-	}
-	for rel, fingerprint := range l.snapshotSkillState() {
-		state["skill:"+rel] = fingerprint
-	}
-	for rel, fingerprint := range l.snapshotCuratedState(variant.memoryMode) {
-		state["memory:"+rel] = fingerprint
-	}
-	return state
-}
-
-func (l promptLoader) snapshotSkillState() map[string]string {
-	state := map[string]string{}
-	root := filepath.Join(l.workspace, "skills")
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() || d.Name() != "SKILL.md" {
-			return nil
-		}
-		rel, err := filepath.Rel(l.workspace, path)
-		if err != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		state[rel] = l.snapshotContextFileFingerprint(rel)
-		return nil
-	})
-	return state
-}
-
-func (l promptLoader) snapshotCuratedState(memoryMode string) map[string]string {
-	state := map[string]string{}
-	candidates := []string{filepath.ToSlash(filepath.Join("memory", "public", "MEMORY.md")), "MEMORY.md"}
-	if memoryMode == "public_private" {
-		candidates = append(candidates, filepath.ToSlash(filepath.Join("memory", "private", "MEMORY.md")))
-	}
-	for _, rel := range candidates {
-		state[rel] = l.snapshotMemoryFileFingerprint(rel, memoryMode)
-	}
-	return state
-}
-
-func (l promptLoader) snapshotContextFileFingerprint(rel string) string {
-	absCandidate := filepath.Join(l.workspace, filepath.FromSlash(rel))
-	info, err := os.Lstat(absCandidate)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "missing"
-		}
-		return "stat_error"
-	}
-	normalizedRel, absPath, err := contextfile.ResolvePath(l.workspace, rel)
-	if err != nil {
-		return "denied:" + fileMarker(absCandidate, info)
-	}
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return "read_error"
-	}
-	content := strings.TrimSpace(string(data))
-	if content == "" {
-		return "empty:" + normalizedRel + ":" + resolvedPath(absPath)
-	}
-	sum := sha256.Sum256([]byte(content))
-	return fmt.Sprintf("ok:%s:%s:%x", normalizedRel, resolvedPath(absPath), sum)
-}
-
-func (l promptLoader) snapshotMemoryFileFingerprint(rel, memoryMode string) string {
-	absCandidate := filepath.Join(l.workspace, filepath.FromSlash(rel))
-	info, err := os.Lstat(absCandidate)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "missing"
-		}
-		return "stat_error"
-	}
-	normalizedRel, absPath, visibility, err := memory.ResolvePath(l.workspace, rel)
-	if err != nil {
-		return "denied:" + fileMarker(absCandidate, info)
-	}
-	if !canAccessMemoryVisibility(memoryMode, visibility) {
-		return "denied_visibility:" + visibility
-	}
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return "read_error"
-	}
-	content := strings.TrimSpace(string(data))
-	if content == "" {
-		return "empty:" + normalizedRel + ":" + resolvedPath(absPath)
-	}
-	sum := sha256.Sum256([]byte(content))
-	return fmt.Sprintf("ok:%s:%s:%x", normalizedRel, resolvedPath(absPath), sum)
-}
-
-func resolvedPath(absPath string) string {
-	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
-		if resolvedAbs, err := filepath.Abs(resolved); err == nil {
-			return resolvedAbs
-		}
-	}
-	if normalizedAbs, err := filepath.Abs(absPath); err == nil {
-		return normalizedAbs
-	}
-	return absPath
-}
-
-func fileMarker(path string, info os.FileInfo) string {
-	marker := info.Mode().String()
-	if info.Mode()&os.ModeSymlink != 0 {
-		if target, err := os.Readlink(path); err == nil {
-			marker += ":" + target
-		}
-	}
-	return marker
 }
 
 func parseSkillSummary(workspace, absPath, raw string) (SkillSummary, bool) {

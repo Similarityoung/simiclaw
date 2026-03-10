@@ -18,6 +18,7 @@ const (
 type Builder struct {
 	workspace string
 	loader    promptLoader
+	finger    promptFingerprinter
 	renderer  promptRenderer
 
 	mu           sync.RWMutex
@@ -82,6 +83,7 @@ func NewBuilder(workspace string) *Builder {
 		cachedStatic: map[string]staticCacheEntry{},
 	}
 	builder.loader = promptLoader{workspace: workspace}
+	builder.finger = promptFingerprinter{workspace: workspace}
 	builder.renderer = promptRenderer{}
 	return builder
 }
@@ -109,7 +111,7 @@ func buildStaticVariant(ctx RunContext) staticVariant {
 
 func (b *Builder) buildStaticPrefix(variant staticVariant) string {
 	key := variant.key()
-	snapshot := b.loader.snapshotStaticState(variant)
+	snapshot := b.finger.snapshotStaticState(variant)
 
 	b.mu.RLock()
 	if entry, ok := b.cachedStatic[key]; ok && equalStringMap(entry.fingerprints, snapshot) {
@@ -121,12 +123,12 @@ func (b *Builder) buildStaticPrefix(variant staticVariant) string {
 
 	content, snapshot, cacheable := stableStaticBuild(
 		func() string { return b.buildStaticContent(variant) },
-		func() map[string]string { return b.loader.snapshotStaticState(variant) },
+		func() map[string]string { return b.finger.snapshotStaticState(variant) },
 	)
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	latest := b.loader.snapshotStaticState(variant)
+	latest := b.finger.snapshotStaticState(variant)
 	if entry, ok := b.cachedStatic[key]; ok && equalStringMap(entry.fingerprints, latest) {
 		return entry.content
 	}
