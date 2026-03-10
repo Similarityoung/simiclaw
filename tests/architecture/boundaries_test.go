@@ -86,6 +86,10 @@ func TestRunnerProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runner")
 }
 
+func TestEventLoopProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReferenceInFiles(t, "internal/runtime/eventloop.go")
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -161,5 +165,24 @@ func assertNoStoreDBReference(t *testing.T, dir string) {
 	if len(violations) > 0 {
 		slices.Sort(violations)
 		t.Fatalf("%s production code must not reference *store.DB:\n%s", dir, strings.Join(violations, "\n"))
+	}
+}
+
+func assertNoStoreDBReferenceInFiles(t *testing.T, relPaths ...string) {
+	t.Helper()
+	root := repoRoot(t)
+	var violations []string
+	for _, rel := range relPaths {
+		src, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if strings.Contains(string(src), "*store.DB") {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("production code must not reference *store.DB:\n%s", strings.Join(violations, "\n"))
 	}
 }
