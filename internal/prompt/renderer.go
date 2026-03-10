@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	promptpkg "github.com/similarityyoung/simiclaw/pkg/prompt"
+	systemprompt "github.com/similarityyoung/simiclaw/internal/systemprompt"
 )
 
 type promptRenderer struct{}
@@ -26,15 +26,15 @@ func (promptRenderer) renderStatic(data staticPromptData) string {
 }
 
 func renderIdentitySection(workspacePath string) string {
-	return promptpkg.Render(promptpkg.SystemText.IdentityRuntime, map[string]string{"workspace_path": workspacePath})
+	return systemprompt.Render(systemprompt.SystemText.IdentityRuntime, map[string]string{"workspace_path": workspacePath})
 }
 
 func renderToolContractSection() string {
-	return promptpkg.SystemText.ToolContract
+	return systemprompt.SystemText.ToolContract
 }
 
 func renderMemoryPolicySection(blocks []textEntry) string {
-	parts := []string{promptpkg.SystemText.MemoryPolicy}
+	parts := []string{systemprompt.SystemText.MemoryPolicy}
 	if len(blocks) == 0 {
 		parts = append(parts, "### Injected Curated Memory\n\nNo curated memory is injected for this run.")
 		return strings.Join(parts, "\n\n")
@@ -72,7 +72,7 @@ func renderAvailableSkillsSection(skills []SkillSummary) string {
 }
 
 func renderHeartbeatPolicySection(entry textEntry, ok bool) string {
-	parts := []string{promptpkg.SystemText.HeartbeatPolicy}
+	parts := []string{systemprompt.SystemText.HeartbeatPolicy}
 	if !ok {
 		parts = append(parts, "### HEARTBEAT.md\n\nThe current workspace does not provide HEARTBEAT.md. Follow the conservative default policy.")
 		return strings.Join(parts, "\n\n")

@@ -8,19 +8,19 @@ import (
 	"testing"
 	"time"
 
+	systemprompt "github.com/similarityyoung/simiclaw/internal/systemprompt"
 	"github.com/similarityyoung/simiclaw/pkg/model"
-	promptpkg "github.com/similarityyoung/simiclaw/pkg/prompt"
 )
 
 func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
-	if promptpkg.SystemText.IdentityRuntime == "" || promptpkg.SystemText.ToolContract == "" || promptpkg.SystemText.MemoryPolicy == "" || promptpkg.SystemText.HeartbeatPolicy == "" {
-		t.Fatalf("expected embedded system prompt text to be loaded, got %+v", promptpkg.SystemText)
+	if systemprompt.SystemText.IdentityRuntime == "" || systemprompt.SystemText.ToolContract == "" || systemprompt.SystemText.MemoryPolicy == "" || systemprompt.SystemText.HeartbeatPolicy == "" {
+		t.Fatalf("expected embedded system prompt text to be loaded, got %+v", systemprompt.SystemText)
 	}
-	if !strings.Contains(promptpkg.SystemText.IdentityRuntime, "{{workspace_path}}") {
-		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", promptpkg.SystemText.IdentityRuntime)
+	if !strings.Contains(systemprompt.SystemText.IdentityRuntime, "{{workspace_path}}") {
+		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", systemprompt.SystemText.IdentityRuntime)
 	}
-	if !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_patch") || !strings.Contains(promptpkg.SystemText.ToolContract, "workspace_delete") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_search") || !strings.Contains(promptpkg.SystemText.ToolContract, "web_fetch") {
-		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", promptpkg.SystemText.ToolContract)
+	if !strings.Contains(systemprompt.SystemText.ToolContract, "workspace_patch") || !strings.Contains(systemprompt.SystemText.ToolContract, "workspace_delete") || !strings.Contains(systemprompt.SystemText.ToolContract, "web_search") || !strings.Contains(systemprompt.SystemText.ToolContract, "web_fetch") {
+		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", systemprompt.SystemText.ToolContract)
 	}
 }
 
