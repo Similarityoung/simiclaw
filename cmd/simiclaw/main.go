@@ -10,7 +10,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/root"
-	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/internal/config"
 )
 
 const bootstrapLogLevelEnv = "SIMICLAW_LOG_LEVEL"

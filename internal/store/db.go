@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	schemaVersion = 1
+	schemaVersion = 2
 	dbFileName    = "app.db"
 )
 
@@ -73,11 +73,18 @@ func Open(workspace string, busyTimeout time.Duration) (*DB, error) {
 		return nil, err
 	}
 	writer.SetMaxOpenConns(1)
-	if err := validateSchemaVersion(writer); err != nil {
+	currentVersion, err := schemaUserVersion(writer)
+	if err != nil {
 		_ = writer.Close()
 		return nil, err
 	}
-	if err := ensureSchemaFeatures(writer); err != nil {
+	if currentVersion < schemaVersion {
+		if err := migrateSchema(writer, currentVersion); err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
+	}
+	if err := validateSchema(writer); err != nil {
 		_ = writer.Close()
 		return nil, err
 	}
@@ -163,22 +170,42 @@ func openSQLite(path string, busyTimeout time.Duration) (*sql.DB, error) {
 }
 
 func applySchema(db *sql.DB) error {
-	schema, err := embeddedFiles.ReadFile("schema.sql")
+	schema, err := readSchemaSQL()
 	if err != nil {
 		return err
 	}
-	if _, err := db.Exec(string(schema)); err != nil {
+	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
+	return validateSchema(db)
+}
+
+func readSchemaSQL() (string, error) {
+	schema, err := embeddedFiles.ReadFile("schema.sql")
+	if err != nil {
+		return "", err
+	}
+	return string(schema), nil
+}
+
+func validateSchema(db *sql.DB) error {
 	if err := validateSchemaVersion(db); err != nil {
 		return err
 	}
-	return ensureSchemaFeatures(db)
+	return validateSchemaStructure(db)
+}
+
+func schemaUserVersion(db *sql.DB) (int, error) {
+	var version int
+	if err := db.QueryRow("PRAGMA user_version;").Scan(&version); err != nil {
+		return 0, err
+	}
+	return version, nil
 }
 
 func validateSchemaVersion(db *sql.DB) error {
-	var version int
-	if err := db.QueryRow("PRAGMA user_version;").Scan(&version); err != nil {
+	version, err := schemaUserVersion(db)
+	if err != nil {
 		return err
 	}
 	if version != schemaVersion {
@@ -187,40 +214,136 @@ func validateSchemaVersion(db *sql.DB) error {
 	return nil
 }
 
-func ensureSchemaFeatures(db *sql.DB) error {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS conversation_scopes (
-		tenant_id TEXT NOT NULL,
-		conversation_id TEXT NOT NULL,
-		channel_type TEXT NOT NULL,
-		participant_id TEXT NOT NULL DEFAULT '',
-		dm_scope TEXT NOT NULL DEFAULT '',
-		updated_at TEXT NOT NULL,
-		PRIMARY KEY (tenant_id, conversation_id, channel_type, participant_id)
-	)`); err != nil {
-		return err
+func validateSchemaStructure(db *sql.DB) error {
+	required := map[string][]string{
+		"sessions":            {"session_key", "active_session_id", "conversation_id", "last_activity_at"},
+		"conversation_scopes": {"tenant_id", "conversation_id", "dm_scope"},
+		"messages":            {"message_id", "session_key", "visible", "meta_json"},
+		"runs":                {"run_id", "event_id", "run_mode", "status", "started_at"},
+		"events":              {"event_id", "session_key", "idempotency_key", "payload_hash", "status", "created_at", "updated_at"},
+		"idempotency_keys":    {"key", "event_id", "payload_hash", "session_key"},
+		"outbox":              {"outbox_id", "event_id", "session_key", "channel", "target_id", "status", "next_attempt_at"},
+		"scheduled_jobs":      {"job_id", "kind", "status", "payload_json", "next_run_at"},
+		"job_executions":      {"execution_id", "job_id", "status", "started_at"},
+		"heartbeats":          {"worker_name", "beat_at", "status"},
 	}
-
-	features := []struct {
-		table  string
-		column string
-		ddl    string
-	}{
-		{table: "outbox", column: "channel", ddl: "ALTER TABLE outbox ADD COLUMN channel TEXT NOT NULL DEFAULT ''"},
-		{table: "outbox", column: "target_id", ddl: "ALTER TABLE outbox ADD COLUMN target_id TEXT NOT NULL DEFAULT ''"},
-	}
-	for _, feature := range features {
-		exists, err := tableColumnExists(db, feature.table, feature.column)
+	for table, columns := range required {
+		exists, err := tableExists(db, table)
 		if err != nil {
 			return err
 		}
-		if exists {
-			continue
+		if !exists {
+			return fmt.Errorf("schema validation failed: missing table %s", table)
 		}
-		if _, err := db.Exec(feature.ddl); err != nil {
-			return err
+		for _, column := range columns {
+			ok, err := tableColumnExists(db, table, column)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("schema validation failed: missing column %s.%s", table, column)
+			}
 		}
 	}
 	return nil
+}
+
+func migrateSchema(db *sql.DB, currentVersion int) error {
+	switch currentVersion {
+	case schemaVersion:
+		return nil
+	case 1:
+		return migrateV1ToV2(db)
+	default:
+		return fmt.Errorf("unsupported schema version %d", currentVersion)
+	}
+}
+
+func migrateV1ToV2(db *sql.DB) error {
+	outboxExists, err := tableExists(db, "outbox")
+	if err != nil {
+		return err
+	}
+	outboxHasChannel := false
+	outboxHasTargetID := false
+	if outboxExists {
+		if outboxHasChannel, err = tableColumnExists(db, "outbox", "channel"); err != nil {
+			return err
+		}
+		if outboxHasTargetID, err = tableColumnExists(db, "outbox", "target_id"); err != nil {
+			return err
+		}
+	}
+
+	schema, err := readSchemaSQL()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if outboxExists {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE outbox RENAME TO outbox_legacy_v1`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	if outboxExists {
+		channelExpr := "''"
+		if outboxHasChannel {
+			channelExpr = "COALESCE(channel, '')"
+		}
+		targetIDExpr := "''"
+		if outboxHasTargetID {
+			targetIDExpr = "COALESCE(target_id, '')"
+		}
+		copySQL := fmt.Sprintf(
+			`INSERT INTO outbox (
+				outbox_id, event_id, session_key, channel, target_id, body, status, next_attempt_at,
+				locked_at, lock_owner, attempt_count, last_error, created_at, updated_at, sent_at
+			)
+			SELECT
+				outbox_id, event_id, session_key, %s, %s, body, status, next_attempt_at,
+				locked_at, lock_owner, attempt_count, last_error, created_at, updated_at, sent_at
+			FROM outbox_legacy_v1`,
+			channelExpr,
+			targetIDExpr,
+		)
+		if _, err := tx.ExecContext(ctx, copySQL); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DROP TABLE outbox_legacy_v1`); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
+}
+
+func tableExists(db *sql.DB, table string) (bool, error) {
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return name == table, nil
 }
 
 func tableColumnExists(db *sql.DB, table, column string) (bool, error) {

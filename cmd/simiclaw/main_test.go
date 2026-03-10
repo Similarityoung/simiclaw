@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/internal/config"
 )
 
 func TestResolveBootstrapLogLevelUsesEnv(t *testing.T) {

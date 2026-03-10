@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	tele "gopkg.in/telebot.v4"
 )

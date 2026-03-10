@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -153,9 +153,9 @@ func waitEventTerminal(t *testing.T, app *bootstrap.App, eventID string) {
 
 func findSessionKeyByConversation(t *testing.T, app *bootstrap.App, conversation string) string {
 	t.Helper()
-	sessions, err := app.DB.ListSessions(context.Background())
+	sessions, err := app.DB.ListSessionsPage(context.Background(), store.SessionListFilter{Limit: 200})
 	if err != nil {
-		t.Fatalf("ListSessions: %v", err)
+		t.Fatalf("ListSessionsPage: %v", err)
 	}
 	for _, item := range sessions {
 		if item.ConversationID == conversation {

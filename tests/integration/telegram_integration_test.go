@@ -16,9 +16,9 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"
 )

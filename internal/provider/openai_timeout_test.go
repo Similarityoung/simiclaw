@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/internal/config"
 )
 
 func TestOpenAICompatibleProviderStreamChatUsesRequestTimeout(t *testing.T) {

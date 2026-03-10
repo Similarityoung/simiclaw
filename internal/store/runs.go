@@ -26,23 +26,6 @@ func (db *DB) GetRun(ctx context.Context, runID string) (model.RunTrace, bool, e
 	return trace, true, rows.Err()
 }
 
-func (db *DB) ListRuns(ctx context.Context) ([]model.RunTrace, error) {
-	rows, err := db.reader.QueryContext(ctx, runSelectSQL+` ORDER BY started_at DESC, run_id DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.RunTrace
-	for rows.Next() {
-		trace, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, trace)
-	}
-	return out, rows.Err()
-}
-
 func (db *DB) FinalizeRun(ctx context.Context, finalize RunFinalize) error {
 	return db.WithWriterTx(ctx, func(tx *sql.Tx) error {
 		nowText := timeText(finalize.Now)

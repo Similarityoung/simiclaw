@@ -43,7 +43,7 @@ make accept-current
 
 ```bash
 go test ./internal/session/... -run TestComputeKeyDMThreadIgnored -v
-go test ./pkg/config/... -run TestLoad -v
+go test ./internal/config/... -run TestLoad -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
 go test ./tests/e2e/... -run SmokeV1 -v -count=1
 ```
@@ -81,22 +81,25 @@ Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
 cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, inspect, version, completion
   internal/             CLI-internal packages (chat, gateway, initcmd, inspect, version, common)
 pkg/
-  config/               Config struct, defaults, env/file loading
   logging/              Thin zap wrapper
   model/                Shared cross-package types only
-  tools/                Tools / skills extension surface
 internal/
   bootstrap/            App wiring, dependency assembly, process lifecycle
   channels/             CLI / Telegram adapters
+  config/               Config struct, defaults, env/file loading
   gateway/              HTTP ingest validation, rate limit, responses
   httpapi/              HTTP routes, handlers, auth, pagination
   memory/               Workspace memory read/write helpers
   outbound/             Outbound sender interface
+  prompt/               Prompt builder orchestration
   provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
+  query/                Read-side query service for events / runs / sessions
   runner/               Provider-driven runtime execution
   runtime/              EventLoop, workers, supervisor lifecycle
   session/              Session key computation
   store/                SQLite bootstrapping, schema, queries, repo
+  systemprompt/         Embedded runtime system prompt fragments
+  tools/                Tools / skills execution surface
 tests/
   integration/          In-process integration tests
   e2e/                  End-to-end smoke tests

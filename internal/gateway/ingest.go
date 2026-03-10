@@ -2,14 +2,11 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/session"
-	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/logging"
+	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -22,72 +19,10 @@ func (s *Service) Ingest(ctx context.Context, req model.IngestRequest) (model.In
 }
 
 func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (AcceptedIngest, *APIError) {
-	start := time.Now().UTC()
-	logger := logging.L("gateway").With(
-		logging.String("tenant_id", s.cfg.TenantID),
-		logging.String("conversation_id", req.Conversation.ConversationID),
-	)
-
-	ts, apiErr := validateRequest(req, start)
-	if apiErr != nil {
-		return AcceptedIngest{}, apiErr
+	if s.ingest == nil {
+		return AcceptedIngest{}, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "ingest service unavailable"}
 	}
-	req, dmScope, apiErr := s.resolveRequestScope(ctx, req)
-	if apiErr != nil {
-		return AcceptedIngest{}, apiErr
-	}
-
-	sessionKey, err := session.ComputeKey(s.cfg.TenantID, req.Conversation, dmScope)
-	if err != nil {
-		return AcceptedIngest{}, &APIError{
-			StatusCode: http.StatusBadRequest,
-			Code:       model.ErrorCodeInvalidArgument,
-			Message:    err.Error(),
-		}
-	}
-	sessionLimitKey, err := sessionRateLimitKey(s.cfg.TenantID, req)
-	if err != nil {
-		return AcceptedIngest{}, &APIError{
-			StatusCode: http.StatusBadRequest,
-			Code:       model.ErrorCodeInvalidArgument,
-			Message:    err.Error(),
-		}
-	}
-	if !s.tenantLimiter.Allow(s.cfg.TenantID, start) || !s.sessionLimiter.Allow(sessionLimitKey, start) {
-		return AcceptedIngest{}, &APIError{
-			StatusCode: http.StatusTooManyRequests,
-			Code:       model.ErrorCodeRateLimited,
-			Message:    "rate limited",
-			RetryAfter: retryAfterSeconds,
-		}
-	}
-
-	payloadHash, err := canonicalPayloadHash(req)
-	if err != nil {
-		return AcceptedIngest{}, &APIError{
-			StatusCode: http.StatusBadRequest,
-			Code:       model.ErrorCodeInvalidArgument,
-			Message:    "invalid payload",
-		}
-	}
-
-	ingestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	result, err := s.db.IngestEvent(ingestCtx, s.cfg.TenantID, sessionKey, req, payloadHash, ts)
-	if err != nil {
-		if errors.Is(err, store.ErrIdempotencyConflict) {
-			return AcceptedIngest{}, &APIError{
-				StatusCode: http.StatusConflict,
-				Code:       model.ErrorCodeConflict,
-				Message:    msgIdempotencyConflict,
-			}
-		}
-		return AcceptedIngest{}, &APIError{
-			StatusCode: http.StatusInternalServerError,
-			Code:       model.ErrorCodeInternal,
-			Message:    err.Error(),
-		}
-	}
+	result, err := s.ingest.Ingest(ctx, ingest.Command{Request: req})
 	if result.Duplicate {
 		return AcceptedIngest{
 			Response: model.IngestResponse{
@@ -103,16 +38,9 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 			StatusCode: http.StatusOK,
 		}, nil
 	}
-
-	if s.eventLoop.TryEnqueue(result.EventID) {
-		_ = s.db.MarkEventQueued(ctx, result.EventID, time.Now().UTC())
+	if err != nil {
+		return AcceptedIngest{}, mapIngestError(err)
 	}
-	logger.Info("ingest accepted",
-		logging.String("status", ingestStatusAccepted),
-		logging.String("event_id", result.EventID),
-		logging.String("session_key", sessionKey),
-		logging.Int64("latency_ms", time.Since(start).Milliseconds()),
-	)
 	return AcceptedIngest{
 		Response: model.IngestResponse{
 			EventID:         result.EventID,
@@ -126,4 +54,26 @@ func (s *Service) Accept(ctx context.Context, req model.IngestRequest) (Accepted
 		Result:     result,
 		StatusCode: http.StatusAccepted,
 	}, nil
+}
+
+func mapIngestError(err *ingest.Error) *APIError {
+	if err == nil {
+		return nil
+	}
+	statusCode := http.StatusInternalServerError
+	switch err.Code {
+	case model.ErrorCodeInvalidArgument:
+		statusCode = http.StatusBadRequest
+	case model.ErrorCodeConflict:
+		statusCode = http.StatusConflict
+	case model.ErrorCodeRateLimited:
+		statusCode = http.StatusTooManyRequests
+	}
+	return &APIError{
+		StatusCode: statusCode,
+		Code:       err.Code,
+		Message:    err.Message,
+		Details:    err.Details,
+		RetryAfter: err.RetryAfter,
+	}
 }

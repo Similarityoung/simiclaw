@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/internal/config"
 )
 
 type stubStreamSink struct {
