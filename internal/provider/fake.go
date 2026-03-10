@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/pkg/config"
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 

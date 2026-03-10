@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	workspacepkg "github.com/similarityyoung/simiclaw/internal/workspace"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 )
 
 type Options struct {

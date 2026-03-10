@@ -3,12 +3,12 @@ package httpapi
 import (
 	"net/http"
 
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 )
 
 type Server struct {

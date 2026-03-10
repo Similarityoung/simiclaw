@@ -6,6 +6,7 @@ import (
 	"time"
 
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
+	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
@@ -17,7 +18,6 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/internal/tools"
-	"github.com/similarityyoung/simiclaw/pkg/config"
 )
 
 type App struct {
