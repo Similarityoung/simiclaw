@@ -16,11 +16,14 @@ import (
 func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	root := repoRoot(t)
 	files := goFilesUnder(t, root, "cmd", "internal")
-	allowed := "internal/ingest/service.go"
+	allowed := map[string]struct{}{
+		"internal/ingest/service.go":      {},
+		"internal/ingeststore/adapter.go": {},
+	}
 	var violations []string
 
 	for _, rel := range files {
-		if rel == allowed {
+		if _, ok := allowed[rel]; ok {
 			continue
 		}
 		fset := token.NewFileSet()
@@ -47,7 +50,7 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 		return
 	}
 	slices.Sort(violations)
-	t.Fatalf("found direct IngestEvent calls outside %s:\n%s", allowed, strings.Join(violations, "\n"))
+	t.Fatalf("found direct IngestEvent calls outside allowed ingest entrypoints:\n%s", strings.Join(violations, "\n"))
 }
 
 func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {

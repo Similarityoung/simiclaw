@@ -2,22 +2,21 @@ package gateway
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/ingest"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type fakeRepo struct {
-	result     store.IngestResult
+	result     ingest.PersistResult
 	err        error
 	markQueued int
 }
 
-func (r *fakeRepo) IngestEvent(context.Context, string, string, api.IngestRequest, string, time.Time) (store.IngestResult, error) {
+func (r *fakeRepo) PersistEvent(context.Context, string, string, ingest.PersistRequest, string, time.Time) (ingest.PersistResult, error) {
 	return r.result, r.err
 }
 
@@ -42,7 +41,7 @@ func (fakeResolver) Resolve(_ context.Context, req api.IngestRequest) (api.Inges
 func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: store.IngestResult{
+		result: ingest.PersistResult{
 			EventID:     "evt_dup",
 			SessionKey:  "local:dm:u1",
 			SessionID:   "ses_dup",
@@ -63,7 +62,7 @@ func TestAcceptReturnsDuplicateAck(t *testing.T) {
 }
 
 func TestAcceptMapsConflictError(t *testing.T) {
-	repo := &fakeRepo{err: store.ErrIdempotencyConflict}
+	repo := &fakeRepo{err: ingest.ErrIdempotencyConflict}
 	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
 
 	_, apiErr := svc.Accept(context.Background(), validGatewayRequest(time.Now().UTC()))
@@ -78,7 +77,7 @@ func TestAcceptMapsConflictError(t *testing.T) {
 func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: store.IngestResult{
+		result: ingest.PersistResult{
 			EventID:     "evt_ok",
 			SessionKey:  "local:dm:u1",
 			SessionID:   "ses_ok",
@@ -103,7 +102,7 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 func TestIngestWrapsAccept(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: store.IngestResult{
+		result: ingest.PersistResult{
 			EventID:     "evt_ok",
 			SessionKey:  "local:dm:u1",
 			SessionID:   "ses_ok",
@@ -149,7 +148,7 @@ func TestMapIngestErrorStatusMappings(t *testing.T) {
 }
 
 func TestIngestReturnsAPIError(t *testing.T) {
-	repo := &fakeRepo{err: store.ErrIdempotencyConflict}
+	repo := &fakeRepo{err: ingest.ErrIdempotencyConflict}
 	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
 
 	_, _, apiErr := svc.Ingest(context.Background(), validGatewayRequest(time.Now().UTC()))

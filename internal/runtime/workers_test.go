@@ -9,6 +9,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingeststore"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -99,7 +100,8 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 
 	queue := &captureEnqueuer{}
-	ingestService := ingest.NewService("local", db, queue, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
+	adapter := ingeststore.New(db)
+	ingestService := ingest.NewService("local", adapter, queue, ingest.NewScopeResolver("local", adapter), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -164,7 +166,8 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
-	ingestService := ingest.NewService("local", db, &rejectEnqueuer{}, ingest.NewScopeResolver("local", ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
+	adapter := ingeststore.New(db)
+	ingestService := ingest.NewService("local", adapter, &rejectEnqueuer{}, ingest.NewScopeResolver("local", adapter), 100, 100, 100, 100)
 	supervisor := &Supervisor{
 		workers: db,
 		ingest:  ingestService,
@@ -333,7 +336,8 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	}
 
 	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
-	ingestService := ingest.NewService(cfg.TenantID, db, loop, ingest.NewScopeResolver(cfg.TenantID, ingest.NewStoreSessionReader(db)), 100, 100, 100, 100)
+	adapter := ingeststore.New(db)
+	ingestService := ingest.NewService(cfg.TenantID, adapter, loop, ingest.NewScopeResolver(cfg.TenantID, adapter), 100, 100, 100, 100)
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()

@@ -10,6 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingeststore"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
@@ -50,12 +51,12 @@ func NewApp(cfg config.Config) (*App, error) {
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
 	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
-	scopeReader := ingest.NewStoreSessionReader(db)
+	ingestAdapter := ingeststore.New(db)
 	ingestService := ingest.NewService(
 		cfg.TenantID,
-		db,
+		ingestAdapter,
 		eventLoop,
-		ingest.NewScopeResolver(cfg.TenantID, scopeReader),
+		ingest.NewScopeResolver(cfg.TenantID, ingestAdapter),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,

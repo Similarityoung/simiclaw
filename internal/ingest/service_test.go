@@ -2,17 +2,68 @@ package ingest
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	"errors"
 	"testing"
 	"time"
 
 	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type captureQueue struct {
 	eventIDs []string
+}
+
+type testDBAdapter struct {
+	db *store.DB
+}
+
+func (a testDBAdapter) PersistEvent(ctx context.Context, tenantID, sessionKey string, req PersistRequest, payloadHash string, now time.Time) (PersistResult, error) {
+	result, err := a.db.IngestEvent(ctx, tenantID, sessionKey, api.IngestRequest{
+		Source:         req.Source,
+		Conversation:   req.Conversation,
+		Payload:        req.Payload,
+		IdempotencyKey: req.IdempotencyKey,
+		DMScope:        req.DMScope,
+	}, payloadHash, now)
+	if err != nil {
+		if errors.Is(err, store.ErrIdempotencyConflict) {
+			return PersistResult{}, ErrIdempotencyConflict
+		}
+		return PersistResult{}, err
+	}
+	return PersistResult{
+		EventID:         result.EventID,
+		SessionKey:      result.SessionKey,
+		SessionID:       result.SessionID,
+		ReceivedAt:      result.ReceivedAt,
+		PayloadHash:     result.PayloadHash,
+		Duplicate:       result.Duplicate,
+		ExistingEventID: result.ExistingEventID,
+	}, nil
+}
+
+func (a testDBAdapter) MarkEventQueued(ctx context.Context, eventID string, now time.Time) error {
+	return a.db.MarkEventQueued(ctx, eventID, now)
+}
+
+func (a testDBAdapter) GetConversationDMScope(ctx context.Context, tenantID string, conv model.Conversation) (string, bool, error) {
+	return a.db.GetConversationDMScope(ctx, tenantID, conv)
+}
+
+func (a testDBAdapter) GetScopeSession(ctx context.Context, sessionKey string) (SessionScopeRecord, bool, error) {
+	rec, ok, err := a.db.GetSession(ctx, sessionKey)
+	if err != nil || !ok {
+		return SessionScopeRecord{}, ok, err
+	}
+	return SessionScopeRecord{
+		ConversationID: rec.ConversationID,
+		ChannelType:    rec.ChannelType,
+		ParticipantID:  rec.ParticipantID,
+		DMScope:        rec.DMScope,
+	}, true, nil
 }
 
 func (q *captureQueue) TryEnqueue(eventID string) bool {
@@ -197,7 +248,7 @@ func TestScopeResolverPrefersSessionKeyHint(t *testing.T) {
 		t.Fatalf("insert conversation scope: %v", err)
 	}
 
-	resolver := NewScopeResolver("local", NewStoreSessionReader(db))
+	resolver := NewScopeResolver("local", testDBAdapter{db: db})
 	req, scope, ingestErr := resolver.Resolve(ctx, api.IngestRequest{
 		Source:         "web",
 		Conversation:   conv,
@@ -374,7 +425,8 @@ func TestServiceInheritsConversationScopeWithoutManualDMScope(t *testing.T) {
 
 func newIngestService(t *testing.T, db *store.DB, queue *captureQueue) *Service {
 	t.Helper()
-	return NewService("local", db, queue, NewScopeResolver("local", NewStoreSessionReader(db)), 100, 100, 100, 100)
+	adapter := testDBAdapter{db: db}
+	return NewService("local", adapter, queue, NewScopeResolver("local", adapter), 100, 100, 100, 100)
 }
 
 func newIngestTestDB(t *testing.T) *store.DB {
