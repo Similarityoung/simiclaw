@@ -2,15 +2,16 @@ package runtime
 
 import (
 	"context"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -39,7 +40,13 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
 	}
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, req, "payload-hash", time.Now().UTC())
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingest.PersistRequest{
+		Source:         req.Source,
+		Conversation:   req.Conversation,
+		Payload:        req.Payload,
+		IdempotencyKey: req.IdempotencyKey,
+		DMScope:        req.DMScope,
+	}, "payload-hash", time.Now().UTC())
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}
@@ -124,11 +131,10 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, api.IngestRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingest.PersistRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:1",
-		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload: model.EventPayload{
 			Type:  "message",
 			Text:  "hello",

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 )
 
 const historyPayloadTypeMetaKey = "payload_type"
@@ -87,7 +87,7 @@ func (db *DB) RecentMessagesForPrompt(ctx context.Context, sessionID string, lim
 	return out, nil
 }
 
-func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]api.RAGHit, error) {
+func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, limit int) ([]runnermodel.RAGHit, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -109,13 +109,13 @@ func (db *DB) SearchMessagesFTS(ctx context.Context, sessionID, query string, li
 		return nil, err
 	}
 	defer rows.Close()
-	var hits []api.RAGHit
+	var hits []runnermodel.RAGHit
 	for rows.Next() {
 		var content string
 		if err := rows.Scan(&content); err != nil {
 			return nil, err
 		}
-		hits = append(hits, api.RAGHit{
+		hits = append(hits, runnermodel.RAGHit{
 			Path:    sessionID,
 			Scope:   "session",
 			Preview: content,

@@ -7,22 +7,22 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (db *DB) GetRun(ctx context.Context, runID string) (api.RunTrace, bool, error) {
+func (db *DB) GetRun(ctx context.Context, runID string) (querymodel.RunTrace, bool, error) {
 	rows, err := db.reader.QueryContext(ctx, runSelectSQL+` WHERE run_id = ?`, runID)
 	if err != nil {
-		return api.RunTrace{}, false, err
+		return querymodel.RunTrace{}, false, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		return api.RunTrace{}, false, rows.Err()
+		return querymodel.RunTrace{}, false, rows.Err()
 	}
 	trace, err := scanRun(rows)
 	if err != nil {
-		return api.RunTrace{}, false, err
+		return querymodel.RunTrace{}, false, err
 	}
 	return trace, true, rows.Err()
 }
@@ -161,9 +161,9 @@ func (db *DB) FinalizeRun(ctx context.Context, finalize RunFinalize) error {
 	})
 }
 
-func scanRun(rows *sql.Rows) (api.RunTrace, error) {
+func scanRun(rows *sql.Rows) (querymodel.RunTrace, error) {
 	var (
-		trace           api.RunTrace
+		trace           querymodel.RunTrace
 		startedAt       string
 		finishedAt      string
 		toolCallsJSON   string
@@ -195,7 +195,7 @@ func scanRun(rows *sql.Rows) (api.RunTrace, error) {
 		&errorCode,
 		&errorMessage,
 	); err != nil {
-		return api.RunTrace{}, err
+		return querymodel.RunTrace{}, err
 	}
 	trace.StartedAt = mustParseTime(startedAt)
 	trace.FinishedAt = mustParseTime(finishedAt)

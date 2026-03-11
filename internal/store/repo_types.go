@@ -1,23 +1,10 @@
 package store
 
 import (
-	"errors"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
-
-var ErrIdempotencyConflict = errors.New("idempotency payload hash mismatch")
-
-type IngestResult struct {
-	EventID         string
-	SessionKey      string
-	SessionID       string
-	ReceivedAt      time.Time
-	PayloadHash     string
-	Duplicate       bool
-	ExistingEventID string
-}
 
 type StoredMessage struct {
 	MessageID  string

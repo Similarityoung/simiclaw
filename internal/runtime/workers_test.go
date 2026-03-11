@@ -272,11 +272,10 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", ingest.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",
-		Timestamp:      now.Add(-5 * time.Minute).Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "stale"},
 	}, "sha256:stale", now.Add(-5*time.Minute))
 	if err != nil {

@@ -2,12 +2,10 @@ package ingeststore
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -20,28 +18,7 @@ func New(db *store.DB) *Adapter {
 }
 
 func (a *Adapter) PersistEvent(ctx context.Context, tenantID, sessionKey string, req ingest.PersistRequest, payloadHash string, now time.Time) (ingest.PersistResult, error) {
-	result, err := a.db.IngestEvent(ctx, tenantID, sessionKey, api.IngestRequest{
-		Source:         req.Source,
-		Conversation:   req.Conversation,
-		Payload:        req.Payload,
-		IdempotencyKey: req.IdempotencyKey,
-		DMScope:        req.DMScope,
-	}, payloadHash, now)
-	if err != nil {
-		if errors.Is(err, store.ErrIdempotencyConflict) {
-			return ingest.PersistResult{}, ingest.ErrIdempotencyConflict
-		}
-		return ingest.PersistResult{}, err
-	}
-	return ingest.PersistResult{
-		EventID:         result.EventID,
-		SessionKey:      result.SessionKey,
-		SessionID:       result.SessionID,
-		ReceivedAt:      result.ReceivedAt,
-		PayloadHash:     result.PayloadHash,
-		Duplicate:       result.Duplicate,
-		ExistingEventID: result.ExistingEventID,
-	}, nil
+	return a.db.IngestEvent(ctx, tenantID, sessionKey, req, payloadHash, now)
 }
 
 func (a *Adapter) MarkEventQueued(ctx context.Context, eventID string, now time.Time) error {

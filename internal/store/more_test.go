@@ -18,13 +18,13 @@ func TestLookupInboundListCollectionsAndCheckReadWrite(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "list", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:list:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello list"},
-	}, "sha256:list", now)
+	}), "sha256:list", now)
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}
@@ -87,13 +87,13 @@ func TestListMessagesAndOutboxTransitions(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
 
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "messages", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:messages:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello messages"},
-	}, "sha256:messages", now)
+	}), "sha256:messages", now)
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}
@@ -237,13 +237,13 @@ func TestSearchMessagesFTSAndGetters(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "fts", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:fts:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "alpha search"},
-	}, "sha256:fts", now)
+	}), "sha256:fts", now)
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}

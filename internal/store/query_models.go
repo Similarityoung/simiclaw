@@ -6,7 +6,6 @@ import (
 
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func (db *DB) GetEventRecord(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error) {
@@ -27,10 +26,7 @@ func (db *DB) LookupEvent(ctx context.Context, key string) (querymodel.LookupEve
 
 func (db *DB) GetRunTrace(ctx context.Context, runID string) (querymodel.RunTrace, bool, error) {
 	trace, ok, err := db.GetRun(ctx, runID)
-	if err != nil || !ok {
-		return querymodel.RunTrace{}, ok, err
-	}
-	return toQueryRunTrace(trace), true, nil
+	return trace, ok, err
 }
 
 func (db *DB) GetSessionRecord(ctx context.Context, sessionKey string) (querymodel.SessionRecord, bool, error) {
@@ -65,17 +61,13 @@ func (db *DB) ListEventRecords(ctx context.Context, filter querymodel.EventFilte
 }
 
 func (db *DB) ListRunTraces(ctx context.Context, filter querymodel.RunFilter) ([]querymodel.RunTrace, error) {
-	items, err := db.ListRunsPage(ctx, RunListFilter{
+	return db.ListRunsPage(ctx, RunListFilter{
 		SessionKey:      filter.SessionKey,
 		SessionID:       filter.SessionID,
 		Limit:           filter.Limit,
 		CursorStartedAt: queryRunStartedAt(filter.Cursor),
 		CursorRunID:     queryRunID(filter.Cursor),
 	})
-	if err != nil {
-		return nil, err
-	}
-	return mapRunTraces(items), nil
 }
 
 func (db *DB) ListSessionRecords(ctx context.Context, filter querymodel.SessionFilter) ([]querymodel.SessionRecord, error) {
@@ -96,14 +88,6 @@ func mapEventRecords(items []readmodel.EventRecord) []querymodel.EventRecord {
 	out := make([]querymodel.EventRecord, 0, len(items))
 	for _, item := range items {
 		out = append(out, toQueryEventRecord(item))
-	}
-	return out
-}
-
-func mapRunTraces(items []api.RunTrace) []querymodel.RunTrace {
-	out := make([]querymodel.RunTrace, 0, len(items))
-	for _, item := range items {
-		out = append(out, toQueryRunTrace(item))
 	}
 	return out
 }
@@ -154,36 +138,6 @@ func toQueryLookupEvent(row readmodel.LookupEvent) querymodel.LookupEvent {
 		ReceivedAt:  row.ReceivedAt,
 		SessionKey:  row.SessionKey,
 		SessionID:   row.SessionID,
-	}
-}
-
-func toQueryRunTrace(trace api.RunTrace) querymodel.RunTrace {
-	return querymodel.RunTrace{
-		RunID:             trace.RunID,
-		EventID:           trace.EventID,
-		SessionKey:        trace.SessionKey,
-		SessionID:         trace.SessionID,
-		RunMode:           trace.RunMode,
-		Status:            trace.Status,
-		ContextManifest:   trace.ContextManifest,
-		RAGHits:           trace.RAGHits,
-		ToolExecutions:    trace.ToolExecutions,
-		Actions:           trace.Actions,
-		StartedAt:         trace.StartedAt,
-		FinishedAt:        trace.FinishedAt,
-		Provider:          trace.Provider,
-		Model:             trace.Model,
-		PromptTokens:      trace.PromptTokens,
-		CompletionTokens:  trace.CompletionTokens,
-		TotalTokens:       trace.TotalTokens,
-		LatencyMS:         trace.LatencyMS,
-		FinishReason:      trace.FinishReason,
-		RawFinishReason:   trace.RawFinishReason,
-		ProviderRequestID: trace.ProviderRequestID,
-		OutputText:        trace.OutputText,
-		ToolCalls:         trace.ToolCalls,
-		Error:             trace.Error,
-		Diagnostics:       trace.Diagnostics,
 	}
 }
 
