@@ -92,6 +92,30 @@ func TestRunHeartbeatErrorsDoNotStopLoop(t *testing.T) {
 	waitForHeartbeatCount(t, recorder, 2)
 }
 
+func TestRunHeartbeatReturnsImmediatelyWithoutRecorder(t *testing.T) {
+	runtime := &Runtime{
+		heartbeat:         nil,
+		heartbeatInterval: 10 * time.Millisecond,
+		logger:            logging.L("telegram-test"),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	runtime.wg.Add(1)
+	go func() {
+		defer close(done)
+		runtime.runHeartbeat(ctx)
+	}()
+	defer cancel()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected runHeartbeat to return immediately when recorder is nil")
+	}
+	runtime.wg.Wait()
+}
+
 func waitForHeartbeatCount(t *testing.T, recorder *fakeHeartbeatRecorder, want int) {
 	t.Helper()
 	deadline := time.Now().Add(500 * time.Millisecond)

@@ -192,10 +192,10 @@ func (r *Runtime) runBot(bot *tele.Bot) {
 
 func (r *Runtime) runHeartbeat(ctx context.Context) {
 	defer r.wg.Done()
+	if r.heartbeat == nil {
+		return
+	}
 	beat := func() {
-		if r.heartbeat == nil {
-			return
-		}
 		if err := r.heartbeat.BeatHeartbeat(ctx, "telegram_polling", time.Now().UTC()); err != nil {
 			r.logger.Warn("telegram heartbeat failed", logging.Error(err))
 		}
