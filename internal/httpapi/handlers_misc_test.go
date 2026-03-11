@@ -42,7 +42,7 @@ func TestQueryAndHealthEndpoints(t *testing.T) {
 		t.Fatalf("unexpected run trace summary: %+v", runTraceSummary)
 	}
 	runTraceFull := fetchJSON[map[string]any](t, srv.URL+"/v1/runs/"+runID+"/trace")
-	if runTraceFull["run_id"] != runID {
+	if runTraceFull["run_id"] != runID || runTraceFull["event_id"] == nil || runTraceFull["session_key"] == nil || runTraceFull["status"] == nil || runTraceFull["run_mode"] == nil {
 		t.Fatalf("unexpected full run trace: %+v", runTraceFull)
 	}
 

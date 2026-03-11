@@ -140,7 +140,7 @@ func Patch(workspace, channelType string, args PatchArgs) (PatchResult, error) {
 		if err := os.MkdirAll(filepath.Dir(pathInfo.AbsPath), 0o755); err != nil {
 			return PatchResult{}, err
 		}
-		if err := writeFileAtomically(pathInfo.AbsPath, []byte(normalizedNew), DefaultFileMode); err != nil {
+		if err := AtomicWriteFile(pathInfo.AbsPath, []byte(normalizedNew), DefaultFileMode); err != nil {
 			return PatchResult{}, err
 		}
 		return buildPatchResult(pathInfo.RequestPath, "created", []byte(normalizedNew)), nil
@@ -188,7 +188,7 @@ func Patch(workspace, channelType string, args PatchArgs) (PatchResult, error) {
 	if err := validateTextContent([]byte(updated)); err != nil {
 		return PatchResult{}, err
 	}
-	if err := writeFileAtomically(pathInfo.AbsPath, []byte(updated), info.Mode().Perm()); err != nil {
+	if err := AtomicWriteFile(pathInfo.AbsPath, []byte(updated), info.Mode().Perm()); err != nil {
 		return PatchResult{}, err
 	}
 	return buildPatchResult(pathInfo.RequestPath, "patched", []byte(updated)), nil
@@ -386,7 +386,7 @@ func normalizeText(in string) string {
 	return in
 }
 
-func writeFileAtomically(path string, data []byte, mode os.FileMode) error {
+func AtomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	tmp, err := os.CreateTemp(dir, "."+base+".tmp-*")

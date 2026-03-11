@@ -2,14 +2,11 @@ package store
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/similarityyoung/simiclaw/pkg/api"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -207,29 +204,6 @@ func TestCronJobsHeartbeatsAndHelpers(t *testing.T) {
 	}
 	if _, ok, err := db.HeartbeatAt(ctx, "missing"); err != nil || ok {
 		t.Fatalf("expected missing heartbeat, ok=%v err=%v", ok, err)
-	}
-}
-
-func TestFSAndJSONHelpers(t *testing.T) {
-	jsonPath := filepath.Join(t.TempDir(), "config.json")
-	body, err := json.MarshalIndent(map[string]string{"status": "ok"}, "", "  ")
-	if err != nil {
-		t.Fatalf("json.MarshalIndent: %v", err)
-	}
-	body = append(body, '\n')
-	if err := AtomicWriteFile(jsonPath, body, 0o644); err != nil {
-		t.Fatalf("AtomicWriteFile: %v", err)
-	}
-	data, err := os.ReadFile(jsonPath)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	var decoded map[string]string
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if decoded["status"] != "ok" {
-		t.Fatalf("unexpected decoded content: %+v", decoded)
 	}
 }
 

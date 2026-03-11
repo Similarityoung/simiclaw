@@ -74,10 +74,10 @@ func toAPIRunTrace(trace querymodel.RunTrace) api.RunTrace {
 		SessionID:         trace.SessionID,
 		RunMode:           trace.RunMode,
 		Status:            trace.Status,
-		ContextManifest:   trace.ContextManifest,
-		RAGHits:           trace.RAGHits,
-		ToolExecutions:    trace.ToolExecutions,
-		Actions:           trace.Actions,
+		ContextManifest:   toAPIContextManifest(trace.ContextManifest),
+		RAGHits:           toAPIRAGHits(trace.RAGHits),
+		ToolExecutions:    toAPIToolExecutions(trace.ToolExecutions),
+		Actions:           toAPIActions(trace.Actions),
 		StartedAt:         trace.StartedAt,
 		FinishedAt:        trace.FinishedAt,
 		Provider:          trace.Provider,
@@ -94,4 +94,70 @@ func toAPIRunTrace(trace querymodel.RunTrace) api.RunTrace {
 		Error:             trace.Error,
 		Diagnostics:       trace.Diagnostics,
 	}
+}
+
+func toAPIContextManifest(in *querymodel.ContextManifest) *api.ContextManifest {
+	if in == nil {
+		return nil
+	}
+	return &api.ContextManifest{
+		HistoryRange: api.HistoryRange{
+			Mode:      in.HistoryRange.Mode,
+			TailLimit: in.HistoryRange.TailLimit,
+		},
+	}
+}
+
+func toAPIRAGHits(in []querymodel.RAGHit) []api.RAGHit {
+	if in == nil {
+		return nil
+	}
+	out := make([]api.RAGHit, 0, len(in))
+	for _, hit := range in {
+		out = append(out, api.RAGHit{
+			Path:    hit.Path,
+			Scope:   hit.Scope,
+			Lines:   hit.Lines,
+			Score:   hit.Score,
+			Preview: hit.Preview,
+		})
+	}
+	return out
+}
+
+func toAPIToolExecutions(in []querymodel.ToolExecution) []api.ToolExecution {
+	if in == nil {
+		return nil
+	}
+	out := make([]api.ToolExecution, 0, len(in))
+	for _, exec := range in {
+		out = append(out, api.ToolExecution{
+			ToolCallID:  exec.ToolCallID,
+			Name:        exec.Name,
+			Args:        exec.Args,
+			ArgsSummary: exec.ArgsSummary,
+			Result:      exec.Result,
+			Error:       exec.Error,
+		})
+	}
+	return out
+}
+
+func toAPIActions(in []querymodel.Action) []api.Action {
+	if in == nil {
+		return nil
+	}
+	out := make([]api.Action, 0, len(in))
+	for _, action := range in {
+		out = append(out, api.Action{
+			ActionID:             action.ActionID,
+			ActionIndex:          action.ActionIndex,
+			ActionIdempotencyKey: action.ActionIdempotencyKey,
+			Type:                 action.Type,
+			Risk:                 action.Risk,
+			RequiresApproval:     action.RequiresApproval,
+			Payload:              action.Payload,
+		})
+	}
+	return out
 }

@@ -65,6 +65,14 @@ func TestStoreProductionCodeDoesNotImportIngest(t *testing.T) {
 	assertNoPackageImport(t, ingestImportPath, "internal/store")
 }
 
+func TestChannelsProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/channels")
+}
+
+func TestWorkspaceProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/workspace")
+}
+
 func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/query")
 }
@@ -121,6 +129,10 @@ func TestNonStoreProductionCodeDoesNotImportReadModel(t *testing.T) {
 
 func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/store")
+}
+
+func TestQueryModelProductionCodeDoesNotImportAPI(t *testing.T) {
+	assertNoPackageImport(t, apiImportPath, "internal/query/model")
 }
 
 func TestIngestPortProductionCodeDoesNotImportAPI(t *testing.T) {

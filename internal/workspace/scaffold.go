@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/internal/workspacefile"
 )
 
 func ScaffoldFiles(root string) error {
@@ -26,5 +26,5 @@ func writeTemplateIfMissing(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return store.AtomicWriteFile(path, []byte(content), 0o644)
+	return workspacefile.AtomicWriteFile(path, []byte(content), 0o644)
 }
