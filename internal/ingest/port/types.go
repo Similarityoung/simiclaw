@@ -1,4 +1,4 @@
-package ingest
+package port
 
 import (
 	"context"
@@ -28,7 +28,19 @@ type PersistResult struct {
 	ExistingEventID string
 }
 
+type SessionScopeRecord struct {
+	ConversationID string
+	ChannelType    string
+	ParticipantID  string
+	DMScope        string
+}
+
 type Repository interface {
 	PersistEvent(ctx context.Context, tenantID, sessionKey string, req PersistRequest, payloadHash string, now time.Time) (PersistResult, error)
 	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
+}
+
+type SessionReader interface {
+	GetConversationDMScope(ctx context.Context, tenantID string, conv model.Conversation) (string, bool, error)
+	GetScopeSession(ctx context.Context, sessionKey string) (SessionScopeRecord, bool, error)
 }

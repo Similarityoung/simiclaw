@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -17,7 +17,7 @@ func New(db *store.DB) *Adapter {
 	return &Adapter{db: db}
 }
 
-func (a *Adapter) PersistEvent(ctx context.Context, tenantID, sessionKey string, req ingest.PersistRequest, payloadHash string, now time.Time) (ingest.PersistResult, error) {
+func (a *Adapter) PersistEvent(ctx context.Context, tenantID, sessionKey string, req port.PersistRequest, payloadHash string, now time.Time) (port.PersistResult, error) {
 	return a.db.IngestEvent(ctx, tenantID, sessionKey, req, payloadHash, now)
 }
 
@@ -29,12 +29,12 @@ func (a *Adapter) GetConversationDMScope(ctx context.Context, tenantID string, c
 	return a.db.GetConversationDMScope(ctx, tenantID, conv)
 }
 
-func (a *Adapter) GetScopeSession(ctx context.Context, sessionKey string) (ingest.SessionScopeRecord, bool, error) {
+func (a *Adapter) GetScopeSession(ctx context.Context, sessionKey string) (port.SessionScopeRecord, bool, error) {
 	rec, ok, err := a.db.GetSession(ctx, sessionKey)
 	if err != nil || !ok {
-		return ingest.SessionScopeRecord{}, ok, err
+		return port.SessionScopeRecord{}, ok, err
 	}
-	return ingest.SessionScopeRecord{
+	return port.SessionScopeRecord{
 		ConversationID: rec.ConversationID,
 		ChannelType:    rec.ChannelType,
 		ParticipantID:  rec.ParticipantID,

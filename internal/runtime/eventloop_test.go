@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -40,7 +40,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
 	}
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingest.PersistRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,
@@ -131,7 +131,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingest.PersistRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:1",

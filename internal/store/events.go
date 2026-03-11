@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -16,8 +16,8 @@ import (
 
 var nilSentinel = errors.New("no-op")
 
-func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req ingest.PersistRequest, payloadHash string, now time.Time) (ingest.PersistResult, error) {
-	var result ingest.PersistResult
+func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req port.PersistRequest, payloadHash string, now time.Time) (port.PersistResult, error) {
+	var result port.PersistResult
 	err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
 		var existing readmodel.LookupEvent
 		var createdAt string
@@ -28,10 +28,10 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 		).Scan(&existing.EventID, &existing.PayloadHash, &existing.SessionKey, &existing.SessionID, &createdAt)
 		if err == nil {
 			if existing.PayloadHash != payloadHash {
-				return ingest.ErrIdempotencyConflict
+				return port.ErrIdempotencyConflict
 			}
 			existing.ReceivedAt = mustParseTime(createdAt)
-			result = ingest.PersistResult{
+			result = port.PersistResult{
 				EventID:         existing.EventID,
 				SessionKey:      existing.SessionKey,
 				SessionID:       existing.SessionID,
@@ -103,7 +103,7 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 		); err != nil {
 			return err
 		}
-		result = ingest.PersistResult{
+		result = port.PersistResult{
 			EventID:     eventID,
 			SessionKey:  sessionKey,
 			SessionID:   sessionID,
