@@ -33,7 +33,7 @@ func TestRunReturnsConfigErrorWithoutConfigFile(t *testing.T) {
 		t.Fatalf("write .env: %v", err)
 	}
 
-	err = Run([]string{"--workspace", filepath.Join(dir, "workspace")})
+	err = run(Options{Workspace: filepath.Join(dir, "workspace")})
 	if err == nil {
 		t.Fatal("expected config error")
 	}

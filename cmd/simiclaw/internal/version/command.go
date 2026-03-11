@@ -12,10 +12,6 @@ import (
 
 const AppVersion = "v1.0"
 
-func Run() {
-	_, _ = fmt.Fprintln(os.Stdout, AppVersion)
-}
-
 func NewCommand(out io.Writer) *cobra.Command {
 	if out == nil {
 		out = os.Stdout

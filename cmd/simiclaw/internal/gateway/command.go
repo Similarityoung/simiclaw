@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"flag"
 	"os/signal"
 	"syscall"
 
@@ -20,18 +19,6 @@ type Options struct {
 	ConfigPath string
 	Workspace  string
 	Listen     string
-}
-
-// Run 解析启动参数并运行网关 HTTP 服务，处理进程退出信号。
-func Run(args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	configPath := fs.String("config", "", messages.Flag.ConfigJSON)
-	workspaceOverride := fs.String("workspace", "", messages.Flag.WorkspaceOverride)
-	listenOverride := fs.String("listen", "", messages.Flag.ListenOverride)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	return run(Options{ConfigPath: *configPath, Workspace: *workspaceOverride, Listen: *listenOverride})
 }
 
 func NewCommand() *cobra.Command {
