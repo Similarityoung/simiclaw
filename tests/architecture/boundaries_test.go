@@ -61,6 +61,10 @@ func TestIngestProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/ingest")
 }
 
+func TestStoreProductionCodeDoesNotImportIngest(t *testing.T) {
+	assertNoPackageImport(t, ingestImportPath, "internal/store")
+}
+
 func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/query")
 }
@@ -119,6 +123,10 @@ func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/store")
 }
 
+func TestIngestPortProductionCodeDoesNotImportAPI(t *testing.T) {
+	assertNoPackageImport(t, apiImportPath, "internal/ingest/port")
+}
+
 func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {
 	assertNoPackageImport(t, "net/http", "cmd/simiclaw/internal/chat")
 }
@@ -147,6 +155,7 @@ func TestCommandPackagesDoNotImportStdlibFlag(t *testing.T) {
 
 const (
 	storeImportPath     = "github.com/similarityyoung/simiclaw/internal/store"
+	ingestImportPath    = "github.com/similarityyoung/simiclaw/internal/ingest"
 	readmodelImportPath = "github.com/similarityyoung/simiclaw/internal/readmodel"
 	apiImportPath       = "github.com/similarityyoung/simiclaw/pkg/api"
 )
