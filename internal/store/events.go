@@ -6,18 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 var nilSentinel = errors.New("no-op")
 
-func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req api.IngestRequest, payloadHash string, now time.Time) (IngestResult, error) {
-	var result IngestResult
+func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req ingest.PersistRequest, payloadHash string, now time.Time) (ingest.PersistResult, error) {
+	var result ingest.PersistResult
 	err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
 		var existing readmodel.LookupEvent
 		var createdAt string
@@ -28,10 +28,10 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 		).Scan(&existing.EventID, &existing.PayloadHash, &existing.SessionKey, &existing.SessionID, &createdAt)
 		if err == nil {
 			if existing.PayloadHash != payloadHash {
-				return ErrIdempotencyConflict
+				return ingest.ErrIdempotencyConflict
 			}
 			existing.ReceivedAt = mustParseTime(createdAt)
-			result = IngestResult{
+			result = ingest.PersistResult{
 				EventID:         existing.EventID,
 				SessionKey:      existing.SessionKey,
 				SessionID:       existing.SessionID,
@@ -46,7 +46,7 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 			return err
 		}
 
-		dmScope := sessionpkg.ScopeFromRequest(req)
+		dmScope := sessionpkg.NormalizeScope(req.DMScope)
 		if req.DMScope != "" {
 			if err := upsertConversationDMScopeTx(ctx, tx, tenantID, req.Conversation, dmScope, now); err != nil {
 				return err
@@ -103,7 +103,7 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 		); err != nil {
 			return err
 		}
-		result = IngestResult{
+		result = ingest.PersistResult{
 			EventID:     eventID,
 			SessionKey:  sessionKey,
 			SessionID:   sessionID,

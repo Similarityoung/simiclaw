@@ -1,7 +1,6 @@
 package initcmd
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -17,16 +16,6 @@ import (
 type Options struct {
 	Workspace       string
 	ForceNewRuntime bool
-}
-
-func Run(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	workspace := fs.String("workspace", ".", messages.Flag.WorkspacePath)
-	forceNewRuntime := fs.Bool("force-new-runtime", false, messages.Flag.ForceNewRuntime)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	return run(Options{Workspace: *workspace, ForceNewRuntime: *forceNewRuntime}, common.IOStreams{})
 }
 
 func NewCommand(streams common.IOStreams) *cobra.Command {

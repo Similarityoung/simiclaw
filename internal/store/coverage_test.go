@@ -3,11 +3,12 @@ package store
 import (
 	"context"
 	"errors"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -78,11 +79,11 @@ func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 		},
 	}
 
-	first, err := db.IngestEvent(ctx, "local", "local:dm:u1", req, "sha256:dup", now)
+	first, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:dup", now)
 	if err != nil {
 		t.Fatalf("first IngestEvent: %v", err)
 	}
-	duplicate, err := db.IngestEvent(ctx, "local", "local:dm:u1", req, "sha256:dup", now.Add(time.Second))
+	duplicate, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:dup", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("duplicate IngestEvent: %v", err)
 	}
@@ -98,9 +99,9 @@ func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 		t.Fatalf("expected normalized scope, got %q", scope)
 	}
 
-	_, err = db.IngestEvent(ctx, "local", "local:dm:u1", req, "sha256:conflict", now.Add(2*time.Second))
-	if !errors.Is(err, ErrIdempotencyConflict) {
-		t.Fatalf("expected ErrIdempotencyConflict, got %v", err)
+	_, err = db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:conflict", now.Add(2*time.Second))
+	if !errors.Is(err, ingest.ErrIdempotencyConflict) {
+		t.Fatalf("expected ingest.ErrIdempotencyConflict, got %v", err)
 	}
 }
 
@@ -198,7 +199,7 @@ func TestListMessagesCursorFallbackAndToolPayloadDecode(t *testing.T) {
 			Text: "hello cursor",
 		},
 	}
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", req, "sha256:messages-cursor", now)
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:messages-cursor", now)
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}

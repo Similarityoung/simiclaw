@@ -37,13 +37,13 @@ func TestClaimEventSingleActiveRun(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
-	}, "sha256:test", now)
+	}), "sha256:test", now)
 	if err != nil {
 		t.Fatalf("ingest event: %v", err)
 	}
@@ -64,13 +64,13 @@ func TestFinalizeRunUpdatesFTSAndSessionAggregate(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello alpha"},
-	}, "sha256:test", now)
+	}), "sha256:test", now)
 	if err != nil {
 		t.Fatalf("ingest event: %v", err)
 	}
@@ -137,13 +137,13 @@ func TestFinalizeRunRecentMessagesRestoresAssistantToolCalls(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:tool:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello tool"},
-	}, "sha256:test-tool", now)
+	}), "sha256:test-tool", now)
 	if err != nil {
 		t.Fatalf("ingest event: %v", err)
 	}
@@ -208,13 +208,13 @@ func TestFinalizeRunRecentMessagesRestoresMeta(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:cron:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "cron_fire", Text: "nightly tick"},
-	}, "sha256:test-cron", now)
+	}), "sha256:test-cron", now)
 	if err != nil {
 		t.Fatalf("ingest event: %v", err)
 	}
@@ -269,13 +269,13 @@ func TestRecentMessagesForPromptSkipsCronFireWithoutShrinkingWindow(t *testing.T
 	activeSessionID := ""
 
 	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
-		result, err := db.IngestEvent(ctx, "local", sessionKey, api.IngestRequest{
+		result, err := db.IngestEvent(ctx, "local", sessionKey, persistRequest(api.IngestRequest{
 			Source:         "cli",
 			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 			IdempotencyKey: fmt.Sprintf("cli:conv:%d", index),
 			Timestamp:      at.Format(time.RFC3339Nano),
 			Payload:        model.EventPayload{Type: payloadType, Text: text},
-		}, fmt.Sprintf("sha256:test:%d", index), at)
+		}), fmt.Sprintf("sha256:test:%d", index), at)
 		if err != nil {
 			t.Fatalf("ingest event %d: %v", index, err)
 		}
@@ -353,13 +353,13 @@ func TestRecentMessagesForPromptSkipsNewSessionWithoutShrinkingWindow(t *testing
 	activeSessionID := ""
 
 	seedRun := func(index int, at time.Time, payloadType string, text string, messages []StoredMessage) {
-		result, err := db.IngestEvent(ctx, "local", sessionKey, api.IngestRequest{
+		result, err := db.IngestEvent(ctx, "local", sessionKey, persistRequest(api.IngestRequest{
 			Source:         "cli",
 			Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 			IdempotencyKey: fmt.Sprintf("cli:new:%d", index),
 			Timestamp:      at.Format(time.RFC3339Nano),
 			Payload:        model.EventPayload{Type: payloadType, Text: text},
-		}, fmt.Sprintf("sha256:new:%d", index), at)
+		}), fmt.Sprintf("sha256:new:%d", index), at)
 		if err != nil {
 			t.Fatalf("ingest event %d: %v", index, err)
 		}
@@ -459,13 +459,13 @@ func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", api.IngestRequest{
+	result, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(api.IngestRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
 		Timestamp:      now.Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello retry"},
-	}, "sha256:test", now)
+	}), "sha256:test", now)
 	if err != nil {
 		t.Fatalf("ingest event: %v", err)
 	}

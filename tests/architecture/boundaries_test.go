@@ -16,11 +16,14 @@ import (
 func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	root := repoRoot(t)
 	files := goFilesUnder(t, root, "cmd", "internal")
-	allowed := "internal/ingest/service.go"
+	allowed := map[string]struct{}{
+		"internal/ingest/service.go":      {},
+		"internal/ingeststore/adapter.go": {},
+	}
 	var violations []string
 
 	for _, rel := range files {
-		if rel == allowed {
+		if _, ok := allowed[rel]; ok {
 			continue
 		}
 		fset := token.NewFileSet()
@@ -47,11 +50,15 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 		return
 	}
 	slices.Sort(violations)
-	t.Fatalf("found direct IngestEvent calls outside %s:\n%s", allowed, strings.Join(violations, "\n"))
+	t.Fatalf("found direct IngestEvent calls outside allowed ingest entrypoints:\n%s", strings.Join(violations, "\n"))
 }
 
 func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/httpapi")
+}
+
+func TestIngestProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/ingest")
 }
 
 func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
@@ -108,9 +115,40 @@ func TestNonStoreProductionCodeDoesNotImportReadModel(t *testing.T) {
 	}
 }
 
+func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
+	assertNoPackageImport(t, apiImportPath, "internal/store")
+}
+
+func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {
+	assertNoPackageImport(t, "net/http", "cmd/simiclaw/internal/chat")
+}
+
+func TestChatProductionCodeDoesNotImportNetURL(t *testing.T) {
+	assertNoPackageImport(t, "net/url", "cmd/simiclaw/internal/chat")
+}
+
+func TestCommandPackagesDoNotImportStdlibFlag(t *testing.T) {
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, "cmd/simiclaw/internal")
+	var violations []string
+	for _, rel := range files {
+		if !strings.HasSuffix(rel, "/command.go") {
+			continue
+		}
+		if fileImportsPath(t, filepath.Join(root, rel), "flag") {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("command packages must not import stdlib flag:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
 const (
 	storeImportPath     = "github.com/similarityyoung/simiclaw/internal/store"
 	readmodelImportPath = "github.com/similarityyoung/simiclaw/internal/readmodel"
+	apiImportPath       = "github.com/similarityyoung/simiclaw/pkg/api"
 )
 
 func repoRoot(t *testing.T) string {

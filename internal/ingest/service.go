@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"math"
 	"path"
 	"regexp"
@@ -15,7 +14,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/session"
-	"github.com/similarityyoung/simiclaw/internal/store"
+	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -54,11 +53,6 @@ type Error struct {
 
 func (e *Error) Error() string {
 	return e.Message
-}
-
-type Repository interface {
-	IngestEvent(ctx context.Context, tenantID, sessionKey string, req api.IngestRequest, payloadHash string, now time.Time) (store.IngestResult, error)
-	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
 }
 
 type Enqueuer interface {
@@ -143,6 +137,13 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 			RetryAfter: retryAfterSeconds,
 		}
 	}
+	persistReq := PersistRequest{
+		Source:         req.Source,
+		Conversation:   req.Conversation,
+		Payload:        req.Payload,
+		IdempotencyKey: req.IdempotencyKey,
+		DMScope:        req.DMScope,
+	}
 
 	payloadHash, hashErr := canonicalPayloadHash(req)
 	if hashErr != nil {
@@ -155,9 +156,9 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 	ingestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	stored, ingestErr := s.repo.IngestEvent(ingestCtx, s.tenantID, sessionKey, req, payloadHash, ts)
+	stored, ingestErr := s.repo.PersistEvent(ingestCtx, s.tenantID, sessionKey, persistReq, payloadHash, ts)
 	if ingestErr != nil {
-		if errors.Is(ingestErr, store.ErrIdempotencyConflict) {
+		if errors.Is(ingestErr, ErrIdempotencyConflict) {
 			return Result{}, &Error{
 				Code:    model.ErrorCodeConflict,
 				Message: "idempotency payload hash mismatch",

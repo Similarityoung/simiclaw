@@ -17,6 +17,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/config"
+	ingestpkg "github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	apitypes "github.com/similarityyoung/simiclaw/pkg/api"
@@ -172,7 +173,13 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 			},
 		},
 	}
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, req, fmt.Sprintf("seed:%d", now.UnixNano()), now)
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingestpkg.PersistRequest{
+		Source:         req.Source,
+		Conversation:   req.Conversation,
+		Payload:        req.Payload,
+		IdempotencyKey: req.IdempotencyKey,
+		DMScope:        req.DMScope,
+	}, fmt.Sprintf("seed:%d", now.UnixNano()), now)
 	if err != nil {
 		t.Fatalf("IngestEvent: %v", err)
 	}
