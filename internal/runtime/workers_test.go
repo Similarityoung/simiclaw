@@ -9,6 +9,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/ingeststore"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
@@ -272,7 +273,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", ingest.PersistRequest{
+	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", port.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",
