@@ -65,6 +65,14 @@ func TestStoreProductionCodeDoesNotImportIngest(t *testing.T) {
 	assertNoPackageImport(t, ingestImportPath, "internal/store")
 }
 
+func TestChannelsProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/channels")
+}
+
+func TestWorkspaceProductionCodeDoesNotImportStore(t *testing.T) {
+	assertNoPackageImport(t, storeImportPath, "internal/workspace")
+}
+
 func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/query")
 }

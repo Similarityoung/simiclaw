@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func TestSchemaHelpersAndAtomicWriteFileEdgeCases(t *testing.T) {
+func TestSchemaHelpersEdgeCases(t *testing.T) {
 	workspace := t.TempDir()
 	if _, err := Open(workspace, DefaultBusyTimeout()); err == nil {
 		t.Fatalf("expected Open to fail when database is missing")
@@ -51,10 +50,6 @@ func TestSchemaHelpersAndAtomicWriteFileEdgeCases(t *testing.T) {
 	}
 	if hasColumn {
 		t.Fatalf("expected missing column to report false")
-	}
-
-	if err := AtomicWriteFile(filepath.Join(workspace, "missing", "config.json"), []byte("{}\n"), 0o644); err == nil {
-		t.Fatalf("expected AtomicWriteFile to fail for missing directory")
 	}
 }
 

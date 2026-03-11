@@ -9,7 +9,6 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	tele "gopkg.in/telebot.v4"
 )
@@ -29,6 +28,10 @@ type runtimeTestHooks struct {
 
 var testHooks runtimeTestHooks
 
+type HeartbeatRecorder interface {
+	BeatHeartbeat(ctx context.Context, name string, at time.Time) error
+}
+
 func SetRuntimeTestHooksForTesting(apiURL string, client *http.Client) func() {
 	testHooks.mu.Lock()
 	prevAPIURL := testHooks.apiURL
@@ -45,11 +48,12 @@ func SetRuntimeTestHooksForTesting(apiURL string, client *http.Client) func() {
 }
 
 type Runtime struct {
-	cfg          config.TelegramChannelConfig
-	db           *store.DB
-	gateway      *gateway.Service
-	allowedUsers map[int64]struct{}
-	logger       *logging.Logger
+	cfg               config.TelegramChannelConfig
+	heartbeat         HeartbeatRecorder
+	heartbeatInterval time.Duration
+	gateway           *gateway.Service
+	allowedUsers      map[int64]struct{}
+	logger            *logging.Logger
 
 	mu      sync.Mutex
 	bot     *tele.Bot
@@ -59,13 +63,14 @@ type Runtime struct {
 	started bool
 }
 
-func NewRuntime(cfg config.TelegramChannelConfig, db *store.DB, gatewayService *gateway.Service) (*Runtime, error) {
+func NewRuntime(cfg config.TelegramChannelConfig, heartbeat HeartbeatRecorder, gatewayService *gateway.Service) (*Runtime, error) {
 	return &Runtime{
-		cfg:          cfg,
-		db:           db,
-		gateway:      gatewayService,
-		allowedUsers: newAllowedUsers(cfg.AllowedUserIDs),
-		logger:       logging.L("telegram"),
+		cfg:               cfg,
+		heartbeat:         heartbeat,
+		heartbeatInterval: runtimeHeartbeatInterval,
+		gateway:           gatewayService,
+		allowedUsers:      newAllowedUsers(cfg.AllowedUserIDs),
+		logger:            logging.L("telegram"),
 	}, nil
 }
 
@@ -188,12 +193,19 @@ func (r *Runtime) runBot(bot *tele.Bot) {
 func (r *Runtime) runHeartbeat(ctx context.Context) {
 	defer r.wg.Done()
 	beat := func() {
-		if err := r.db.BeatHeartbeat(ctx, "telegram_polling", time.Now().UTC()); err != nil {
+		if r.heartbeat == nil {
+			return
+		}
+		if err := r.heartbeat.BeatHeartbeat(ctx, "telegram_polling", time.Now().UTC()); err != nil {
 			r.logger.Warn("telegram heartbeat failed", logging.Error(err))
 		}
 	}
 	beat()
-	ticker := time.NewTicker(runtimeHeartbeatInterval)
+	interval := r.heartbeatInterval
+	if interval <= 0 {
+		interval = runtimeHeartbeatInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
