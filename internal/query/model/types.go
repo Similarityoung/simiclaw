@@ -3,7 +3,6 @@ package model
 import (
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	pkgmodel "github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -138,6 +137,42 @@ type LookupEvent struct {
 	SessionID   string    `json:"session_id"`
 }
 
+type HistoryRange struct {
+	Mode      string `json:"mode"`
+	TailLimit int    `json:"tail_limit,omitempty"`
+}
+
+type ContextManifest struct {
+	HistoryRange HistoryRange `json:"history_range"`
+}
+
+type RAGHit struct {
+	Path    string  `json:"path"`
+	Scope   string  `json:"scope"`
+	Lines   []int   `json:"lines"`
+	Score   float64 `json:"score"`
+	Preview string  `json:"preview"`
+}
+
+type ToolExecution struct {
+	ToolCallID  string               `json:"tool_call_id"`
+	Name        string               `json:"name"`
+	Args        map[string]any       `json:"args,omitempty"`
+	ArgsSummary map[string]any       `json:"args_summary,omitempty"`
+	Result      map[string]any       `json:"result,omitempty"`
+	Error       *pkgmodel.ErrorBlock `json:"error,omitempty"`
+}
+
+type Action struct {
+	ActionID             string         `json:"action_id"`
+	ActionIndex          int            `json:"action_index"`
+	ActionIdempotencyKey string         `json:"action_idempotency_key"`
+	Type                 string         `json:"type"`
+	Risk                 string         `json:"risk"`
+	RequiresApproval     bool           `json:"requires_approval"`
+	Payload              map[string]any `json:"payload,omitempty"`
+}
+
 type RunTrace struct {
 	RunID             string               `json:"run_id"`
 	EventID           string               `json:"event_id"`
@@ -145,10 +180,10 @@ type RunTrace struct {
 	SessionID         string               `json:"session_id"`
 	RunMode           pkgmodel.RunMode     `json:"run_mode"`
 	Status            pkgmodel.RunStatus   `json:"status"`
-	ContextManifest   *api.ContextManifest `json:"context_manifest,omitempty"`
-	RAGHits           []api.RAGHit         `json:"rag_hits,omitempty"`
-	ToolExecutions    []api.ToolExecution  `json:"tool_executions,omitempty"`
-	Actions           []api.Action         `json:"actions,omitempty"`
+	ContextManifest   *ContextManifest     `json:"context_manifest,omitempty"`
+	RAGHits           []RAGHit             `json:"rag_hits,omitempty"`
+	ToolExecutions    []ToolExecution      `json:"tool_executions,omitempty"`
+	Actions           []Action             `json:"actions,omitempty"`
 	StartedAt         time.Time            `json:"started_at"`
 	FinishedAt        time.Time            `json:"finished_at"`
 	Provider          string               `json:"provider,omitempty"`

@@ -123,6 +123,10 @@ func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/store")
 }
 
+func TestQueryModelProductionCodeDoesNotImportAPI(t *testing.T) {
+	assertNoPackageImport(t, apiImportPath, "internal/query/model")
+}
+
 func TestIngestPortProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/ingest/port")
 }
