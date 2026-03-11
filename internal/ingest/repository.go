@@ -1,34 +1,13 @@
 package ingest
 
 import (
-	"context"
-	"errors"
-	"time"
-
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 )
 
-var ErrIdempotencyConflict = errors.New("idempotency payload hash mismatch")
+var ErrIdempotencyConflict = port.ErrIdempotencyConflict
 
-type PersistRequest struct {
-	Source         string
-	Conversation   model.Conversation
-	Payload        model.EventPayload
-	IdempotencyKey string
-	DMScope        string
-}
-
-type PersistResult struct {
-	EventID         string
-	SessionKey      string
-	SessionID       string
-	ReceivedAt      time.Time
-	PayloadHash     string
-	Duplicate       bool
-	ExistingEventID string
-}
-
-type Repository interface {
-	PersistEvent(ctx context.Context, tenantID, sessionKey string, req PersistRequest, payloadHash string, now time.Time) (PersistResult, error)
-	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
-}
+type PersistRequest = port.PersistRequest
+type PersistResult = port.PersistResult
+type SessionScopeRecord = port.SessionScopeRecord
+type Repository = port.Repository
+type SessionReader = port.SessionReader

@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"context"
+
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/session"
@@ -10,24 +12,12 @@ import (
 
 const payloadTypeNewSession = "new_session"
 
-type SessionScopeRecord struct {
-	ConversationID string
-	ChannelType    string
-	ParticipantID  string
-	DMScope        string
-}
-
-type SessionReader interface {
-	GetConversationDMScope(ctx context.Context, tenantID string, conv model.Conversation) (string, bool, error)
-	GetScopeSession(ctx context.Context, sessionKey string) (SessionScopeRecord, bool, error)
-}
-
 type DefaultScopeResolver struct {
 	tenantID string
-	repo     SessionReader
+	repo     port.SessionReader
 }
 
-func NewScopeResolver(tenantID string, repo SessionReader) *DefaultScopeResolver {
+func NewScopeResolver(tenantID string, repo port.SessionReader) *DefaultScopeResolver {
 	return &DefaultScopeResolver{tenantID: tenantID, repo: repo}
 }
 

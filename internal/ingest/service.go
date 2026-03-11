@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -65,7 +66,7 @@ type ScopeResolver interface {
 
 type Service struct {
 	tenantID       string
-	repo           Repository
+	repo           port.Repository
 	queue          Enqueuer
 	scopeResolver  ScopeResolver
 	tenantLimiter  *limiter
@@ -75,7 +76,7 @@ type Service struct {
 
 func NewService(
 	tenantID string,
-	repo Repository,
+	repo port.Repository,
 	queue Enqueuer,
 	scopeResolver ScopeResolver,
 	tenantRate float64,
@@ -137,7 +138,7 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 			RetryAfter: retryAfterSeconds,
 		}
 	}
-	persistReq := PersistRequest{
+	persistReq := port.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,
@@ -158,7 +159,7 @@ func (s *Service) Ingest(ctx context.Context, cmd Command) (Result, *Error) {
 
 	stored, ingestErr := s.repo.PersistEvent(ingestCtx, s.tenantID, sessionKey, persistReq, payloadHash, ts)
 	if ingestErr != nil {
-		if errors.Is(ingestErr, ErrIdempotencyConflict) {
+		if errors.Is(ingestErr, port.ErrIdempotencyConflict) {
 			return Result{}, &Error{
 				Code:    model.ErrorCodeConflict,
 				Message: "idempotency payload hash mismatch",
