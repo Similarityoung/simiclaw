@@ -1,31 +1,21 @@
 package chat
 
 import (
-	"bufio"
-	"context"
 	"errors"
 	"flag"
-	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
-	"io"
 	"os"
-	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
-	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 const (
-	defaultBaseURL      = "http://127.0.0.1:8080"
-	defaultConversation = "cli_default"
-	fixedParticipantID  = "local_user"
+	defaultBaseURL     = "http://127.0.0.1:8080"
+	fixedParticipantID = "local_user"
 )
 
 type Options struct {
@@ -34,18 +24,6 @@ type Options struct {
 	NewSession   bool
 	NoStream     bool
 	HistoryLimit int
-}
-
-type ChatClient interface {
-	SendAndWait(ctx context.Context, req api.IngestRequest) (api.EventRecord, error)
-	SendStream(ctx context.Context, req api.IngestRequest, handler StreamEventHandler) (api.EventRecord, error)
-	PollEvent(ctx context.Context, eventID string) (api.EventRecord, error)
-}
-
-type replInput struct {
-	text string
-	err  error
-	eof  bool
 }
 
 func Run(args []string) error {
@@ -103,136 +81,4 @@ func runTUI(streams common.IOStreams, cli *sharedclient.Client, opts Options) er
 		return m.finalErr
 	}
 	return nil
-}
-
-func runREPL(ctx context.Context, in io.Reader, out io.Writer, client ChatClient, conversationID string, useStream bool, now func() time.Time) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 1024), 1024*1024)
-	inputCh := startScanner(ctx, scanner)
-	seq := now().UnixMilli()
-	if conversationID == "" {
-		conversationID = defaultConversation
-	}
-
-	for {
-		if _, err := fmt.Fprint(out, messages.Chat.REPLPrompt); err != nil {
-			return err
-		}
-
-		var (
-			input replInput
-			ok    bool
-		)
-		select {
-		case <-ctx.Done():
-			return nil
-		case input, ok = <-inputCh:
-			if !ok {
-				return nil
-			}
-		}
-		if input.err != nil {
-			if ctx.Err() == nil {
-				return input.err
-			}
-			return nil
-		}
-		if input.eof {
-			return nil
-		}
-
-		text := strings.TrimSpace(input.text)
-		if text == "" {
-			continue
-		}
-		if text == "/quit" || text == "/exit" {
-			return nil
-		}
-
-		req := cli.BuildIngestRequest(conversationID, fixedParticipantID, seq, text)
-		seq++
-		renderer := newStreamRenderer(out)
-		rec, err := sendOneTurn(ctx, client, req, useStream, renderer)
-		if err != nil {
-			renderer.Abort()
-			if _, werr := fmt.Fprint(out, messages.Chat.REPLError(formatError(err))); werr != nil {
-				return werr
-			}
-			continue
-		}
-		if err := renderer.Finish(rec); err != nil {
-			return err
-		}
-		if rec.Status == model.EventStatusFailed {
-			if rec.Error != nil {
-				if _, werr := fmt.Fprint(out, messages.Chat.REPLErrorCode(rec.Error.Code, rec.Error.Message)); werr != nil {
-					return werr
-				}
-			} else {
-				if _, werr := fmt.Fprintln(out, messages.Chat.REPLEventFailed); werr != nil {
-					return werr
-				}
-			}
-			continue
-		}
-		if rec.OutboxStatus == model.OutboxStatusDead && rec.Error != nil {
-			if _, err := fmt.Fprint(out, messages.Chat.REPLErrorCode(rec.Error.Code, rec.Error.Message)); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func startScanner(ctx context.Context, scanner *bufio.Scanner) <-chan replInput {
-	out := make(chan replInput, 1)
-	go func() {
-		defer close(out)
-		for scanner.Scan() {
-			line := scanner.Text()
-			select {
-			case out <- replInput{text: line}:
-			case <-ctx.Done():
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			select {
-			case out <- replInput{err: err}:
-			case <-ctx.Done():
-			}
-			return
-		}
-		select {
-		case out <- replInput{eof: true}:
-		case <-ctx.Done():
-		}
-	}()
-	return out
-}
-
-func formatError(err error) string {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.Error()
-	}
-	return err.Error()
-}
-
-func sendOneTurn(ctx context.Context, client ChatClient, req api.IngestRequest, useStream bool, renderer *streamRenderer) (api.EventRecord, error) {
-	if !useStream {
-		return client.SendAndWait(ctx, req)
-	}
-	rec, err := client.SendStream(ctx, req, renderer)
-	if err == nil {
-		return rec, nil
-	}
-	var recoverable *StreamRecoverableError
-	switch {
-	case errors.Is(err, ErrStreamUnsupported):
-		return client.SendAndWait(ctx, req)
-	case errors.As(err, &recoverable) && recoverable.EventID != "":
-		return client.PollEvent(ctx, recoverable.EventID)
-	default:
-		return api.EventRecord{}, err
-	}
 }
