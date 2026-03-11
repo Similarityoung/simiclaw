@@ -3,9 +3,10 @@ package httpapi
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"strconv"
+
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/model"

@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"time"
 
@@ -12,13 +11,12 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	clichannel "github.com/similarityyoung/simiclaw/internal/channels/cli"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
-	"github.com/similarityyoung/simiclaw/pkg/model"
-
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	clichannel "github.com/similarityyoung/simiclaw/internal/channels/cli"
+	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type viewMode int

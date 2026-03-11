@@ -3,9 +3,10 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"strings"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"

@@ -3,9 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/pkg/model"

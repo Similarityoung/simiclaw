@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/internal/readmodel"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )

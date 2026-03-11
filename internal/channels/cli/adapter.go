@@ -2,8 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )

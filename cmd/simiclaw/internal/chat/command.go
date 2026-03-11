@@ -4,11 +4,10 @@ import (
 	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/spf13/cobra"
-
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/spf13/cobra"
 )
 
 const (

@@ -3,11 +3,12 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/similarityyoung/simiclaw/pkg/api"
 
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
