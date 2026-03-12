@@ -19,6 +19,28 @@
 | Frontend | 1 | README 仅保留入口，`web/` 代码存在 | 缺前端架构、路由和状态文档 | 补 `web/` 专题说明 |
 | Documentation Governance | 2 | `docs/index.md`, `docs/exec-plans/`, 本评分文档 | 还没有 CI 链接检查和周期性养护机制 | 加入 docs lint / link check |
 
+## Machine Snapshot
+
+<!-- BEGIN:CI_QUALITY_SCORE -->
+_This block is maintained by repo hygiene. Do not edit it by hand._
+
+| Metric | Value |
+| --- | --- |
+| Last Run (UTC) | 2026-03-12T12:17:53Z |
+| Guardrails New | 0 |
+| Guardrails Existing | 27 |
+| Shrink Candidates | 0 |
+| Warning Hotspots | 19 |
+| Docs Links | unknown |
+
+### Top Rules
+- go-statement: 12
+- file-lines: 7
+- panic-call: 3
+- context-background: 2
+- name-token: 2
+<!-- END:CI_QUALITY_SCORE -->
+
 ## Notes
 
 - 本评分优先依据代码、测试、配置与目录结构，而不是旧 README 里的叙述。

@@ -1,0 +1,11 @@
+max_retries = 2
+retry_wait_time = 2
+timeout = 20
+user_agent = "simiclaw-ci/1.0"
+include_fragments = true
+
+exclude = [
+  "^https?://127\\.0\\.0\\.1",
+  "^https?://localhost",
+  "^file://",
+]

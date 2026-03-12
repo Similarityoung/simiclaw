@@ -3,21 +3,239 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  go-format:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make fmt
+      - run: make fmt-check
+
+  go-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make vet
-      - run: make lint
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6.1
+          args: --config .golangci.yml ./...
+
+  go-architecture:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-architecture
+
+  go-unit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make test-unit
+
+  go-race-core:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make test-unit-race-core
+
+  go-integration:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make test-integration
+
+  go-e2e-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make test-e2e-smoke
+
+  web:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make web-ci
+
+  docs-style:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make docs-style
+
+  guardrails:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make guardrails-check
+        env:
+          GUARDRAILS_BASE: ${{ github.event.pull_request.base.sha }}
+          GUARDRAILS_HEAD: ${{ github.event.pull_request.head.sha }}
+
+  docs-links-advisory:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p reports
+      - id: internal_links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config .lychee.toml
+            --offline
+            --verbose
+            --format detailed
+            --output reports/internal-links.txt
+            './*.md'
+            './docs/**/*.md'
+            './skills/**/*.md'
+            './workspace/skills/**/*.md'
+      - id: external_links
+        if: always()
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config .lychee.toml
+            --verbose
+            --format detailed
+            --output reports/external-links.txt
+            './*.md'
+            './docs/**/*.md'
+            './skills/**/*.md'
+            './workspace/skills/**/*.md'
+      - name: Upload docs link reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-links-advisory
+          path: reports/
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Docs Links Advisory"
+            echo
+            echo "- Internal links: ${{ steps.internal_links.outcome }}"
+            echo "- External links: ${{ steps.external_links.outcome }}"
+            echo
+            if [[ -f reports/internal-links.txt ]]; then
+              echo "### Internal Links"
+              echo
+              echo '```text'
+              sed -n '1,40p' reports/internal-links.txt
+              echo '```'
+            fi
+            if [[ -f reports/external-links.txt ]]; then
+              echo
+              echo "### External Links"
+              echo
+              echo '```text'
+              sed -n '1,40p' reports/external-links.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-summary:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs:
+      - go-format
+      - go-lint
+      - go-architecture
+      - go-unit
+      - go-race-core
+      - go-integration
+      - go-e2e-smoke
+      - web
+      - docs-style
+      - guardrails
+      - docs-links-advisory
+    steps:
+      - name: Summarize CI results
+        run: |
+          {
+            echo "## CI Summary"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| go-format | ${{ needs.go-format.result }} |"
+            echo "| go-lint | ${{ needs.go-lint.result }} |"
+            echo "| go-architecture | ${{ needs.go-architecture.result }} |"
+            echo "| go-unit | ${{ needs.go-unit.result }} |"
+            echo "| go-race-core | ${{ needs.go-race-core.result }} |"
+            echo "| go-integration | ${{ needs.go-integration.result }} |"
+            echo "| go-e2e-smoke | ${{ needs.go-e2e-smoke.result }} |"
+            echo "| web | ${{ needs.web.result }} |"
+            echo "| docs-style | ${{ needs.docs-style.result }} |"
+            echo "| guardrails | ${{ needs.guardrails.result }} |"
+            echo "| docs-links-advisory | ${{ needs.docs-links-advisory.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  accept-current-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: make accept-current
