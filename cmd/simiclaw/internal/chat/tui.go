@@ -604,7 +604,7 @@ func renderMessages(items []chatMessage) string {
 	}
 	var parts []string
 	for _, msg := range items {
-		prefix := messages.Chat.MessagePrefixAssistant
+		var prefix string
 		switch msg.Role {
 		case "user":
 			prefix = messages.Chat.MessagePrefixUser

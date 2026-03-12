@@ -16,7 +16,7 @@
     {
       "rule_id": "context-background",
       "file": "internal/channels/telegram/runtime.go",
-      "start_line": 83,
+      "symbol": "(*Runtime).Start",
       "reason": "telegram runtime lifecycle root"
     },
     {

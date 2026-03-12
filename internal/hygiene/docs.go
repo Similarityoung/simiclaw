@@ -1,13 +1,11 @@
 package hygiene
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/guardrails"
@@ -76,7 +74,7 @@ func UpdateDocs(cfg UpdateDocsConfig) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(cfg.PRBody, []byte(body), 0o644); err != nil {
+		if err := writeFile(cfg.PRBody, []byte(body)); err != nil {
 			return err
 		}
 	}
@@ -85,135 +83,99 @@ func UpdateDocs(cfg UpdateDocsConfig) error {
 }
 
 func renderQualityBlock(report guardrails.Report, linksStatus string) (string, error) {
-	type view struct {
-		GeneratedAt      string
-		New              int
-		Existing         int
-		ShrinkCandidates int
-		Warnings         int
-		LinksStatus      string
-		TopRules         []guardrails.RuleCount
+	var b strings.Builder
+	fmt.Fprintln(&b, "_This block is maintained by repo hygiene. Do not edit it by hand._")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "| Metric | Value |")
+	fmt.Fprintln(&b, "| --- | --- |")
+	fmt.Fprintf(&b, "| Last Run (UTC) | %s |\n", report.GeneratedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "| Guardrails New | %d |\n", report.Summary.New)
+	fmt.Fprintf(&b, "| Guardrails Existing | %d |\n", report.Summary.Existing)
+	fmt.Fprintf(&b, "| Shrink Candidates | %d |\n", report.Summary.ShrinkCandidates)
+	fmt.Fprintf(&b, "| Warning Hotspots | %d |\n", report.Summary.Warnings)
+	fmt.Fprintf(&b, "| Docs Links | %s |\n", statusOrUnknown(linksStatus))
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Top Rules")
+	fmt.Fprintln(&b)
+	topRules := topRuleCounts(report.Summary.ByRule, 5)
+	if len(topRules) == 0 {
+		fmt.Fprintln(&b, "- No current findings.")
+	} else {
+		for _, rule := range topRules {
+			fmt.Fprintf(&b, "- %s: %d\n", rule.RuleID, rule.Count)
+		}
 	}
-	v := view{
-		GeneratedAt:      report.GeneratedAt.UTC().Format(time.RFC3339),
-		New:              report.Summary.New,
-		Existing:         report.Summary.Existing,
-		ShrinkCandidates: report.Summary.ShrinkCandidates,
-		Warnings:         report.Summary.Warnings,
-		LinksStatus:      statusOrUnknown(linksStatus),
-		TopRules:         topRuleCounts(report.Summary.ByRule, 5),
-	}
-	const tpl = `_This block is maintained by repo hygiene. Do not edit it by hand._
-
-| Metric | Value |
-| --- | --- |
-| Last Run (UTC) | {{.GeneratedAt}} |
-| Guardrails New | {{.New}} |
-| Guardrails Existing | {{.Existing}} |
-| Shrink Candidates | {{.ShrinkCandidates}} |
-| Warning Hotspots | {{.Warnings}} |
-| Docs Links | {{.LinksStatus}} |
-
-### Top Rules
-{{- if .TopRules }}
-{{- range .TopRules }}
-- {{ .RuleID }}: {{ .Count }}
-{{- end }}
-{{- else }}
-- No current findings.
-{{- end }}`
-	return renderTemplate(tpl, v)
+	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
 func renderDebtBlock(report guardrails.Report, linksStatus, linksPreview string) (string, error) {
-	type view struct {
-		Rows         []ruleRow
-		LinksStatus  string
-		LinksPreview string
-		Shrink       []guardrails.Finding
-	}
 	rows := summarizeByRule(report.Findings)
-	v := view{
-		Rows:         rows,
-		LinksStatus:  statusOrUnknown(linksStatus),
-		LinksPreview: linksPreview,
-		Shrink:       shrinkFindings(report.Findings),
+	var b strings.Builder
+	fmt.Fprintln(&b, "_This block is maintained by repo hygiene. Do not edit it by hand._")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "| Rule | New | Existing | Shrink Candidates |")
+	fmt.Fprintln(&b, "| --- | --- | --- | --- |")
+	for _, row := range rows {
+		fmt.Fprintf(&b, "| %s | %d | %d | %d |\n", row.RuleID, row.New, row.Existing, row.ShrinkCandidates)
 	}
-	const tpl = `_This block is maintained by repo hygiene. Do not edit it by hand._
-
-| Rule | New | Existing | Shrink Candidates |
-| --- | --- | --- | --- |
-{{- range .Rows }}
-| {{ .RuleID }} | {{ .New }} | {{ .Existing }} | {{ .ShrinkCandidates }} |
-{{- end }}
-
-### Shrink Candidates
-{{- if .Shrink }}
-{{- range .Shrink }}
-- {{ .File }}{{ if .StartLine }}:{{ .StartLine }}{{ end }} — {{ .Message }}
-{{- end }}
-{{- else }}
-- No shrink candidates in this run.
-{{- end }}
-
-### Docs Links
-- Status: {{ .LinksStatus }}
-{{- if .LinksPreview }}
-
-~~~text
-{{ .LinksPreview }}
-~~~
-{{- end }}`
-	return renderTemplate(tpl, v)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Shrink Candidates")
+	fmt.Fprintln(&b)
+	shrink := shrinkFindings(report.Findings)
+	if len(shrink) == 0 {
+		fmt.Fprintln(&b, "- No shrink candidates in this run.")
+	} else {
+		for _, finding := range shrink {
+			if finding.StartLine > 0 {
+				fmt.Fprintf(&b, "- %s:%d — %s\n", finding.File, finding.StartLine, finding.Message)
+				continue
+			}
+			fmt.Fprintf(&b, "- %s — %s\n", finding.File, finding.Message)
+		}
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Docs Links")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "- Status: %s\n", statusOrUnknown(linksStatus))
+	if strings.TrimSpace(linksPreview) != "" {
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "~~~text")
+		fmt.Fprintln(&b, strings.TrimSpace(linksPreview))
+		fmt.Fprintln(&b, "~~~")
+	}
+	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
 func renderPRBody(report guardrails.Report, linksStatus, linksPreview string) (string, error) {
-	type view struct {
-		GeneratedAt      string
-		New              int
-		Existing         int
-		ShrinkCandidates int
-		Warnings         int
-		LinksStatus      string
-		TopRules         []guardrails.RuleCount
-		LinksPreview     string
+	var b strings.Builder
+	fmt.Fprintln(&b, "## Repo Hygiene")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "- Last Run (UTC): %s\n", report.GeneratedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "- Guardrails New: %d\n", report.Summary.New)
+	fmt.Fprintf(&b, "- Guardrails Existing: %d\n", report.Summary.Existing)
+	fmt.Fprintf(&b, "- Shrink Candidates: %d\n", report.Summary.ShrinkCandidates)
+	fmt.Fprintf(&b, "- Warning Hotspots: %d\n", report.Summary.Warnings)
+	fmt.Fprintf(&b, "- Docs Links: %s\n", statusOrUnknown(linksStatus))
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Top Rules")
+	fmt.Fprintln(&b)
+	topRules := topRuleCounts(report.Summary.ByRule, 5)
+	if len(topRules) == 0 {
+		fmt.Fprintln(&b, "- No current findings.")
+	} else {
+		for _, rule := range topRules {
+			fmt.Fprintf(&b, "- %s: %d\n", rule.RuleID, rule.Count)
+		}
 	}
-	v := view{
-		GeneratedAt:      report.GeneratedAt.UTC().Format(time.RFC3339),
-		New:              report.Summary.New,
-		Existing:         report.Summary.Existing,
-		ShrinkCandidates: report.Summary.ShrinkCandidates,
-		Warnings:         report.Summary.Warnings,
-		LinksStatus:      statusOrUnknown(linksStatus),
-		TopRules:         topRuleCounts(report.Summary.ByRule, 5),
-		LinksPreview:     linksPreview,
+	if strings.TrimSpace(linksPreview) != "" {
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "### Docs Links Preview")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "~~~text")
+		fmt.Fprintln(&b, strings.TrimSpace(linksPreview))
+		fmt.Fprintln(&b, "~~~")
 	}
-	const tpl = `## Repo Hygiene
-
-- Last Run (UTC): {{ .GeneratedAt }}
-- Guardrails New: {{ .New }}
-- Guardrails Existing: {{ .Existing }}
-- Shrink Candidates: {{ .ShrinkCandidates }}
-- Warning Hotspots: {{ .Warnings }}
-- Docs Links: {{ .LinksStatus }}
-
-### Top Rules
-{{- if .TopRules }}
-{{- range .TopRules }}
-- {{ .RuleID }}: {{ .Count }}
-{{- end }}
-{{- else }}
-- No current findings.
-{{- end }}
-{{- if .LinksPreview }}
-
-### Docs Links Preview
-
-~~~text
-{{ .LinksPreview }}
-~~~
-{{- end }}`
-	return renderTemplate(tpl, v)
+	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
 func rewriteMarkedBlock(path, beginMarker, endMarker, body string) error {
@@ -237,7 +199,7 @@ func rewriteMarkedBlock(path, beginMarker, endMarker, body string) error {
 	if updated == content {
 		return nil
 	}
-	return os.WriteFile(path, []byte(updated), 0o644)
+	return writeFile(path, []byte(updated))
 }
 
 func topRuleCounts(in []guardrails.RuleCount, n int) []guardrails.RuleCount {
@@ -305,18 +267,6 @@ func shrinkFindings(findings []guardrails.Finding) []guardrails.Finding {
 		return out[i].StartLine < out[j].StartLine
 	})
 	return out
-}
-
-func renderTemplate(text string, data any) (string, error) {
-	tpl, err := template.New("doc").Parse(text)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(buf.String()) + "\n", nil
 }
 
 func trimPreview(text string, maxLines int) string {

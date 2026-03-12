@@ -16,7 +16,7 @@
 go run ./cmd/simiclaw init --workspace ./workspace
 ```
 
-2. 可选：在仓库根目录放置 `.env`
+1. 可选：在仓库根目录放置 `.env`
 
 ```bash
 OPENAI_API_KEY=your-api-key
@@ -26,19 +26,19 @@ LLM_MODEL=openai/deepseek-chat
 
 兼容旧别名 `LLM_API_KEY` / `LLM_BASE_URL`。
 
-3. 启动服务
+1. 启动服务
 
 ```bash
 go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
 ```
 
-4. 使用交互式 CLI
+1. 使用交互式 CLI
 
 ```bash
 go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
 ```
 
-5. 读取健康与运行信息
+1. 读取健康与运行信息
 
 ```bash
 go run ./cmd/simiclaw inspect health
@@ -46,7 +46,7 @@ go run ./cmd/simiclaw inspect sessions
 go run ./cmd/simiclaw inspect runs
 ```
 
-6. 启动前端
+1. 启动前端
 
 ```bash
 cd web

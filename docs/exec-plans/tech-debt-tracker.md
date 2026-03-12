@@ -29,9 +29,11 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 | print-logging | 0 | 1 | 0 |
 
 ### Shrink Candidates
+
 - No shrink candidates in this run.
 
 ### Docs Links
+
 - Status: unknown
 <!-- END:CI_TECH_DEBT -->
 

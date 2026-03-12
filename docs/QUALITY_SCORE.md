@@ -26,7 +26,7 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 
 | Metric | Value |
 | --- | --- |
-| Last Run (UTC) | 2026-03-12T12:17:53Z |
+| Last Run (UTC) | 2026-03-12T12:42:18Z |
 | Guardrails New | 0 |
 | Guardrails Existing | 27 |
 | Shrink Candidates | 0 |
@@ -34,6 +34,7 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 | Docs Links | unknown |
 
 ### Top Rules
+
 - go-statement: 12
 - file-lines: 7
 - panic-call: 3

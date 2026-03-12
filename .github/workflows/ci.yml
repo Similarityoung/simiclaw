@@ -131,19 +131,18 @@ jobs:
   docs-links-advisory:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - run: mkdir -p reports
       - id: internal_links
         uses: lycheeverse/lychee-action@v2
         with:
+          format: markdown
+          output: reports/internal-links.md
           args: >-
             --config .lychee.toml
             --offline
             --verbose
-            --format detailed
-            --output reports/internal-links.txt
             './*.md'
             './docs/**/*.md'
             './skills/**/*.md'
@@ -153,11 +152,11 @@ jobs:
         continue-on-error: true
         uses: lycheeverse/lychee-action@v2
         with:
+          format: markdown
+          output: reports/external-links.md
           args: >-
             --config .lychee.toml
             --verbose
-            --format detailed
-            --output reports/external-links.txt
             './*.md'
             './docs/**/*.md'
             './skills/**/*.md'
@@ -177,25 +176,21 @@ jobs:
             echo "- Internal links: ${{ steps.internal_links.outcome }}"
             echo "- External links: ${{ steps.external_links.outcome }}"
             echo
-            if [[ -f reports/internal-links.txt ]]; then
+            if [[ -f reports/internal-links.md ]]; then
               echo "### Internal Links"
               echo
-              echo '```text'
-              sed -n '1,40p' reports/internal-links.txt
-              echo '```'
+              sed -n '1,40p' reports/internal-links.md
             fi
-            if [[ -f reports/external-links.txt ]]; then
+            if [[ -f reports/external-links.md ]]; then
               echo
               echo "### External Links"
               echo
-              echo '```text'
-              sed -n '1,40p' reports/external-links.txt
-              echo '```'
+              sed -n '1,40p' reports/external-links.md
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   ci-summary:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && always()
     runs-on: ubuntu-latest
     needs:
       - go-format

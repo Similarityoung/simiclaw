@@ -33,11 +33,11 @@ jobs:
         continue-on-error: true
         uses: lycheeverse/lychee-action@v2
         with:
+          format: markdown
+          output: reports/docs-links.md
           args: >-
             --config .lychee.toml
             --verbose
-            --format detailed
-            --output reports/docs-links.txt
             './*.md'
             './docs/**/*.md'
             './skills/**/*.md'
@@ -47,7 +47,7 @@ jobs:
           go run ./tools/hygiene-docs \
             --guardrails-report reports/guardrails.json \
             --links-status "${{ steps.docs_links.outcome }}" \
-            --links-report reports/docs-links.txt \
+            --links-report reports/docs-links.md \
             --pr-body reports/pr-body.md
       - name: Upload hygiene artifacts
         uses: actions/upload-artifact@v4
@@ -72,13 +72,11 @@ jobs:
             echo
             echo "- Guardrails report: reports/guardrails.json"
             echo "- Docs links: ${{ steps.docs_links.outcome }}"
-            if [[ -f reports/docs-links.txt ]]; then
+            if [[ -f reports/docs-links.md ]]; then
               echo
               echo "### Docs Links Preview"
               echo
-              echo '```text'
-              sed -n '1,40p' reports/docs-links.txt
-              echo '```'
+              sed -n '1,40p' reports/docs-links.md
             fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Fail workflow on strict docs link regression
