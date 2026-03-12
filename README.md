@@ -139,7 +139,7 @@ canonical 路径如下：
 
 - `cmd/simiclaw/internal/*`：命令入口
 - `internal/bootstrap`：应用装配与生命周期
-- `internal/channels`：CLI / Telegram 等接入适配
+- `internal/channels`：CLI / Telegram 等接入适配，依赖 gateway 和最小运行时端口
 - `internal/gateway`：ingest 校验、限流与幂等边界
 - `internal/httpapi`：HTTP 路由、handler、鉴权与分页
 - `internal/memory`：工作区记忆读写
@@ -154,6 +154,8 @@ canonical 路径如下：
 - `internal/runtime/model`：runtime 内部 claim / finalize / worker DTO
 - `internal/session`：session key 归一化与计算
 - `internal/store`：SQLite 启动、schema、读写与恢复
+- `internal/workspace`：workspace 初始化脚手架
+- `internal/workspacefile`：workspace 路径约束、文本校验，以及当前共享的原子写文件 helper
 - `internal/readmodel`：仅供 `store` 内部使用的查询投影与扫描结构
 - `internal/systemprompt`：运行时 system prompt 资源
 - `internal/tools`：tools / skills 扩展边界，内含 `memory_*`、`web_search`、`web_fetch` 和 workspace 写工具
@@ -165,9 +167,11 @@ canonical 路径如下：
 ## 边界约定
 
 - `pkg/api` 只承载对外 HTTP / SSE / CLI wire model。
-- `internal/query/model`、`internal/runner/model`、`internal/runtime/model` 是各子系统自己的内部端口 DTO，不对外承诺稳定性。
+- `internal/query/model`、`internal/runner/model`、`internal/runtime/model` 是各子系统自己的内部端口 DTO，不对外承诺稳定性；`internal/query/model` 里的 run trace 子类型也属于内部读模型，不直接等于 wire contract。
 - `internal/readmodel` 只给 `internal/store` 内部查询投影和扫描使用，不作为服务层或传输层契约。
 - `httpapi` 继续显式把内部 query/runtime 结果映射到 `pkg/api`，不直接把内部模型透出。
+- `internal/channels` 和 `internal/workspace` 不直接依赖 `internal/store`；如需持久化或 heartbeat 能力，应通过最小接口或内部 helper 注入。
+- `internal/workspacefile` 是当前共享文件系统边界：除路径解析、patch/delete 外，也正式承载通用 `AtomicWriteFile`，`internal/workspace` 等包应经由它复用原子写能力，而不是通过 `internal/store`。
 
 ## 快速开始
 
