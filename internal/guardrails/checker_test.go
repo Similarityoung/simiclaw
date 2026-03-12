@@ -56,8 +56,86 @@ func TestMatchBaselineFallsBackToFingerprint(t *testing.T) {
 			},
 		},
 	}
-	if _, ok := matchBaseline(finding, baseline); !ok {
+	if _, _, ok := matchBaseline(finding, baseline, make([]bool, len(baseline.Findings))); !ok {
 		t.Fatalf("expected fingerprint fallback to match")
+	}
+}
+
+func TestApplyBaselineConsumesFingerprintMatchOnce(t *testing.T) {
+	findings := []Finding{
+		{
+			RuleID:      "context-background",
+			File:        "internal/demo/foo.go",
+			Kind:        "line",
+			StartLine:   10,
+			Symbol:      "Demo",
+			Fingerprint: "abc123",
+			Status:      "new",
+		},
+		{
+			RuleID:      "context-background",
+			File:        "internal/demo/foo.go",
+			Kind:        "line",
+			StartLine:   20,
+			Symbol:      "Demo",
+			Fingerprint: "abc123",
+			Status:      "new",
+		},
+	}
+	baseline := Baseline{
+		Findings: []BaselineEntry{
+			{
+				RuleID:      "context-background",
+				File:        "internal/demo/foo.go",
+				Kind:        "line",
+				StartLine:   5,
+				Symbol:      "Demo",
+				Fingerprint: "abc123",
+			},
+		},
+	}
+
+	classified, used := applyBaseline(findings, baseline)
+	existing := 0
+	news := 0
+	for _, finding := range classified {
+		switch finding.Status {
+		case "existing":
+			existing++
+		case "new":
+			news++
+		}
+	}
+	if existing != 1 || news != 1 {
+		t.Fatalf("expected one existing and one new finding, got existing=%d new=%d", existing, news)
+	}
+	if len(used) != 1 || !used[0] {
+		t.Fatalf("expected baseline entry to be consumed exactly once, got %+v", used)
+	}
+}
+
+func TestMatchBaselineRequiresFingerprintForFileFindings(t *testing.T) {
+	finding := Finding{
+		RuleID:      "file-lines",
+		File:        "internal/demo/foo.go",
+		Kind:        "file",
+		StartLine:   1,
+		Fingerprint: "new-file-size",
+	}
+	baseline := Baseline{
+		Findings: []BaselineEntry{
+			{
+				RuleID:      "file-lines",
+				File:        "internal/demo/foo.go",
+				Kind:        "file",
+				StartLine:   1,
+				Fingerprint: "old-file-size",
+			},
+		},
+	}
+
+	if _, _, ok := matchBaseline(finding, baseline, make([]bool, len(baseline.Findings))); ok {
+		t.Fatalf("expected grown file finding to remain new when fingerprint changes")
 	}
 }
 
@@ -109,5 +187,26 @@ func TestIsAllowedMatchesLineRange(t *testing.T) {
 	}
 	if !isAllowed(finding, allowlist) {
 		t.Fatalf("expected finding to be allowlisted")
+	}
+}
+
+func TestBuildSummaryExcludesShrinkCandidatesFromCurrentSeverityCounts(t *testing.T) {
+	summary := buildSummary([]Finding{
+		{RuleID: "context-background", Severity: "error", Status: "existing"},
+		{RuleID: "panic-call", Severity: "warning", Status: "new"},
+		{RuleID: "go-statement", Severity: "warning", Status: "shrink_candidate"},
+	})
+
+	if summary.Total != 3 {
+		t.Fatalf("expected total findings to include shrink candidates, got %d", summary.Total)
+	}
+	if summary.Existing != 1 || summary.New != 1 || summary.ShrinkCandidates != 1 {
+		t.Fatalf("unexpected status counts: %+v", summary)
+	}
+	if summary.Errors != 1 || summary.Warnings != 1 {
+		t.Fatalf("expected severity counts to exclude shrink candidates, got errors=%d warnings=%d", summary.Errors, summary.Warnings)
+	}
+	if len(summary.ByRule) != 2 {
+		t.Fatalf("expected top-rule counts to exclude shrink candidates, got %+v", summary.ByRule)
 	}
 }

@@ -71,15 +71,16 @@ func Check(ctx context.Context, cfg CheckConfig) (Report, error) {
 		return Report{}, err
 	}
 
+	classifiedFindings, baselineUsed := applyBaseline(findings, baseline)
 	report := Report{
 		Scope:       scope,
 		BaseSHA:     cfg.BaseSHA,
 		HeadSHA:     cfg.HeadSHA,
 		GeneratedAt: time.Now().UTC(),
-		Findings:    applyBaseline(findings, baseline),
+		Findings:    classifiedFindings,
 	}
 	if scope == ScopeRepo {
-		report.Findings = append(report.Findings, shrinkCandidates(findings, baseline)...)
+		report.Findings = append(report.Findings, shrinkCandidates(baseline, baselineUsed)...)
 	}
 	sortFindings(report.Findings)
 	report.Summary = buildSummary(report.Findings)

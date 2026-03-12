@@ -60,11 +60,13 @@ func isAllowed(finding Finding, allowlist Allowlist) bool {
 	return false
 }
 
-func applyBaseline(findings []Finding, baseline Baseline) []Finding {
+func applyBaseline(findings []Finding, baseline Baseline) ([]Finding, []bool) {
+	used := make([]bool, len(baseline.Findings))
 	var out []Finding
 	for _, finding := range findings {
-		match, ok := matchBaseline(finding, baseline)
+		matchIdx, match, ok := matchBaseline(finding, baseline, used)
 		if ok {
+			used[matchIdx] = true
 			finding.Status = "existing"
 			if finding.Message == "" {
 				finding.Message = match.Message
@@ -72,13 +74,13 @@ func applyBaseline(findings []Finding, baseline Baseline) []Finding {
 		}
 		out = append(out, finding)
 	}
-	return out
+	return out, used
 }
 
-func shrinkCandidates(findings []Finding, baseline Baseline) []Finding {
+func shrinkCandidates(baseline Baseline, used []bool) []Finding {
 	var shrink []Finding
-	for _, entry := range baseline.Findings {
-		if baselineStillPresent(entry, findings) {
+	for idx, entry := range baseline.Findings {
+		if idx < len(used) && used[idx] {
 			continue
 		}
 		shrink = append(shrink, Finding{
@@ -99,42 +101,44 @@ func shrinkCandidates(findings []Finding, baseline Baseline) []Finding {
 	return shrink
 }
 
-func matchBaseline(finding Finding, baseline Baseline) (BaselineEntry, bool) {
-	for _, entry := range baseline.Findings {
-		if entry.RuleID != finding.RuleID || entry.File != finding.File || entry.Kind != finding.Kind {
+func matchBaseline(finding Finding, baseline Baseline, used []bool) (int, BaselineEntry, bool) {
+	for idx, entry := range baseline.Findings {
+		if idx < len(used) && used[idx] {
 			continue
 		}
-		if entry.StartLine == finding.StartLine && entry.EndLine == finding.EndLine && entry.Symbol == finding.Symbol {
-			return entry, true
+		if exactBaselineMatch(entry, finding) {
+			return idx, entry, true
 		}
 	}
-	for _, entry := range baseline.Findings {
-		if entry.RuleID != finding.RuleID || entry.File != finding.File {
+	for idx, entry := range baseline.Findings {
+		if idx < len(used) && used[idx] {
 			continue
 		}
-		if entry.Symbol != finding.Symbol {
-			continue
-		}
-		if entry.Fingerprint == finding.Fingerprint {
-			return entry, true
+		if fingerprintBaselineMatch(entry, finding) {
+			return idx, entry, true
 		}
 	}
-	return BaselineEntry{}, false
+	return -1, BaselineEntry{}, false
 }
 
-func baselineStillPresent(entry BaselineEntry, findings []Finding) bool {
-	for _, finding := range findings {
-		if entry.RuleID != finding.RuleID || entry.File != finding.File || entry.Kind != finding.Kind {
-			continue
-		}
-		if entry.StartLine == finding.StartLine && entry.EndLine == finding.EndLine && entry.Symbol == finding.Symbol {
-			return true
-		}
-		if entry.Symbol == finding.Symbol && entry.Fingerprint == finding.Fingerprint {
-			return true
-		}
+func exactBaselineMatch(entry BaselineEntry, finding Finding) bool {
+	if entry.RuleID != finding.RuleID || entry.File != finding.File || entry.Kind != finding.Kind {
+		return false
 	}
-	return false
+	if entry.Kind == "file" {
+		return entry.Fingerprint == finding.Fingerprint
+	}
+	return entry.StartLine == finding.StartLine && entry.EndLine == finding.EndLine && entry.Symbol == finding.Symbol
+}
+
+func fingerprintBaselineMatch(entry BaselineEntry, finding Finding) bool {
+	if entry.RuleID != finding.RuleID || entry.File != finding.File || entry.Kind != finding.Kind {
+		return false
+	}
+	if entry.Symbol != finding.Symbol {
+		return false
+	}
+	return entry.Fingerprint == finding.Fingerprint
 }
 
 func buildSummary(findings []Finding) Summary {
@@ -151,6 +155,9 @@ func buildSummary(findings []Finding) Summary {
 			summary.Existing++
 		case "shrink_candidate":
 			summary.ShrinkCandidates++
+		}
+		if finding.Status == "shrink_candidate" {
+			continue
 		}
 		switch finding.Severity {
 		case "warning":
