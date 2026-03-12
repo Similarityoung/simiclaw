@@ -1,162 +1,61 @@
-# AGENTS.md — SimiClaw Codebase Guide
+# AGENTS.md — SimiClaw 导航图
 
-Single-binary Go agent runtime built around a SQLite-first state machine.
-Module: `github.com/similarityyoung/simiclaw` | Go 1.25 | Current stage: `V1`
+SimiClaw 是一个围绕 SQLite-first 状态机构建的单二进制 Go agent runtime。这个文件只保留高杠杆导航；实现细节、设计说明和执行记录统一收敛到 [`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/`](docs/index.md)。
 
----
+`Module`: `github.com/similarityyoung/simiclaw` | `Go`: `1.25` | `Stage`: `V1`
 
-## Build & Commands
+## Quick Start
 
-```bash
-# Format all Go code
-make fmt
+- 格式化代码: `make fmt`
+- 单元测试: `make test-unit`
+- 当前阶段验收: `make accept-current`
+- 初始化工作区: `go run ./cmd/simiclaw init --workspace ./workspace`
+- 启动服务: `go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080`
+- 启动交互式 CLI: `go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080`
 
-# Static analysis
-make vet
-
-# Lint (golangci-lint if installed, falls back to go vet)
-make lint
-
-# Unit tests with coverage
-make test-unit
-
-# Race-detection tests on core packages only
-make test-unit-race-core
-
-# Integration tests
-make test-integration
-
-# E2E smoke tests
-make test-e2e-smoke
-
-# All E2E tests, no cache
-make test-e2e
-
-# Acceptance for v1
-make accept-v1
-
-# Acceptance for current stage
-make accept-current
-```
-
-### Running a Single Test
+真实模型的最小 `.env` 示例:
 
 ```bash
-go test ./internal/session/... -run TestComputeKeyDMThreadIgnored -v
-go test ./internal/config/... -run TestLoad -v
-go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
-go test ./tests/e2e/... -run SmokeV1 -v -count=1
-```
-
-### Build / Run
-
-```bash
-# Init workspace
-go run ./cmd/simiclaw init --workspace ./workspace
-
-# Start server
-go run ./cmd/simiclaw serve --workspace ./workspace --listen :8080
-
-# Chat CLI
-go run ./cmd/simiclaw chat --base-url http://127.0.0.1:8080
-```
-
-### Real LLM Example
-
-```bash
-cat > .env <<'EOF'
 OPENAI_API_KEY=your-api-key
 OPENAI_BASE_URL=https://api.deepseek.com
 LLM_MODEL=openai/deepseek-chat
-EOF
 ```
 
-Legacy aliases `LLM_API_KEY` / `LLM_BASE_URL` are also accepted.
+兼容旧别名 `LLM_API_KEY` / `LLM_BASE_URL`。
 
----
+## Repo Map
 
-## Project Layout
+- `cmd/simiclaw/`: CLI 入口与子命令，含 `serve`, `init`, `chat`, `inspect`, `version`, `completion`
+- `internal/bootstrap/`: 应用装配与进程生命周期
+- `internal/gateway/` + `internal/ingest/`: 写路径入口、校验、限流、幂等与 session scope 解析
+- `internal/runtime/` + `internal/runner/`: EventLoop、worker、LLM 执行、工具回合与最终提交
+- `internal/store/`: SQLite 初始化、schema、读写事务与恢复
+- `internal/query/` + `internal/httpapi/`: 查询模型与 HTTP 读接口
+- `internal/prompt/` + `internal/memory/` + `internal/tools/`: prompt 组装、memory、tool surface
+- `internal/workspace/` + `internal/workspacefile/`: 工作区脚手架与安全文件边界
+- `pkg/`: 对外稳定契约，尤其是 `pkg/api`
+- `web/`: React + Vite 前端
+- `tests/`: `architecture`, `integration`, `e2e`
+- `docs/`: 文档系统入口、设计索引、参考资料、执行计划、质量评分
 
-```text
-cmd/simiclaw/           CLI entry point; subcommands: init, serve/gateway, chat, inspect, version, completion
-  internal/             CLI-internal packages (chat, gateway, initcmd, inspect, version, common)
-pkg/
-  api/                  Stable HTTP / SSE / CLI wire models
-  logging/              Thin zap wrapper
-  model/                Shared cross-package types only
-internal/
-  bootstrap/            App wiring, dependency assembly, process lifecycle
-  channels/             CLI / Telegram adapters; depends on gateway and narrow runtime ports
-  config/               Config struct, defaults, env/file loading
-  gateway/              HTTP ingest validation, rate limit, responses
-  httpapi/              HTTP routes, handlers, auth, pagination
-  memory/               Workspace memory read/write helpers
-  outbound/             Outbound sender interface
-  prompt/               Prompt builder orchestration
-  provider/             LLMProvider abstraction, fake provider, OpenAI-compatible provider
-  query/                Read-side query service for events / runs / sessions
-    model/              Query-internal filters, cursors, pages, and read DTOs
-  runner/               Provider-driven runtime execution
-    model/              Runner-internal prompt history and retrieval DTOs
-  runtime/              EventLoop, workers, supervisor lifecycle
-    model/              Runtime-internal event loop / worker port DTOs
-  session/              Session key computation
-  readmodel/            Store-internal read projections only
-  store/                SQLite bootstrapping, schema, queries, repo
-  systemprompt/         Embedded runtime system prompt fragments
-  tools/                Tools / skills execution surface
-  workspace/            Workspace scaffold and template creation
-  workspacefile/        Workspace-safe path, patch, delete, and atomic file helpers
-tests/
-  integration/          In-process integration tests
-  e2e/                  End-to-end smoke tests
-```
+## Must-Know Invariants
 
----
+1. SQLite 是唯一事实源；`sessions` 只是派生缓存。
+2. 所有写事务必须经过单 writer；真实出站发送只能发生在 outbox 持久化提交之后。
+3. Gateway 必须先持久化 event，再尝试入队；`POST /v1/events:ingest` 必须显式提供 `idempotency_key`。
+4. EventLoop 采用两阶段处理：先 claim event 并创建 `runs(started)`，再在事务外执行 LLM / tools，最后一次性提交 messages、runs、sessions、events、outbox、jobs。
+5. event 只有在 claim 成功后才能进入 `processing`。
+6. `payload.type in {memory_flush, compaction, cron_fire}` 必须走 `RunModeNoReply`。
+7. FTS 仅由 SQLite trigger 维护，不在应用层手工同步。
+8. workspace 运行时只允许 `memory/`、`runtime/app.db` 和 `runtime/native/`；旧文件式 runtime 痕迹必须拒绝或迁移清理。
 
-## Code Style
+## Read Next
 
-- Standard `gofmt` formatting; run `make fmt` before committing.
-- Use the standard `testing` package only.
-- Keep imports ordered as stdlib first, then project packages.
-- External wire contracts belong in `pkg/api`; shared stable domain/runtime types belong in `pkg/model`.
-- Subsystem-local port DTOs belong in the consuming package under `internal/<subsystem>/model`.
-- `internal/readmodel` is reserved for `internal/store` internals and should not be imported elsewhere.
-- `internal/channels` and `internal/workspace` should depend on narrow interfaces or internal helpers instead of `internal/store`.
-- Use `time.Now().UTC()` everywhere.
-- Use `map[string]any` for flexible payload/details fields.
-- Keep interfaces minimal and define them where consumed.
-
----
-
-## Runtime Invariants
-
-1. SQLite is the only source of truth.
-2. All write transactions go through the single writer handle.
-3. Gateway must persist the event before enqueueing it.
-4. `POST /v1/events:ingest` requires an explicit `idempotency_key`.
-5. An event reaches `processing` only after a successful claim transaction.
-6. The EventLoop uses two-phase processing:
-   1. claim event + create `runs(started)`
-   2. execute LLM/tools outside the write transaction
-   3. commit messages/runs/sessions/events/outbox/jobs in one result transaction
-7. Real outbound sending must happen after outbox persistence commits.
-8. `sessions` is a derived cache, not the fact source.
-9. FTS is maintained only by SQLite triggers.
-10. `payload.type in {memory_flush, compaction, cron_fire}` must use `RunModeNoReply`.
-
----
-
-## Workspace Layout
-
-Only these runtime paths should be created under a workspace:
-
-```text
-workspace/
-  memory/
-  runtime/
-    app.db
-    native/
-```
-
-Legacy file-runtime traces such as `sessions.json`, `runtime/approvals`, `runtime/outbound_spool`, and `workspace/evolution` must be rejected or removed during migration to the SQLite runtime.
+- 系统总览: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- 文档首页: [`docs/index.md`](docs/index.md)
+- 运行链路: [`docs/design-docs/runtime-flow.md`](docs/design-docs/runtime-flow.md)
+- 模块边界: [`docs/design-docs/module-boundaries.md`](docs/design-docs/module-boundaries.md)
+- Prompt / Workspace 上下文: [`docs/design-docs/prompt-and-workspace-context.md`](docs/design-docs/prompt-and-workspace-context.md)
+- 配置与环境变量: [`docs/references/configuration.md`](docs/references/configuration.md)
+- 测试矩阵: [`docs/references/testing.md`](docs/references/testing.md)
+- 工作区布局: [`docs/references/workspace-layout.md`](docs/references/workspace-layout.md)

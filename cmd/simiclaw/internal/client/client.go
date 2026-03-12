@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/pkg/api"
-
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
