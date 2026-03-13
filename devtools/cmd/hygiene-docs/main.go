@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/similarityyoung/simiclaw/internal/hygiene"
+	"github.com/similarityyoung/simiclaw/devtools/hygiene"
 )
 
 func main() {

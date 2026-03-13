@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/similarityyoung/simiclaw/internal/guardrails"
+	"github.com/similarityyoung/simiclaw/devtools/guardrails"
 )
 
 func main() {

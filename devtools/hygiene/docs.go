@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/guardrails"
+	"github.com/similarityyoung/simiclaw/devtools/guardrails"
 )
 
 const (

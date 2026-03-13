@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/similarityyoung/simiclaw/internal/guardrails"
+	"github.com/similarityyoung/simiclaw/devtools/guardrails"
 )
 
 func TestRewriteMarkedBlockRequiresSingleMarkerPair(t *testing.T) {

@@ -6,7 +6,7 @@ GUARDRAILS_ALLOWLIST := .github/guardrails/allowlist.yaml
 GUARDRAILS_REPORT ?= /tmp/simiclaw-guardrails-report.json
 MARKDOWN_TARGETS := "./*.md" "./docs/**/*.md"
 
-.PHONY: fmt fmt-check vet lint lint-ci test-architecture test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1 accept-v1-alpha accept-current web-ci docs-style docs-links guardrails-check guardrails-report guardrails-baseline-refresh
+.PHONY: fmt fmt-check vet lint lint-ci test-architecture test-unit test-devtools test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1 accept-v1-alpha accept-current web-ci docs-style docs-links guardrails-check guardrails-report guardrails-baseline-refresh
 
 fmt:
 	@find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -w
@@ -46,12 +46,15 @@ test-architecture:
 
 test-unit:
 	@if go tool | grep -qx 'covdata'; then \
-		go test ./cmd/... ./internal/... ./pkg/... ./tools/... -coverprofile=/tmp/simiclaw-unit.cover; \
+		go test ./cmd/... ./internal/... ./pkg/... -coverprofile=/tmp/simiclaw-unit.cover; \
 		go tool cover -func=/tmp/simiclaw-unit.cover | tail -n 1; \
 	else \
 		echo "covdata not available, running unit tests without coverage profile"; \
-		go test ./cmd/... ./internal/... ./pkg/... ./tools/...; \
+		go test ./cmd/... ./internal/... ./pkg/...; \
 	fi
+
+test-devtools:
+	go test ./devtools/...
 
 test-unit-race-core:
 	@for pkg in $(CORE_PKGS); do \
@@ -97,17 +100,17 @@ docs-links:
 
 guardrails-check:
 	@if [[ -n "$$GUARDRAILS_BASE" && -n "$$GUARDRAILS_HEAD" ]]; then \
-		go run ./tools/ci-guardrails check --scope pr --base "$$GUARDRAILS_BASE" --head "$$GUARDRAILS_HEAD" --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)"; \
+		go run ./devtools/cmd/ci-guardrails check --scope pr --base "$$GUARDRAILS_BASE" --head "$$GUARDRAILS_HEAD" --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)"; \
 	else \
-		go run ./tools/ci-guardrails check --scope repo --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)"; \
+		go run ./devtools/cmd/ci-guardrails check --scope repo --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)"; \
 	fi
 
 guardrails-report:
-	go run ./tools/ci-guardrails check --scope repo --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)" --json "$(GUARDRAILS_REPORT)"
+	go run ./devtools/cmd/ci-guardrails check --scope repo --baseline "$(GUARDRAILS_BASELINE)" --allowlist "$(GUARDRAILS_ALLOWLIST)" --json "$(GUARDRAILS_REPORT)"
 
 guardrails-baseline-refresh:
 	$(MAKE) guardrails-report
-	go run ./tools/ci-guardrails baseline sync --report "$(GUARDRAILS_REPORT)" --baseline "$(GUARDRAILS_BASELINE)"
+	go run ./devtools/cmd/ci-guardrails baseline sync --report "$(GUARDRAILS_REPORT)" --baseline "$(GUARDRAILS_BASELINE)"
 
 accept-v1: test-unit test-unit-race-core test-integration test-e2e-smoke
 	@echo "accept-v1 passed"

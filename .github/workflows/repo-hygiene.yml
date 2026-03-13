@@ -42,7 +42,7 @@ jobs:
             './docs/**/*.md'
       - name: Update machine-managed docs
         run: |
-          go run ./tools/hygiene-docs \
+          go run ./devtools/cmd/hygiene-docs \
             --guardrails-report reports/guardrails.json \
             --links-status "${{ steps.docs_links.outcome }}" \
             --links-report reports/docs-links.md \

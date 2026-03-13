@@ -13,7 +13,8 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 | 静态分析 | `make vet` | `go vet ./...` |
 | Lint | `make lint-ci` | 运行固定配置的 `golangci-lint` |
 | 架构测试 | `make test-architecture` | 跑 `./tests/architecture/...`，保护依赖方向和结构边界 |
-| 单元测试 | `make test-unit` | 跑 `./cmd/... ./internal/... ./pkg/... ./tools/...`，尽可能带 coverage |
+| 单元测试 | `make test-unit` | 跑 `./cmd/... ./internal/... ./pkg/...`，尽可能带 coverage |
+| Devtools 测试 | `make test-devtools` | 跑 `./devtools/...`，单独覆盖 CI / 仓库养护代码 |
 | 核心 race | `make test-unit-race-core` | 只对 `gateway/runtime/session/store` 跑 `-race` |
 | 集成测试 | `make test-integration` | `./tests/integration/...`，使用 `integration` build tag |
 | E2E smoke | `make test-e2e-smoke` | 根据 `VERSION_STAGE` 选择 `SmokeV1` 或 `SmokeV1Alpha` |
@@ -42,6 +43,7 @@ go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycl
 go test ./tests/e2e/... -run SmokeV1 -v -count=1
 go test ./tests/architecture/... -v
 make docs-style
+make test-devtools
 make guardrails-check
 ```
 
@@ -50,7 +52,7 @@ make guardrails-check
 - `VERSION_STAGE` 当前为 `V1`
 - `make test-e2e-smoke` 和 `make accept-current` 都会读取这个文件决定跑哪一套 smoke / acceptance
 - 对文档和架构层改动，最小建议是至少跑 `go test ./tests/architecture/... -v`
-- 对 skill、docs、CI 配置改动，最小建议是再补 `make docs-style`
+- 对 docs、CI 配置或 `devtools/` 改动，最小建议是补 `make docs-style` 和 `make test-devtools`
 - Guardrails 与 baseline 变更前，先跑 `make guardrails-check` 或 `make guardrails-report`
 
 ## Verification
