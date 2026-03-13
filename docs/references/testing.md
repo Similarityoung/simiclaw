@@ -20,7 +20,7 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 | 全量 E2E | `make test-e2e` | `./tests/e2e/... -count=1` |
 | 当前阶段验收 | `make accept-current` | 根据 `VERSION_STAGE` 选择对应 acceptance 组合 |
 | 前端 CI | `make web-ci` | 安装 `web/` 依赖并执行 build/test |
-| 文档样式 | `make docs-style` | 跑 markdownlint 和 skill frontmatter 校验 |
+| 文档样式 | `make docs-style` | 跑仓库 Markdown 文档样式检查 |
 | 链接检查 | `make docs-links` | 使用 lychee 跑严格链接检查 |
 | Guardrails 检查 | `make guardrails-check` | 跑 repo 守则扫描，默认按 repo 范围比较 baseline |
 | Guardrails 报告 | `make guardrails-report` | 生成 repo 守则 JSON 报告 |

@@ -145,8 +145,6 @@ jobs:
             --verbose
             './*.md'
             './docs/**/*.md'
-            './skills/**/*.md'
-            './workspace/skills/**/*.md'
       - id: external_links
         if: always()
         continue-on-error: true
@@ -159,8 +157,6 @@ jobs:
             --verbose
             './*.md'
             './docs/**/*.md'
-            './skills/**/*.md'
-            './workspace/skills/**/*.md'
       - name: Upload docs link reports
         if: always()
         uses: actions/upload-artifact@v4

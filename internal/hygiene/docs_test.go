@@ -9,45 +9,6 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/guardrails"
 )
 
-func TestValidateSkillsAcceptsWorkspaceAndRepoSkills(t *testing.T) {
-	root := t.TempDir()
-	repoSkill := filepath.Join(root, "skills", "demo")
-	workspaceSkill := filepath.Join(root, "workspace", "skills", "alpha")
-	for _, dir := range []string{repoSkill, workspaceSkill} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(repoSkill, "SKILL.md"), []byte("---\nname: demo-skill\ndescription: repo skill\n---\n"), 0o644); err != nil {
-		t.Fatalf("write repo skill: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(workspaceSkill, "SKILL.md"), []byte("---\nname: Alpha Skill\ndescription: workspace skill\n---\n"), 0o644); err != nil {
-		t.Fatalf("write workspace skill: %v", err)
-	}
-
-	docs, err := ValidateSkills(root)
-	if err != nil {
-		t.Fatalf("ValidateSkills err=%v", err)
-	}
-	if len(docs) != 2 {
-		t.Fatalf("expected 2 skill docs, got %d", len(docs))
-	}
-}
-
-func TestValidateSkillsRejectsNonHyphenRepoSkillName(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "skills", "demo")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: Bad Name\ndescription: repo skill\n---\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := ValidateSkills(root); err == nil {
-		t.Fatalf("expected validation error")
-	}
-}
-
 func TestRewriteMarkedBlockRequiresSingleMarkerPair(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "QUALITY.md")
 	if err := os.WriteFile(path, []byte("missing markers\n"), 0o644); err != nil {

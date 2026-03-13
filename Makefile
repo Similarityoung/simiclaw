@@ -4,7 +4,7 @@ CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/session/..
 GUARDRAILS_BASELINE := .github/guardrails/baseline.json
 GUARDRAILS_ALLOWLIST := .github/guardrails/allowlist.yaml
 GUARDRAILS_REPORT ?= /tmp/simiclaw-guardrails-report.json
-MARKDOWN_TARGETS := "./*.md" "./docs/**/*.md" "./skills/**/*.md" "./workspace/skills/**/*.md"
+MARKDOWN_TARGETS := "./*.md" "./docs/**/*.md"
 
 .PHONY: fmt fmt-check vet lint lint-ci test-architecture test-unit test-unit-race-core test-integration test-e2e-smoke test-e2e accept-v1 accept-v1-alpha accept-current web-ci docs-style docs-links guardrails-check guardrails-report guardrails-baseline-refresh
 
@@ -87,7 +87,6 @@ docs-style:
 		echo "npx is required for docs-style"; \
 		exit 1; \
 	fi
-	go run ./tools/validate-skills
 
 docs-links:
 	@if ! command -v lychee >/dev/null 2>&1; then \

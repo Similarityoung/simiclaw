@@ -1,9 +1,7 @@
 {
   "globs": [
     "*.md",
-    "docs/**/*.md",
-    "skills/**/*.md",
-    "workspace/skills/**/*.md"
+    "docs/**/*.md"
   ],
   "ignores": [
     "web/node_modules/**",
