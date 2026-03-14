@@ -19,13 +19,13 @@ const (
 )
 
 type UpdateDocsConfig struct {
-	Root               string
-	GuardrailsReport   string
-	QualityDoc         string
-	TechDebtDoc        string
-	LinksStatus        string
-	LinksReport        string
-	PRBody             string
+	Root             string
+	GuardrailsReport string
+	QualityDoc       string
+	TechDebtDoc      string
+	LinksStatus      string
+	LinksReport      string
+	PRBody           string
 }
 
 func UpdateDocs(cfg UpdateDocsConfig) error {
