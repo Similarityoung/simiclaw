@@ -67,8 +67,8 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           branch: ci/repo-hygiene
-          title: chore: repo hygiene report
-          commit-message: chore: update repo hygiene report
+          title: "chore: repo hygiene report"
+          commit-message: "chore: update repo hygiene report"
           body-path: reports/pr-body.md
           add-paths: |
             docs/QUALITY_SCORE.md
