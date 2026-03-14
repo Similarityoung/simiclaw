@@ -1,0 +1,95 @@
+name: repo-hygiene
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # 仓库养护任务只保留一份进行中的实例。
+  group: repo-hygiene
+  cancel-in-progress: true
+
+permissions:
+  # 需要写仓库和 PR 权限来更新机器维护的文档 PR。
+  contents: write
+  pull-requests: write
+
+jobs:
+  # 定时生成仓库质量快照，并在需要时自动更新养护 PR。
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      # 养护任务依赖完整历史，便于生成准确的报告与 PR。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # guardrails 报告和文档生成都依赖 Go 环境。
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 统一把中间产物与报告写到 reports/。
+      - run: mkdir -p reports
+      # 先生成 repo 级 guardrails JSON 报告，供后续文档渲染使用。
+      - name: Guardrails repo report
+        run: make guardrails-report
+        env:
+          GUARDRAILS_REPORT: ${{ github.workspace }}/reports/guardrails.json
+      # 严格执行文档链接检查，但先允许流程继续，最后统一决定是否失败。
+      - id: docs_links
+        name: Strict docs links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          format: markdown
+          output: reports/docs-links.md
+          args: >-
+            --config .lychee.toml
+            --verbose
+            './*.md'
+            './docs/**/*.md'
+      # 根据 guardrails 和链接结果更新机器维护的文档区块与 PR 描述。
+      - name: Update machine-managed docs
+        run: |
+          go run ./devtools/cmd/hygiene-docs \
+            --guardrails-report reports/guardrails.json \
+            --links-status "${{ steps.docs_links.outcome }}" \
+            --links-report reports/docs-links.md \
+            --pr-body reports/pr-body.md
+      # 上传报告，便于后续审阅和排障。
+      - name: Upload hygiene artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-hygiene
+          path: reports/
+      # 以固定分支维护一条 repo hygiene PR，承载机器生成的文档更新。
+      - name: Create or update hygiene PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ci/repo-hygiene
+          title: "chore: repo hygiene report"
+          commit-message: "chore: update repo hygiene report"
+          body-path: reports/pr-body.md
+          add-paths: |
+            docs/QUALITY_SCORE.md
+            docs/exec-plans/tech-debt-tracker.md
+      # 把本轮养护摘要直接写到 Actions 页面。
+      - name: Publish job summary
+        if: always()
+        run: |
+          {
+            echo "## Repo Hygiene"
+            echo
+            echo "- Guardrails report: reports/guardrails.json"
+            echo "- Docs links: ${{ steps.docs_links.outcome }}"
+            if [[ -f reports/docs-links.md ]]; then
+              echo
+              echo "### Docs Links Preview"
+              echo
+              sed -n '1,40p' reports/docs-links.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      # 严格模式下，如果链接检查失败，最后让 workflow 明确失败。
+      - name: Fail workflow on strict docs link regression
+        if: steps.docs_links.outcome == 'failure'
+        run: exit 1

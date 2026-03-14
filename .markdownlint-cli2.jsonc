@@ -1,0 +1,16 @@
+{
+  "globs": [
+    "*.md",
+    "docs/**/*.md"
+  ],
+  "ignores": [
+    "web/node_modules/**",
+    "node_modules/**"
+  ],
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD033": false,
+    "MD041": false
+  }
+}

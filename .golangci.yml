@@ -1,0 +1,14 @@
+version: "2"
+
+run:
+  tests: true
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - ineffassign
+    - unused
+
+issues:
+  max-same-issues: 0

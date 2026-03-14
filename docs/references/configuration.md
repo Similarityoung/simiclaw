@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | `workspace` | 工作区根目录 | `"."` |
 | `listen_addr` | HTTP 监听地址 | `:8080` |
-| `log_level` | 日志级别 | `info`，仅允许 `debug|info|warn|error` |
+| `log_level` | 日志级别 | `info`，仅允许 `debug\|info\|warn\|error` |
 | `api_key` | HTTP Bearer 鉴权口令 | 默认空；非空时保护所有 `/v1/**` 路由 |
 | `tenant_id` | session key 与限流维度 | `local` |
 | `event_queue_capacity` | EventLoop 队列长度 | `1024` |
@@ -60,7 +60,7 @@
 | `--base-url` / `SIMICLAW_BASE_URL` | 服务端基地址 | `http://127.0.0.1:8080` |
 | `--api-key` / `SIMICLAW_API_KEY` | 客户端 Bearer token | 空 |
 | `--timeout` / `SIMICLAW_TIMEOUT` | 请求超时 | `10s` |
-| `--output` / `SIMICLAW_OUTPUT` | 输出格式 `table|json` | 终端默认 `table`，非终端默认 `json` |
+| `--output` / `SIMICLAW_OUTPUT` | 输出格式 `table\|json` | 终端默认 `table`，非终端默认 `json` |
 | `--no-color` / `SIMICLAW_NO_COLOR` / `NO_COLOR` | 关闭颜色输出 | `false` |
 | `--verbose` / `SIMICLAW_VERBOSE` | 打开详细模式 | `false` |
 

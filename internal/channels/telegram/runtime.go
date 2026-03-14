@@ -15,11 +15,6 @@ import (
 
 const runtimeHeartbeatInterval = 10 * time.Second
 
-type runtimeOptions struct {
-	apiURL string
-	client *http.Client
-}
-
 type runtimeTestHooks struct {
 	mu     sync.RWMutex
 	apiURL string

@@ -3,21 +3,281 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+
+concurrency:
+  # 同一条 PR 或分支只保留最新一轮 CI，避免重复占用 runner。
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # 默认只需要只读仓库内容权限。
+  contents: read
 
 jobs:
-  test:
+  # 检查 Go 源码是否已经过格式化。
+  go-format:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 拉取代码并安装与仓库匹配的 Go 版本。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 只检查格式，不在 CI 中自动改写文件。
+      - run: make fmt-check
+
+  # 运行基础静态检查与 golangci-lint。
+  go-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 先准备源码和 Go 环境。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 先跑 go vet，尽早发现明显问题。
+      - run: make vet
+      # 再运行仓库约定的 golangci-lint 规则集。
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6.1
+          args: --config .golangci.yml ./...
+
+  # 保护架构边界与依赖方向。
+  go-architecture:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make fmt
-      - run: make vet
-      - run: make lint
+      # 专门执行 tests/architecture 下的约束测试。
+      - run: make test-architecture
+
+  # 运行主项目单元测试，不包含 devtools。
+  go-unit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 覆盖 cmd/internal/pkg 三个主项目代码面。
       - run: make test-unit
+
+  # 对核心并发路径运行 race 检查。
+  go-race-core:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 只挑关键包跑 -race，控制耗时同时保住高风险区域。
       - run: make test-unit-race-core
+
+  # 运行带 integration tag 的集成测试。
+  go-integration:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 校验运行时生命周期与外部集成链路。
       - run: make test-integration
+
+  # 跑当前阶段要求的 E2E smoke。
+  go-e2e-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 根据 VERSION_STAGE 自动选择对应 smoke 集合。
       - run: make test-e2e-smoke
+
+  # 构建并测试前端工程。
+  web:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 准备源码与 Node 运行环境，并复用 npm 缓存。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # 在 web/ 下执行安装、构建和测试。
+      - run: make web-ci
+
+  # 校验仓库 Markdown 文档样式。
+  docs-style:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 这里只需要源码和 Node 环境即可。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 运行 markdownlint 等文档样式检查。
+      - run: make docs-style
+
+  # 单独校验 devtools 下的 CI/仓库养护代码。
+  devtools:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 避免 devtools 回归被主项目 test-unit 掩盖。
+      - run: make test-devtools
+
+  # 执行 guardrails 守则扫描，只关注项目本体代码。
+  guardrails:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 需要完整历史来计算 PR 相对 base/head 的差异。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 使用 PR 的 base/head 范围执行增量守则检查。
+      - run: make guardrails-check
+        env:
+          GUARDRAILS_BASE: ${{ github.event.pull_request.base.sha }}
+          GUARDRAILS_HEAD: ${{ github.event.pull_request.head.sha }}
+
+  # 文档链接检查作为 advisory 信息输出，不阻塞主 CI。
+  docs-links-advisory:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 统一把链接检查结果写到 reports/ 目录，便于后续上传和汇总。
+      - run: mkdir -p reports
+      # 先离线检查仓库内链接，结果写进报告，但不阻塞整条 PR CI。
+      - id: internal_links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          format: markdown
+          output: reports/internal-links.md
+          args: >-
+            --config .lychee.toml
+            --offline
+            --verbose
+            './*.md'
+            './docs/**/*.md'
+      # 再检查外链，但不让外部网络波动直接打红 PR。
+      - id: external_links
+        if: always()
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          format: markdown
+          output: reports/external-links.md
+          args: >-
+            --config .lychee.toml
+            --verbose
+            './*.md'
+            './docs/**/*.md'
+      # 上传原始报告，方便在 Actions 页面回看详情。
+      - name: Upload docs link reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-links-advisory
+          path: reports/
+      # 把核心结果写进 job summary，减少点开 artifact 的频率。
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Docs Links Advisory"
+            echo
+            echo "- Internal links: ${{ steps.internal_links.outcome }}"
+            echo "- External links: ${{ steps.external_links.outcome }}"
+            echo
+            if [[ -f reports/internal-links.md ]]; then
+              echo "### Internal Links"
+              echo
+              sed -n '1,40p' reports/internal-links.md
+            fi
+            if [[ -f reports/external-links.md ]]; then
+              echo
+              echo "### External Links"
+              echo
+              sed -n '1,40p' reports/external-links.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # 汇总各个 PR 检查结果，方便在一个表格里查看整体状态。
+  ci-summary:
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    needs:
+      - go-format
+      - go-lint
+      - go-architecture
+      - go-unit
+      - go-race-core
+      - go-integration
+      - go-e2e-smoke
+      - web
+      - docs-style
+      - devtools
+      - guardrails
+      - docs-links-advisory
+    steps:
+      # 无论前面是否失败，都生成一份总览摘要。
+      - name: Summarize CI results
+        run: |
+          {
+            echo "## CI Summary"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| go-format | ${{ needs.go-format.result }} |"
+            echo "| go-lint | ${{ needs.go-lint.result }} |"
+            echo "| go-architecture | ${{ needs.go-architecture.result }} |"
+            echo "| go-unit | ${{ needs.go-unit.result }} |"
+            echo "| go-race-core | ${{ needs.go-race-core.result }} |"
+            echo "| go-integration | ${{ needs.go-integration.result }} |"
+            echo "| go-e2e-smoke | ${{ needs.go-e2e-smoke.result }} |"
+            echo "| web | ${{ needs.web.result }} |"
+            echo "| docs-style | ${{ needs.docs-style.result }} |"
+            echo "| devtools | ${{ needs.devtools.result }} |"
+            echo "| guardrails | ${{ needs.guardrails.result }} |"
+            echo "| docs-links-advisory | ${{ needs.docs-links-advisory.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # main 分支合入后跑当前阶段的完整验收组合。
+  accept-current-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      # push 到 main 时需要重新准备源码和 Go 环境。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # 使用 VERSION_STAGE 选择当前阶段对应的 acceptance。
       - run: make accept-current

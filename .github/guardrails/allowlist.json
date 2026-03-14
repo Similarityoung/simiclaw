@@ -1,0 +1,47 @@
+{
+  "entries": [
+    {
+      "rule_id": "context-background",
+      "file": "cmd/simiclaw/internal/gateway/command.go",
+      "start_line": 69,
+      "reason": "signal root context"
+    },
+    {
+      "rule_id": "context-background",
+      "file": "cmd/simiclaw/internal/chat/tui.go",
+      "start_line": 623,
+      "end_line": 712,
+      "reason": "interactive TUI entrypoint contexts"
+    },
+    {
+      "rule_id": "context-background",
+      "file": "internal/channels/telegram/runtime.go",
+      "symbol": "(*Runtime).Start",
+      "reason": "telegram runtime lifecycle root"
+    },
+    {
+      "rule_id": "context-background",
+      "file": "internal/runtime/eventloop.go",
+      "start_line": 47,
+      "reason": "event loop lifecycle root"
+    },
+    {
+      "rule_id": "context-background",
+      "file": "internal/runtime/workers.go",
+      "start_line": 65,
+      "reason": "supervisor lifecycle root"
+    },
+    {
+      "rule_id": "context-background",
+      "file": "internal/bootstrap/app.go",
+      "start_line": 119,
+      "reason": "http shutdown fallback context"
+    },
+    {
+      "rule_id": "writefile",
+      "file": "internal/memory/writer.go",
+      "start_line": 84,
+      "reason": "memory canonical file initialization"
+    }
+  ]
+}
