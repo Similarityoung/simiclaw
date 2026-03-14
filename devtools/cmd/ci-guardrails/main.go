@@ -31,7 +31,7 @@ func runCheck(args []string) {
 	base := fs.String("base", "", "base git SHA for pr scope")
 	head := fs.String("head", "", "head git SHA for pr scope")
 	baseline := fs.String("baseline", filepath.ToSlash(".github/guardrails/baseline.json"), "baseline file")
-	allowlist := fs.String("allowlist", filepath.ToSlash(".github/guardrails/allowlist.yaml"), "allowlist file")
+	allowlist := fs.String("allowlist", filepath.ToSlash(".github/guardrails/allowlist.json"), "allowlist JSON file")
 	jsonOut := fs.String("json", "", "optional JSON report output")
 	fs.Parse(args)
 

@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/session/... ./internal/store/...
 GUARDRAILS_BASELINE := .github/guardrails/baseline.json
-GUARDRAILS_ALLOWLIST := .github/guardrails/allowlist.yaml
+GUARDRAILS_ALLOWLIST := .github/guardrails/allowlist.json
 GUARDRAILS_REPORT ?= /tmp/simiclaw-guardrails-report.json
 MARKDOWN_TARGETS := "./*.md" "./docs/**/*.md"
 

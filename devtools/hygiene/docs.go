@@ -26,7 +26,6 @@ type UpdateDocsConfig struct {
 	LinksStatus        string
 	LinksReport        string
 	PRBody             string
-	QualityGeneratedAt time.Time
 }
 
 func UpdateDocs(cfg UpdateDocsConfig) error {
