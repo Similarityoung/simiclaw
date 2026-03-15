@@ -24,6 +24,7 @@
 ### 参考资料
 
 - [`references/configuration.md`](references/configuration.md): 服务端配置、环境变量和 HTTP 鉴权
+- [`references/current-prompt-templates.md`](references/current-prompt-templates.md): 当前生效的提示词模板、动态 section 和运行时变体
 - [`references/testing.md`](references/testing.md): 测试矩阵、命令和阶段验收入口
 - [`references/workspace-layout.md`](references/workspace-layout.md): 工作区布局、scaffold 文件和路径约束
 
@@ -54,3 +55,4 @@
 - 如果你要改 runtime，接着读 [`design-docs/runtime-flow.md`](design-docs/runtime-flow.md)。
 - 如果你要改模块依赖，先读 [`design-docs/module-boundaries.md`](design-docs/module-boundaries.md)。
 - 如果你要改工作区提示、skills、memory 或文件写工具，读 [`design-docs/prompt-and-workspace-context.md`](design-docs/prompt-and-workspace-context.md)。
+- 如果你要直接优化提示词文案或注入格式，读 [`references/current-prompt-templates.md`](references/current-prompt-templates.md)。
