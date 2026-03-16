@@ -26,12 +26,12 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 
 | Metric | Value |
 | --- | --- |
-| Last Run (UTC) | 2026-03-12T12:42:18Z |
+| Last Run (UTC) | 2026-03-16T04:54:25Z |
 | Guardrails New | 0 |
 | Guardrails Existing | 27 |
 | Shrink Candidates | 0 |
 | Warning Hotspots | 19 |
-| Docs Links | unknown |
+| Docs Links | success |
 
 ### Top Rules
 
