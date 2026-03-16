@@ -34,7 +34,24 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 
 ### Docs Links
 
-- Status: unknown
+- Status: success
+
+~~~text
+# Summary
+
+| Status         | Count |
+|----------------|-------|
+| 🔍 Total       | 67    |
+| ✅ Successful  | 0     |
+| ⏳ Timeouts    | 0     |
+| 🔀 Redirected  | 0     |
+| 👻 Excluded    | 67    |
+| ❓ Unknown     | 0     |
+| 🚫 Errors      | 0     |
+| ⛔ Unsupported | 0     |
+
+[Full Github Actions output](https://github.com/Similarityoung/simiclaw/actions/runs/23128388661?check_suite_focus=true)
+~~~
 <!-- END:CI_TECH_DEBT -->
 
 ## Notes
