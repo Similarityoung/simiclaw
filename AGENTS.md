@@ -53,6 +53,7 @@ LLM_MODEL=openai/deepseek-chat
 
 - 系统总览: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - 文档首页: [`docs/index.md`](docs/index.md)
+- 开发宪章: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 - 运行链路: [`docs/design-docs/runtime-flow.md`](docs/design-docs/runtime-flow.md)
 - 模块边界: [`docs/design-docs/module-boundaries.md`](docs/design-docs/module-boundaries.md)
 - Prompt / Workspace 上下文: [`docs/design-docs/prompt-and-workspace-context.md`](docs/design-docs/prompt-and-workspace-context.md)
