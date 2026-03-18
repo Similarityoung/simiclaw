@@ -12,12 +12,6 @@ import (
 const payloadTypeMetaKey = "payload_type"
 const payloadTypeNewSession = "new_session"
 
-var cronFireAllowedTools = map[string]struct{}{
-	"memory_search": {},
-	"memory_get":    {},
-	"context_get":   {},
-}
-
 var cronFireToolBudgets = map[string]int{
 	"memory_search": 1,
 	"memory_get":    1,
@@ -83,15 +77,4 @@ func toolRisk(name string) string {
 	default:
 		return "low"
 	}
-}
-
-func runModeForPayload(payloadType string) model.RunMode {
-	if isNoReplyPayload(payloadType) {
-		return model.RunModeNoReply
-	}
-	return model.RunModeNormal
-}
-
-func isNoReplyPayload(payloadType string) bool {
-	return payloadType == "memory_flush" || payloadType == "compaction" || payloadType == "cron_fire"
 }

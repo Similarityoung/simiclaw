@@ -56,8 +56,8 @@
 
 - [X] T013 [US1] 将 `internal/runtime/eventloop.go` 的主执行编排抽到 `internal/runtime/kernel/service.go`
 - [X] T014 [P] [US1] 将 claim/finalize 命令组装拆到 `internal/runtime/kernel/{claim.go,finalize.go}`
-- [ ] T015 [P] [US1] 创建 payload 分派与内置 handler：`internal/runtime/payload/{handler.go,registry.go,message.go,memory_flush.go,compaction.go,cron_fire.go}`
-- [ ] T016 [P] [US1] 将 `internal/runtime/workers.go` 拆为具名 owner：`internal/runtime/workers/{heartbeat.go,processing_recovery.go,scheduled_jobs.go,delivery_poll.go}`
+- [X] T015 [P] [US1] 创建 payload 分派与内置 handler：`internal/runtime/payload/{handler.go,registry.go,message.go,memory_flush.go,compaction.go,cron_fire.go}`
+- [X] T016 [P] [US1] 将 `internal/runtime/workers.go` 拆为具名 owner：`internal/runtime/workers/{heartbeat.go,processing_recovery.go,scheduled_jobs.go,delivery_poll.go}`
 - [ ] T017 [US1] 通过 `internal/store/tx/{claim_work.go,finalize_run.go,...}` 接回事实层，不再让 kernel 直接感知 `store` 行级结构
 - [ ] T018 [US1] 更新 `internal/bootstrap/app.go`，让 runtime 通过 kernel contracts 装配，并收敛旧 `eventloop` 入口
 - [X] T019 [US1] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、必要时 `make accept-current`
