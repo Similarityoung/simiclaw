@@ -17,9 +17,9 @@
 
 **Purpose**: 建立目标目录骨架和第一层守护测试，确保后续重构有清晰落点
 
-- [ ] T001 创建目标目录与包注释骨架：`internal/runtime/{kernel,payload,workers,lanes,model}`、`internal/gateway/{bindings,routing,model}`、`internal/http/{ingest,query,stream,middleware}`、`internal/store/{tx,projections,queries}`、`internal/runner/{context,tools,model}`
-- [ ] T002 [P] 在 `tests/architecture/runtime_kernel_boundaries_test.go` 与 `tests/architecture/http_channel_boundaries_test.go` 中补充新包边界约束，禁止 `runtime/gateway/http/channels/runner/query` 直接依赖 `internal/store`
-- [ ] T003 [P] 在 `docs/design-docs/` 下创建迁移设计占位文档，例如 `docs/design-docs/runtime-kernel-refactor.md`，记录新目录 owner 与迁移顺序
+- [X] T001 创建目标目录与包注释骨架：`internal/runtime/{kernel,payload,workers,lanes,model}`、`internal/gateway/{bindings,routing,model}`、`internal/http/{ingest,query,stream,middleware}`、`internal/store/{tx,projections,queries}`、`internal/runner/{context,tools,model}`
+- [X] T002 [P] 在 `tests/architecture/runtime_kernel_boundaries_test.go` 与 `tests/architecture/http_channel_boundaries_test.go` 中补充新包边界约束，禁止 `runtime/gateway/http/channels/runner/query` 直接依赖 `internal/store`
+- [X] T003 [P] 在 `docs/design-docs/` 下创建迁移设计占位文档，例如 `docs/design-docs/runtime-kernel-refactor.md`，记录新目录 owner 与迁移顺序
 
 ---
 
@@ -29,9 +29,9 @@
 
 **⚠️ CRITICAL**: 本阶段完成前，不应进入任何用户故事实现
 
-- [ ] T004 定义 runtime 核心契约与 DTO：更新 `internal/runtime/model/types.go`，新增 `internal/runtime/kernel/contracts.go`
-- [ ] T005 [P] 定义 gateway 统一入口 DTO 与绑定/路由契约：`internal/gateway/model/types.go`、`internal/gateway/bindings/contracts.go`、`internal/gateway/routing/contracts.go`
-- [ ] T006 [P] 定义事实层边界与 runtime event sink 契约：`internal/runtime/kernel/facts.go`、`internal/runtime/kernel/events.go`
+- [X] T004 定义 runtime 核心契约与 DTO：更新 `internal/runtime/model/types.go`，新增 `internal/runtime/kernel/contracts.go`
+- [X] T005 [P] 定义 gateway 统一入口 DTO 与绑定/路由契约：`internal/gateway/model/types.go`、`internal/gateway/bindings/contracts.go`、`internal/gateway/routing/contracts.go`
+- [X] T006 [P] 定义事实层边界与 runtime event sink 契约：`internal/runtime/kernel/facts.go`、`internal/runtime/kernel/events.go`
 - [ ] T007 [P] 创建事实层事务入口文件：`internal/store/tx/{ingest_event.go,claim_work.go,finalize_run.go,outbox.go,scheduled_jobs.go,recover_processing.go}`
 - [ ] T008 更新装配入口，使依赖通过契约注入：`internal/bootstrap/app.go`、`cmd/simiclaw/`
 - [ ] T009 更新架构与编译守护测试，确保新目录可单独编译：`tests/architecture/`、相关包级 `*_test.go`
@@ -48,14 +48,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] 在 `internal/runtime/kernel/kernel_test.go` 中补充 kernel 生命周期测试，覆盖 claim、execute、finalize、failure 路径
-- [ ] T011 [P] [US1] 在 `tests/integration/runtime_kernel_integration_test.go` 中补充端到端验证，确认运行不变量与持久化语义未变
+- [X] T010 [P] [US1] 在 `internal/runtime/kernel/kernel_test.go` 中补充 kernel 生命周期测试，覆盖 claim、execute、finalize、failure 路径
+- [X] T011 [P] [US1] 在 `tests/integration/runtime_kernel_integration_test.go` 中补充端到端验证，确认运行不变量与持久化语义未变
 - [ ] T012 [P] [US1] 在 `internal/runtime/kernel/kernel_race_test.go` 或现有 race 测试文件中增加 worker lifecycle / goroutine stop path 校验
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] 将 `internal/runtime/eventloop.go` 的主执行编排抽到 `internal/runtime/kernel/service.go`
-- [ ] T014 [P] [US1] 将 claim/finalize 命令组装拆到 `internal/runtime/kernel/{claim.go,finalize.go}`
+- [X] T013 [US1] 将 `internal/runtime/eventloop.go` 的主执行编排抽到 `internal/runtime/kernel/service.go`
+- [X] T014 [P] [US1] 将 claim/finalize 命令组装拆到 `internal/runtime/kernel/{claim.go,finalize.go}`
 - [ ] T015 [P] [US1] 创建 payload 分派与内置 handler：`internal/runtime/payload/{handler.go,registry.go,message.go,memory_flush.go,compaction.go,cron_fire.go}`
 - [ ] T016 [P] [US1] 将 `internal/runtime/workers.go` 拆为具名 owner：`internal/runtime/workers/{heartbeat.go,processing_recovery.go,scheduled_jobs.go,delivery_poll.go}`
 - [ ] T017 [US1] 通过 `internal/store/tx/{claim_work.go,finalize_run.go,...}` 接回事实层，不再让 kernel 直接感知 `store` 行级结构

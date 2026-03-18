@@ -46,9 +46,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	if s.facts == nil || s.executor == nil {
 		return nil
 	}
-	now := s.now()
-	runID := fmt.Sprintf("run_%d_%d", now.UnixNano(), s.next())
-	claim, ok, err := s.facts.ClaimWork(ctx, work, runID, now)
+	claim, claimedAt, ok, err := s.claim(ctx, work)
 	if err != nil || !ok {
 		return err
 	}
@@ -67,7 +65,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		SessionKey: claim.SessionKey,
 		SessionID:  claim.SessionID,
 		Message:    "claimed",
-		OccurredAt: now,
+		OccurredAt: claimedAt,
 	})
 	s.publish(ctx, runtimemodel.RuntimeEvent{
 		Kind:       runtimemodel.RuntimeEventExecuting,
@@ -77,7 +75,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		SessionKey: claim.SessionKey,
 		SessionID:  claim.SessionID,
 		Message:    "running",
-		OccurredAt: now,
+		OccurredAt: claimedAt,
 	})
 
 	result, runErr := s.execute(ctx, claim)
@@ -132,7 +130,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	})
 	logger.Info("completed",
 		logging.String("status", string(finalize.EventStatus)),
-		logging.Int64("latency_ms", time.Since(now).Milliseconds()),
+		logging.Int64("latency_ms", time.Since(claimedAt).Milliseconds()),
 	)
 	return nil
 }
@@ -147,75 +145,6 @@ func (s *Service) execute(ctx context.Context, claim runtimemodel.ClaimContext) 
 		}
 	}()
 	return s.executor.Execute(ctx, claim, s.events)
-}
-
-func (s *Service) buildFinalize(claim runtimemodel.ClaimContext, result runtimemodel.ExecutionResult, runErr error) runtimemodel.FinalizeCommand {
-	now := s.now()
-	finalize := runtimemodel.FinalizeCommand{
-		RunID:             claim.RunID,
-		EventID:           claim.Event.EventID,
-		SessionKey:        claim.SessionKey,
-		SessionID:         claim.SessionID,
-		RunMode:           result.RunMode,
-		RunStatus:         model.RunStatusCompleted,
-		EventStatus:       model.EventStatusProcessed,
-		Provider:          result.Provider,
-		Model:             result.Model,
-		PromptTokens:      result.PromptTokens,
-		CompletionTokens:  result.CompletionTokens,
-		TotalTokens:       result.TotalTokens,
-		LatencyMS:         result.LatencyMS,
-		FinishReason:      result.FinishReason,
-		RawFinishReason:   result.RawFinishReason,
-		ProviderRequestID: result.ProviderRequestID,
-		OutputText:        result.OutputText,
-		ToolCalls:         result.ToolCalls,
-		Diagnostics:       result.Diagnostics,
-		Now:               now,
-	}
-	if finalize.RunMode == "" {
-		finalize.RunMode = claim.RunMode
-	}
-	for _, msg := range result.OutputMessages {
-		finalize.Messages = append(finalize.Messages, runtimemodel.StoredMessage{
-			MessageID:  s.messageID(now),
-			SessionKey: claim.SessionKey,
-			SessionID:  claim.SessionID,
-			RunID:      claim.RunID,
-			Role:       msg.Role,
-			Content:    msg.Content,
-			Visible:    msg.Visible,
-			ToolCalls:  msg.ToolCalls,
-			ToolCallID: msg.ToolCallID,
-			ToolName:   msg.ToolName,
-			ToolArgs:   msg.ToolArgs,
-			ToolResult: msg.ToolResult,
-			Meta:       msg.Meta,
-			CreatedAt:  now,
-		})
-	}
-	if runErr != nil {
-		finalize.RunStatus = model.RunStatusFailed
-		finalize.EventStatus = model.EventStatusFailed
-		finalize.Error = &model.ErrorBlock{
-			Code:    model.ErrorCodeInternal,
-			Message: runErr.Error(),
-		}
-		finalize.AssistantReply = ""
-		return finalize
-	}
-	if result.SuppressOutput {
-		finalize.EventStatus = model.EventStatusSuppressed
-		finalize.AssistantReply = ""
-		return finalize
-	}
-	finalize.AssistantReply = result.AssistantReply
-	if result.Delivery != nil {
-		finalize.OutboxChannel = result.Delivery.Channel
-		finalize.OutboxTargetID = result.Delivery.TargetID
-		finalize.OutboxBody = result.Delivery.Body
-	}
-	return finalize
 }
 
 func (s *Service) publish(ctx context.Context, event runtimemodel.RuntimeEvent) {
