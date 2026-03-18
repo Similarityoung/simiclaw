@@ -1,12 +1,18 @@
 package gateway
 
 import (
+	"context"
+
 	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
+type Ingestor interface {
+	Ingest(ctx context.Context, cmd ingest.Command) (ingest.Result, *ingest.Error)
+}
+
 type Service struct {
-	ingest *ingest.Service
+	ingest Ingestor
 }
 
 type AcceptedIngest struct {
@@ -15,6 +21,6 @@ type AcceptedIngest struct {
 	StatusCode int
 }
 
-func NewService(ingestService *ingest.Service) *Service {
+func NewService(ingestService Ingestor) *Service {
 	return &Service{ingest: ingestService}
 }
