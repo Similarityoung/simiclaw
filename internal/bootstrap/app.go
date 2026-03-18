@@ -10,13 +10,13 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/httpapi"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
-	"github.com/similarityyoung/simiclaw/internal/ingeststore"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 )
@@ -50,13 +50,14 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	streamHub := streaming.NewHub()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
-	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
-	ingestAdapter := ingeststore.New(db)
+	runtimeRepo := storetx.NewRuntimeRepository(db)
+	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds, streamHub)
+	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, runtime.NewHubRuntimeEventSink(streamHub, runtimeRepo), cfg.EventQueueCapacity)
 	ingestService := ingest.NewService(
 		cfg.TenantID,
-		ingestAdapter,
+		runtimeRepo,
 		eventLoop,
-		ingest.NewScopeResolver(cfg.TenantID, ingestAdapter),
+		ingest.NewScopeResolver(cfg.TenantID, runtimeRepo),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,
@@ -75,7 +76,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, db, db, ingestService, eventLoop, sender)
+	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, ingestService, eventLoop, sender)
 	server := httpapi.New(cfg, gatewayService, queryService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,

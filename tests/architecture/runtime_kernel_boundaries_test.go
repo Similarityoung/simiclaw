@@ -1,6 +1,11 @@
 package architecture
 
-import "testing"
+import (
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
 
 func TestGatewayProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/gateway")
@@ -24,4 +29,27 @@ func TestRuntimeKernelProductionCodeDoesNotImportStore(t *testing.T) {
 
 func TestRuntimeKernelProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runtime/kernel")
+}
+
+func TestStoreRootProductionCodeDoesNotImportRuntimeModel(t *testing.T) {
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, "internal/store")
+	var violations []string
+	for _, rel := range files {
+		if strings.HasPrefix(rel, "internal/store/tx/") {
+			continue
+		}
+		if fileImportsPath(t, filepath.Join(root, rel), runtimeModelPath) {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) == 0 {
+		return
+	}
+	slices.Sort(violations)
+	t.Fatalf("production code under internal/store (excluding tx) must not import %s:\n%s", runtimeModelPath, strings.Join(violations, "\n"))
+}
+
+func TestStoreTxProductionCodeDoesNotImportRuntimeRoot(t *testing.T) {
+	assertNoPackageImport(t, runtimeImportPath, "internal/store/tx")
 }

@@ -19,6 +19,10 @@ func newHubRuntimeEventSink(hub *streaming.Hub, facts kernel.Facts) kernel.Event
 	return hubRuntimeEventSink{hub: hub, facts: facts}
 }
 
+func NewHubRuntimeEventSink(hub *streaming.Hub, facts kernel.Facts) kernel.EventSink {
+	return newHubRuntimeEventSink(hub, facts)
+}
+
 func (s hubRuntimeEventSink) Publish(ctx context.Context, event runtimemodel.RuntimeEvent) error {
 	if s.hub == nil || event.EventID == "" {
 		return nil

@@ -19,6 +19,7 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	allowed := map[string]struct{}{
 		"internal/ingest/service.go":      {},
 		"internal/ingeststore/adapter.go": {},
+		"internal/store/tx/ingest_event.go": {},
 	}
 	var violations []string
 
@@ -170,6 +171,8 @@ const (
 	ingestImportPath    = "github.com/similarityyoung/simiclaw/internal/ingest"
 	readmodelImportPath = "github.com/similarityyoung/simiclaw/internal/readmodel"
 	apiImportPath       = "github.com/similarityyoung/simiclaw/pkg/api"
+	runtimeImportPath   = "github.com/similarityyoung/simiclaw/internal/runtime"
+	runtimeModelPath    = "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 func repoRoot(t *testing.T) string {

@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
@@ -12,59 +11,21 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-type eventLoopFactsAdapter struct {
-	repo EventLoopRepository
-}
-
-func (a eventLoopFactsAdapter) ListRunnable(ctx context.Context, limit int) ([]runtimemodel.WorkItem, error) {
-	ids, err := a.repo.ListRunnableEventIDs(ctx, limit)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]runtimemodel.WorkItem, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, newEventWorkItem(id))
-	}
-	return items, nil
-}
-
-func (a eventLoopFactsAdapter) ClaimWork(ctx context.Context, work runtimemodel.WorkItem, runID string, now time.Time) (runtimemodel.ClaimContext, bool, error) {
-	eventID := work.EventID
-	if eventID == "" {
-		eventID = work.Identity
-	}
-	claimed, ok, err := a.repo.ClaimLoopEvent(ctx, eventID, runID, now)
-	if err != nil || !ok {
-		return runtimemodel.ClaimContext{}, ok, err
-	}
-	channel := ""
-	if claimed.Event.Source == "telegram" {
-		channel = "telegram"
-	}
-	return runtimemodel.ClaimContext{
-		Work:       newEventWorkItem(claimed.Event.EventID),
-		Event:      claimed.Event,
-		RunID:      claimed.RunID,
-		RunMode:    claimed.RunMode,
-		SessionKey: claimed.Event.SessionKey,
-		SessionID:  claimed.Event.ActiveSessionID,
-		Source:     claimed.Event.Source,
-		Channel:    channel,
-	}, true, nil
-}
-
-func (a eventLoopFactsAdapter) Finalize(ctx context.Context, cmd runtimemodel.FinalizeCommand) error {
-	return a.repo.FinalizeLoopRun(ctx, cmd)
-}
-
-func (a eventLoopFactsAdapter) GetEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error) {
-	return a.repo.GetLoopEventRecord(ctx, eventID)
-}
-
 type runnerExecutor struct {
 	runner    runner.Runner
 	maxRounds int
 	streamHub *streaming.Hub
+}
+
+func NewRunnerExecutor(run runner.Runner, maxRounds int, streamHub *streaming.Hub) kernel.Executor {
+	if maxRounds <= 0 {
+		maxRounds = 4
+	}
+	return runnerExecutor{
+		runner:    run,
+		maxRounds: maxRounds,
+		streamHub: streamHub,
+	}
 }
 
 func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimContext, _ kernel.EventSink) (runtimemodel.ExecutionResult, error) {

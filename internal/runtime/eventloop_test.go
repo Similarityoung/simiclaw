@@ -12,6 +12,7 @@ import (
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -63,7 +64,8 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("unexpected terminal before processing: %+v", terminal)
 	}
 
-	loop := NewEventLoop(db, panicRunner{}, hub, 8, 1)
+	repo := storetx.NewRuntimeRepository(db)
+	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
 	loop.Start()
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
@@ -150,7 +152,9 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 
-	loop := NewEventLoop(db, fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, streaming.NewHub(), 8, 1)
+	hub := streaming.NewHub()
+	repo := storetx.NewRuntimeRepository(db)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
 	loop.Start()
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
@@ -184,12 +188,13 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 }
 
 func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
-	repo := &stopPathRepo{}
+	repo := &stopPathFacts{}
 	run := &stopAwareRunner{
 		started:  make(chan struct{}),
 		finished: make(chan struct{}),
 	}
-	loop := NewEventLoop(repo, run, streaming.NewHub(), 1, 1)
+	hub := streaming.NewHub()
+	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1, hub), NewHubRuntimeEventSink(hub, repo), 1)
 	loop.Start()
 
 	if !loop.TryEnqueue("evt_stop") {
@@ -250,17 +255,22 @@ func (r *stopAwareRunner) Run(ctx context.Context, _ model.InternalEvent, _ int,
 	return runner.RunOutput{RunMode: model.RunModeNormal}, ctx.Err()
 }
 
-type stopPathRepo struct {
+type stopPathFacts struct {
 	mu           sync.Mutex
 	finalizeCmds []runtimemodel.RunFinalize
 }
 
-func (r *stopPathRepo) ListRunnableEventIDs(context.Context, int) ([]string, error) {
+func (r *stopPathFacts) ListRunnable(context.Context, int) ([]runtimemodel.WorkItem, error) {
 	return nil, nil
 }
 
-func (r *stopPathRepo) ClaimLoopEvent(_ context.Context, eventID, runID string, _ time.Time) (runtimemodel.ClaimedEvent, bool, error) {
-	return runtimemodel.ClaimedEvent{
+func (r *stopPathFacts) ClaimWork(_ context.Context, work runtimemodel.WorkItem, runID string, _ time.Time) (runtimemodel.ClaimContext, bool, error) {
+	eventID := work.EventID
+	if eventID == "" {
+		eventID = work.Identity
+	}
+	return runtimemodel.ClaimContext{
+		Work: work,
 		Event: model.InternalEvent{
 			EventID:         eventID,
 			Source:          "cli",
@@ -269,19 +279,21 @@ func (r *stopPathRepo) ClaimLoopEvent(_ context.Context, eventID, runID string, 
 			ActiveSessionID: "ses_stop",
 			Payload:         model.EventPayload{Type: "message", Text: "stop"},
 		},
-		RunID:   runID,
-		Status:  model.EventStatusProcessing,
-		RunMode: model.RunModeNormal,
+		RunID:      runID,
+		RunMode:    model.RunModeNormal,
+		SessionKey: "local:dm:u1",
+		SessionID:  "ses_stop",
+		Source:     "cli",
 	}, true, nil
 }
 
-func (r *stopPathRepo) FinalizeLoopRun(_ context.Context, finalize runtimemodel.RunFinalize) error {
+func (r *stopPathFacts) Finalize(_ context.Context, finalize runtimemodel.FinalizeCommand) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.finalizeCmds = append(r.finalizeCmds, finalize)
 	return nil
 }
 
-func (r *stopPathRepo) GetLoopEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
+func (r *stopPathFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
 	return runtimemodel.EventRecord{}, false, nil
 }

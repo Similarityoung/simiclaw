@@ -10,10 +10,10 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
-	"github.com/similarityyoung/simiclaw/internal/ingeststore"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -101,10 +101,10 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 
 	queue := &captureEnqueuer{}
-	adapter := ingeststore.New(db)
-	ingestService := ingest.NewService("local", adapter, queue, ingest.NewScopeResolver("local", adapter), 100, 100, 100, 100)
+	repo := storetx.NewRuntimeRepository(db)
+	ingestService := ingest.NewService("local", repo, queue, ingest.NewScopeResolver("local", repo), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		workers: db,
+		workers: repo,
 		ingest:  ingestService,
 		ctx:     context.Background(),
 	}
@@ -166,11 +166,12 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 		t.Fatalf("insert scheduled job: %v", err)
 	}
 
-	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 4, 1)
-	adapter := ingeststore.New(db)
-	ingestService := ingest.NewService("local", adapter, &rejectEnqueuer{}, ingest.NewScopeResolver("local", adapter), 100, 100, 100, 100)
+	hub := streaming.NewHub()
+	repo := storetx.NewRuntimeRepository(db)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 4)
+	ingestService := ingest.NewService("local", repo, &rejectEnqueuer{}, ingest.NewScopeResolver("local", repo), 100, 100, 100, 100)
 	supervisor := &Supervisor{
-		workers: db,
+		workers: repo,
 		ingest:  ingestService,
 		loop:    loop,
 		ctx:     context.Background(),
@@ -335,11 +336,12 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 		t.Fatalf("insert outbox: %v", err)
 	}
 
-	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 8, 1)
-	adapter := ingeststore.New(db)
-	ingestService := ingest.NewService(cfg.TenantID, adapter, loop, ingest.NewScopeResolver(cfg.TenantID, adapter), 100, 100, 100, 100)
+	hub := streaming.NewHub()
+	repo := storetx.NewRuntimeRepository(db)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
+	ingestService := ingest.NewService(cfg.TenantID, repo, loop, ingest.NewScopeResolver(cfg.TenantID, repo), 100, 100, 100, 100)
 	sender := &captureSender{}
-	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
+	supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
 	supervisor.Start()
 
 	deadline := time.Now().Add(12 * time.Second)
@@ -424,8 +426,10 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 	}
 	defer db.Close()
 
-	loop := NewEventLoop(db, fixedOutputRunner{}, streaming.NewHub(), 1, 1)
-	supervisor := NewSupervisor(cfg, db, db, nil, loop, &captureSender{})
+	hub := streaming.NewHub()
+	repo := storetx.NewRuntimeRepository(db)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 1)
+	supervisor := NewSupervisor(cfg, repo, repo, nil, loop, &captureSender{})
 	state, err := supervisor.ReadyState(context.Background())
 	if err == nil || state["event_loop"] != "down" {
 		t.Fatalf("expected loop-down readiness failure, err=%v state=%+v", err, state)
@@ -451,7 +455,8 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 		t.Fatalf("insert scheduled job: %v", err)
 	}
 
-	supervisor := &Supervisor{workers: db, ctx: context.Background()}
+	repo := storetx.NewRuntimeRepository(db)
+	supervisor := &Supervisor{workers: repo, ctx: context.Background()}
 	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
 
 	var lastError string
@@ -464,15 +469,15 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 }
 
 func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
-	loop := NewEventLoop(nil, fixedOutputRunner{}, nil, 0, 0)
-	if cap(loop.queue) != 1024 || loop.maxRounds != 4 {
-		t.Fatalf("expected default queue/maxRounds, got cap=%d maxRounds=%d", cap(loop.queue), loop.maxRounds)
+	loop := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 0, nil), nil, 0)
+	if cap(loop.queue) != 1024 {
+		t.Fatalf("expected default queue capacity, got cap=%d", cap(loop.queue))
 	}
 	if !loop.TryEnqueue("evt_1") {
 		t.Fatalf("expected first enqueue to succeed")
 	}
 
-	full := NewEventLoop(nil, fixedOutputRunner{}, nil, 1, 1)
+	full := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 1, nil), nil, 1)
 	if !full.TryEnqueue("evt_1") {
 		t.Fatalf("expected bounded queue first enqueue to succeed")
 	}

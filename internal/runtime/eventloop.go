@@ -6,16 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
-	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 )
 
 type EventLoop struct {
-	repo      EventLoopRepository
+	facts     kernel.Facts
 	processor *kernel.Service
-	maxRounds int
 	queue     chan string
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -24,34 +20,18 @@ type EventLoop struct {
 	enqueueID atomic.Uint64
 }
 
-type EventLoopRepository interface {
-	ListRunnableEventIDs(ctx context.Context, limit int) ([]string, error)
-	ClaimLoopEvent(ctx context.Context, eventID, runID string, now time.Time) (runtimemodel.ClaimedEvent, bool, error)
-	FinalizeLoopRun(ctx context.Context, finalize runtimemodel.RunFinalize) error
-	GetLoopEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error)
-}
-
-func NewEventLoop(repo EventLoopRepository, run runner.Runner, streamHub *streaming.Hub, queueCap, maxRounds int) *EventLoop {
+func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.EventSink, queueCap int) *EventLoop {
 	if queueCap <= 0 {
 		queueCap = 1024
 	}
-	if maxRounds <= 0 {
-		maxRounds = 4
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	loop := &EventLoop{
-		repo:      repo,
-		maxRounds: maxRounds,
-		queue:     make(chan string, queueCap),
-		ctx:       ctx,
-		cancel:    cancel,
+		facts:  facts,
+		queue:  make(chan string, queueCap),
+		ctx:    ctx,
+		cancel: cancel,
 	}
-	facts := eventLoopFactsAdapter{repo: repo}
-	processor := kernel.NewService(facts, runnerExecutor{
-		runner:    run,
-		maxRounds: maxRounds,
-		streamHub: streamHub,
-	}, newHubRuntimeEventSink(streamHub, facts))
+	processor := kernel.NewService(facts, executor, events)
 	processor.SetClock(func() time.Time { return time.Now().UTC() })
 	processor.SetIDGenerator(func() uint64 { return loop.enqueueID.Add(1) })
 	loop.processor = processor
@@ -109,15 +89,25 @@ func (l *EventLoop) repumpLoop() {
 		case <-l.ctx.Done():
 			return
 		case <-ticker.C:
+			if l.facts == nil {
+				continue
+			}
 			ctx, cancel := context.WithTimeout(l.ctx, time.Second)
-			ids, err := l.repo.ListRunnableEventIDs(ctx, cap(l.queue))
+			items, err := l.facts.ListRunnable(ctx, cap(l.queue))
 			cancel()
 			if err != nil {
 				continue
 			}
-			for _, id := range ids {
+			for _, work := range items {
+				eventID := work.EventID
+				if eventID == "" {
+					eventID = work.Identity
+				}
+				if eventID == "" {
+					continue
+				}
 				select {
-				case l.queue <- id:
+				case l.queue <- eventID:
 				default:
 					break
 				}

@@ -32,9 +32,9 @@
 - [X] T004 定义 runtime 核心契约与 DTO：更新 `internal/runtime/model/types.go`，新增 `internal/runtime/kernel/contracts.go`
 - [X] T005 [P] 定义 gateway 统一入口 DTO 与绑定/路由契约：`internal/gateway/model/types.go`、`internal/gateway/bindings/contracts.go`、`internal/gateway/routing/contracts.go`
 - [X] T006 [P] 定义事实层边界与 runtime event sink 契约：`internal/runtime/kernel/facts.go`、`internal/runtime/kernel/events.go`
-- [ ] T007 [P] 创建事实层事务入口文件：`internal/store/tx/{ingest_event.go,claim_work.go,finalize_run.go,outbox.go,scheduled_jobs.go,recover_processing.go}`
-- [ ] T008 更新装配入口，使依赖通过契约注入：`internal/bootstrap/app.go`、`cmd/simiclaw/`
-- [ ] T009 更新架构与编译守护测试，确保新目录可单独编译：`tests/architecture/`、相关包级 `*_test.go`
+- [X] T007 [P] 创建事实层事务入口文件：`internal/store/tx/{ingest_event.go,claim_work.go,finalize_run.go,outbox.go,scheduled_jobs.go,recover_processing.go}`
+- [X] T008 更新装配入口，使依赖通过契约注入：`internal/bootstrap/app.go`、`cmd/simiclaw/`
+- [X] T009 更新架构与编译守护测试，确保新目录可单独编译：`tests/architecture/`、相关包级 `*_test.go`
 
 **Checkpoint**: 内核、gateway、HTTP/channels、事实层的基础契约已经固定，后续故事可以在此之上推进
 
@@ -58,8 +58,8 @@
 - [X] T014 [P] [US1] 将 claim/finalize 命令组装拆到 `internal/runtime/kernel/{claim.go,finalize.go}`
 - [X] T015 [P] [US1] 创建 payload 分派与内置 handler：`internal/runtime/payload/{handler.go,registry.go,message.go,memory_flush.go,compaction.go,cron_fire.go}`
 - [X] T016 [P] [US1] 将 `internal/runtime/workers.go` 拆为具名 owner：`internal/runtime/workers/{heartbeat.go,processing_recovery.go,scheduled_jobs.go,delivery_poll.go}`
-- [ ] T017 [US1] 通过 `internal/store/tx/{claim_work.go,finalize_run.go,...}` 接回事实层，不再让 kernel 直接感知 `store` 行级结构
-- [ ] T018 [US1] 更新 `internal/bootstrap/app.go`，让 runtime 通过 kernel contracts 装配，并收敛旧 `eventloop` 入口
+- [X] T017 [US1] 通过 `internal/store/tx/{claim_work.go,finalize_run.go,...}` 接回事实层，不再让 kernel 直接感知 `store` 行级结构
+- [X] T018 [US1] 更新 `internal/bootstrap/app.go`，让 runtime 通过 kernel contracts 装配，并收敛旧 `eventloop` 入口
 - [X] T019 [US1] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、必要时 `make accept-current`
 
 **Checkpoint**: User Story 1 完成后，runtime 主链路已经有明确 owner，且可以在不依赖 HTTP/channels 重构的前提下独立验证
