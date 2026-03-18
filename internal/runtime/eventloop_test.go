@@ -2,12 +2,14 @@ package runtime
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/runner"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
@@ -179,4 +181,107 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("timeout waiting for failed telegram event")
+}
+
+func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
+	repo := &stopPathRepo{}
+	run := &stopAwareRunner{
+		started:  make(chan struct{}),
+		finished: make(chan struct{}),
+	}
+	loop := NewEventLoop(repo, run, streaming.NewHub(), 1, 1)
+	loop.Start()
+
+	if !loop.TryEnqueue("evt_stop") {
+		t.Fatalf("failed to enqueue event")
+	}
+
+	select {
+	case <-run.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for in-flight run to start")
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		loop.Stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for event loop stop")
+	}
+
+	select {
+	case <-run.finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for runner cancellation")
+	}
+
+	if loop.IsAlive() {
+		t.Fatalf("expected event loop to be down after stop")
+	}
+	if got := len(repo.finalizeCmds); got != 1 {
+		t.Fatalf("expected one finalize command, got %d", got)
+	}
+	finalize := repo.finalizeCmds[0]
+	if finalize.RunStatus != model.RunStatusFailed || finalize.EventStatus != model.EventStatusFailed {
+		t.Fatalf("expected canceled in-flight run to finalize as failed, got %+v", finalize)
+	}
+	if finalize.Error == nil || finalize.Error.Message == "" {
+		t.Fatalf("expected cancellation error in finalize command, got %+v", finalize)
+	}
+}
+
+type stopAwareRunner struct {
+	once     sync.Once
+	started  chan struct{}
+	finished chan struct{}
+}
+
+func (r *stopAwareRunner) Run(ctx context.Context, _ model.InternalEvent, _ int, _ runner.StreamSink) (runner.RunOutput, error) {
+	r.once.Do(func() {
+		close(r.started)
+	})
+	<-ctx.Done()
+	close(r.finished)
+	return runner.RunOutput{RunMode: model.RunModeNormal}, ctx.Err()
+}
+
+type stopPathRepo struct {
+	mu           sync.Mutex
+	finalizeCmds []runtimemodel.RunFinalize
+}
+
+func (r *stopPathRepo) ListRunnableEventIDs(context.Context, int) ([]string, error) {
+	return nil, nil
+}
+
+func (r *stopPathRepo) ClaimLoopEvent(_ context.Context, eventID, runID string, _ time.Time) (runtimemodel.ClaimedEvent, bool, error) {
+	return runtimemodel.ClaimedEvent{
+		Event: model.InternalEvent{
+			EventID:         eventID,
+			Source:          "cli",
+			TenantID:        "local",
+			SessionKey:      "local:dm:u1",
+			ActiveSessionID: "ses_stop",
+			Payload:         model.EventPayload{Type: "message", Text: "stop"},
+		},
+		RunID:   runID,
+		Status:  model.EventStatusProcessing,
+		RunMode: model.RunModeNormal,
+	}, true, nil
+}
+
+func (r *stopPathRepo) FinalizeLoopRun(_ context.Context, finalize runtimemodel.RunFinalize) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.finalizeCmds = append(r.finalizeCmds, finalize)
+	return nil
+}
+
+func (r *stopPathRepo) GetLoopEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
+	return runtimemodel.EventRecord{}, false, nil
 }

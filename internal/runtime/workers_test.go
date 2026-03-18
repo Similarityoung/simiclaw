@@ -341,7 +341,6 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, db, db, ingestService, loop, sender)
 	supervisor.Start()
-	defer supervisor.Stop()
 
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
@@ -369,6 +368,24 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	sentEvent, ok, err := db.GetEvent(context.Background(), "evt_outbox")
 	if err != nil || !ok || sentEvent.OutboxStatus != model.OutboxStatusSent {
 		t.Fatalf("expected outbox worker to send message, ok=%v err=%v event=%+v sender=%+v", ok, err, sentEvent, sender.messages)
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		supervisor.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for supervisor stop")
+	}
+	if supervisor.EventLoopAlive() || loop.IsAlive() {
+		t.Fatalf("expected event loop to be down after supervisor stop")
+	}
+	state, err = supervisor.ReadyState(context.Background())
+	if err == nil || state["event_loop"] != "down" {
+		t.Fatalf("expected loop-down readiness failure after stop, err=%v state=%+v", err, state)
 	}
 }
 

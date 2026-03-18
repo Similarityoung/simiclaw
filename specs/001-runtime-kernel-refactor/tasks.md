@@ -50,7 +50,7 @@
 
 - [X] T010 [P] [US1] 在 `internal/runtime/kernel/kernel_test.go` 中补充 kernel 生命周期测试，覆盖 claim、execute、finalize、failure 路径
 - [X] T011 [P] [US1] 在 `tests/integration/runtime_kernel_integration_test.go` 中补充端到端验证，确认运行不变量与持久化语义未变
-- [ ] T012 [P] [US1] 在 `internal/runtime/kernel/kernel_race_test.go` 或现有 race 测试文件中增加 worker lifecycle / goroutine stop path 校验
+- [X] T012 [P] [US1] 在 `internal/runtime/kernel/kernel_race_test.go` 或现有 race 测试文件中增加 worker lifecycle / goroutine stop path 校验
 
 ### Implementation for User Story 1
 
@@ -60,7 +60,7 @@
 - [ ] T016 [P] [US1] 将 `internal/runtime/workers.go` 拆为具名 owner：`internal/runtime/workers/{heartbeat.go,processing_recovery.go,scheduled_jobs.go,delivery_poll.go}`
 - [ ] T017 [US1] 通过 `internal/store/tx/{claim_work.go,finalize_run.go,...}` 接回事实层，不再让 kernel 直接感知 `store` 行级结构
 - [ ] T018 [US1] 更新 `internal/bootstrap/app.go`，让 runtime 通过 kernel contracts 装配，并收敛旧 `eventloop` 入口
-- [ ] T019 [US1] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、必要时 `make accept-current`
+- [X] T019 [US1] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、必要时 `make accept-current`
 
 **Checkpoint**: User Story 1 完成后，runtime 主链路已经有明确 owner，且可以在不依赖 HTTP/channels 重构的前提下独立验证
 
