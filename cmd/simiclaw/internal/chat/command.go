@@ -1,17 +1,17 @@
 package chat
 
 import (
+	"context"
 	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
 	sharedclient "github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 	"github.com/spf13/cobra"
 )
 
 const (
-	defaultBaseURL     = "http://127.0.0.1:8080"
 	fixedParticipantID = "local_user"
 )
 
@@ -36,7 +36,7 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 			if err != nil {
 				return common.WrapExit(2, err)
 			}
-			return runTUI(streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
+			return runTUI(cmd.Context(), streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
 		},
 	}
 	cmd.Flags().StringVar(&opts.Conversation, "conversation", "", messages.Flag.ConversationID)
@@ -47,8 +47,8 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 	return cmd
 }
 
-func runTUI(streams common.IOStreams, cli *sharedclient.Client, opts Options) error {
-	model := newModel(streams, cli, opts)
+func runTUI(ctx context.Context, streams common.IOStreams, cli *sharedclient.Client, opts Options) error {
+	model := newModel(ctx, streams, cli, opts)
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	finalModel, err := program.Run()
 	if err != nil {

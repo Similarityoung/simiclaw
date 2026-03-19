@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/contextfile"
+	"github.com/similarityyoung/simiclaw/internal/workspacefile"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -28,23 +27,31 @@ func RegisterContextGet(reg *Registry) {
 		path, _ := args["path"].(string)
 		lines := parseLines(args["lines"])
 
-		if _, _, err := contextfile.ResolvePath(toolCtx.Workspace, path); err != nil {
-			return Result{Error: &model.ErrorBlock{Code: model.ErrorCodeForbidden, Message: fmt.Sprintf("context_get failed: %v", err)}}
-		}
-
-		res, err := contextfile.Get(toolCtx.Workspace, contextfile.GetArgs{Path: path, Lines: lines}, contextfile.DefaultMaxGetChars)
+		res, err := workspacefile.GetContext(toolCtx.Workspace, workspacefile.ContextGetArgs{Path: path, Lines: lines}, workspacefile.DefaultMaxContextChars)
 		if err != nil {
-			code := model.ErrorCodeInvalidArgument
-			switch {
-			case os.IsNotExist(err):
-				code = model.ErrorCodeNotFound
-			case strings.Contains(err.Error(), "path denied"):
-				code = model.ErrorCodeForbidden
-			case errors.Is(err, os.ErrNotExist):
-				code = model.ErrorCodeNotFound
-			}
-			return Result{Error: &model.ErrorBlock{Code: code, Message: fmt.Sprintf("context_get failed: %v", err)}}
+			return Result{Error: contextGetError(err)}
 		}
 		return Result{Output: map[string]any{"path": res.Path, "content": res.Content}}
 	})
+}
+
+func contextGetError(err error) *model.ErrorBlock {
+	code := model.ErrorCodeInvalidArgument
+	switch {
+	case os.IsNotExist(err), errors.Is(err, os.ErrNotExist):
+		code = model.ErrorCodeNotFound
+	default:
+		var toolErr *workspacefile.Error
+		if errors.As(err, &toolErr) {
+			switch toolErr.Code {
+			case workspacefile.CodeNotFound:
+				code = model.ErrorCodeNotFound
+			case workspacefile.CodeForbidden:
+				code = model.ErrorCodeForbidden
+			default:
+				code = model.ErrorCodeInvalidArgument
+			}
+		}
+	}
+	return &model.ErrorBlock{Code: code, Message: fmt.Sprintf("context_get failed: %v", err)}
 }

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/session/... ./internal/store/...
+CORE_PKGS := ./internal/gateway/... ./internal/runtime/... ./internal/store/...
 GUARDRAILS_BASELINE := .github/guardrails/baseline.json
 GUARDRAILS_ALLOWLIST := .github/guardrails/allowlist.json
 GUARDRAILS_REPORT ?= /tmp/simiclaw-guardrails-report.json

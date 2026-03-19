@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/internal/config"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 

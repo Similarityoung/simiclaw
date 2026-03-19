@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
-	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -29,25 +28,7 @@ func (db *DB) GetConversationDMScope(ctx context.Context, tenantID string, conv 
 	if err != nil {
 		return "", false, err
 	}
-	return sessionpkg.NormalizeScope(scope), true, nil
-}
-
-func upsertConversationDMScopeTx(ctx context.Context, tx *sql.Tx, tenantID string, conv model.Conversation, dmScope string, now time.Time) error {
-	_, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO conversation_scopes (
-			tenant_id, conversation_id, channel_type, participant_id, dm_scope, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(tenant_id, conversation_id, channel_type, participant_id)
-		DO UPDATE SET dm_scope = excluded.dm_scope, updated_at = excluded.updated_at`,
-		tenantID,
-		conv.ConversationID,
-		conv.ChannelType,
-		conversationParticipantID(conv),
-		sessionpkg.NormalizeScope(dmScope),
-		timeText(now),
-	)
-	return err
+	return gatewaybindings.NormalizeScope(scope), true, nil
 }
 
 func conversationParticipantID(conv model.Conversation) string {

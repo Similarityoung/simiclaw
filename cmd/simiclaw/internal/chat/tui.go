@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -13,8 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	clichannel "github.com/similarityyoung/simiclaw/internal/channels/cli"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -33,6 +31,7 @@ type chatMessage struct {
 }
 
 type modelState struct {
+	ctx          context.Context
 	streams      common.IOStreams
 	client       *client.Client
 	opts         Options
@@ -93,7 +92,7 @@ type streamErrorMsg struct {
 	Err error
 }
 
-func newModel(streams common.IOStreams, cli *client.Client, opts Options) *modelState {
+func newModel(ctx context.Context, streams common.IOStreams, cli *client.Client, opts Options) *modelState {
 	input := textarea.New()
 	input.Placeholder = messages.Chat.InputPlaceholder
 	input.ShowLineNumbers = false
@@ -110,6 +109,7 @@ func newModel(streams common.IOStreams, cli *client.Client, opts Options) *model
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := &modelState{
+		ctx:          ctx,
 		streams:      streams,
 		client:       cli,
 		opts:         opts,
@@ -137,7 +137,7 @@ func (m *modelState) Init() tea.Cmd {
 		if m.conversation != "" {
 			m.loading = true
 			m.status = messages.Chat.StatusCheckingConversation
-			return checkConversationAvailableCmd(m.client, m.conversation)
+			return checkConversationAvailableCmd(m.ctx, m.client, m.conversation)
 		}
 		m.syncViewport()
 		return nil
@@ -145,15 +145,15 @@ func (m *modelState) Init() tea.Cmd {
 	if m.sessionKey != "" {
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return openSessionCmd(m.client, m.sessionKey, m.opts.HistoryLimit)
+		return openSessionCmd(m.ctx, m.client, m.sessionKey, m.opts.HistoryLimit)
 	}
 	if m.conversation != "" {
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return openConversationCmd(m.client, m.conversation, m.opts.HistoryLimit)
+		return openConversationCmd(m.ctx, m.client, m.conversation, m.opts.HistoryLimit)
 	}
 	m.selectorBusy = true
-	return loadSessionsCmd(m.client)
+	return loadSessionsCmd(m.ctx, m.client)
 }
 
 func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -307,14 +307,14 @@ func (m *modelState) handleSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.selectorBusy = true
 		m.status = messages.Chat.StatusRefreshingSessions
-		return m, loadSessionsCmd(m.client)
+		return m, loadSessionsCmd(m.ctx, m.client)
 	case "enter":
 		if len(m.sessions) == 0 {
 			return m, nil
 		}
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return m, openSessionCmd(m.client, m.sessions[m.selectorIdx].SessionKey, m.opts.HistoryLimit)
+		return m, openSessionCmd(m.ctx, m.client, m.sessions[m.selectorIdx].SessionKey, m.opts.HistoryLimit)
 	}
 	return m, nil
 }
@@ -337,7 +337,7 @@ func (m *modelState) handleNamingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		m.lastError = ""
 		m.status = messages.Chat.StatusCheckingConversation
-		return m, checkConversationAvailableCmd(m.client, conversation)
+		return m, checkConversationAvailableCmd(m.ctx, m.client, conversation)
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
@@ -356,7 +356,7 @@ func (m *modelState) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeSelector
 		m.selectorBusy = true
 		m.status = messages.Chat.StatusLoadingSessionList
-		return m, loadSessionsCmd(m.client)
+		return m, loadSessionsCmd(m.ctx, m.client)
 	case "ctrl+n":
 		if m.sending {
 			return m, nil
@@ -395,9 +395,9 @@ func (m *modelState) startSend(text string) tea.Cmd {
 		conversation = defaultConversationID()
 		m.conversation = conversation
 	}
-	req := clichannel.BuildIngestRequest(conversation, fixedParticipantID, m.seq, text)
+	req := buildCLIIngestRequest(conversation, fixedParticipantID, m.seq, text)
 	m.seq++
-	return startSendCmd(m.client, req, m.opts.NoStream)
+	return startSendCmd(m.ctx, m.client, req, m.opts.NoStream)
 }
 
 func (m *modelState) applyStreamFrame(frame api.ChatStreamEvent) {
@@ -536,265 +536,4 @@ func (m *modelState) syncViewport() {
 	content := renderMessages(m.messages)
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
-}
-
-func (m *modelState) View() string {
-	switch m.mode {
-	case modeSelector:
-		return m.renderSelector()
-	case modeNaming:
-		return m.renderNaming()
-	default:
-		return m.renderChat()
-	}
-}
-
-func (m *modelState) renderSelector() string {
-	var b strings.Builder
-	b.WriteString(messages.Chat.SelectorTitle)
-	b.WriteString(messages.Chat.SelectorHelp)
-	if m.selectorBusy {
-		b.WriteString(messages.Chat.SelectorLoading)
-	} else if len(m.sessions) == 0 {
-		b.WriteString(messages.Chat.SelectorEmpty)
-	} else {
-		for i, item := range m.sessions {
-			cursor := "  "
-			if i == m.selectorIdx {
-				cursor = "> "
-			}
-			b.WriteString(messages.Chat.SelectorItem(cursor, item.ConversationID, item.MessageCount, item.LastModel, item.LastActivityAt.Format(time.RFC3339)))
-		}
-	}
-	b.WriteString("\n")
-	b.WriteString(m.renderStatus())
-	return b.String()
-}
-
-func (m *modelState) renderNaming() string {
-	return messages.Chat.NamingView(m.nameInput.View(), m.renderStatus())
-}
-
-func (m *modelState) renderChat() string {
-	header := messages.Chat.Header(nonEmpty(m.conversation, messages.Chat.ConversationMissing), nonEmpty(m.sessionKey, messages.Chat.SessionPending))
-	help := messages.Chat.Help
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		strings.Repeat("─", max(10, m.width-1)),
-		m.viewport.View(),
-		strings.Repeat("─", max(10, m.width-1)),
-		m.input.View(),
-		help,
-		m.renderStatus(),
-	)
-}
-
-func (m *modelState) renderStatus() string {
-	parts := []string{m.status}
-	if m.lastError != "" {
-		parts = append(parts, messages.Chat.StatusErrorPrefix+m.lastError)
-	}
-	return strings.Join(parts, "  |  ")
-}
-
-func renderMessages(items []chatMessage) string {
-	if len(items) == 0 {
-		return messages.Chat.NoMessages
-	}
-	var parts []string
-	for _, msg := range items {
-		var prefix string
-		switch msg.Role {
-		case "user":
-			prefix = messages.Chat.MessagePrefixUser
-		case "assistant":
-			prefix = messages.Chat.MessagePrefixAssistant
-		default:
-			prefix = msg.Role
-		}
-		parts = append(parts, fmt.Sprintf("%s> %s", prefix, msg.Content))
-	}
-	return strings.Join(parts, "\n\n")
-}
-
-func loadSessionsCmd(cli *client.Client) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		page, err := cli.ListSessions(ctx, "", "", "", 30)
-		if err != nil {
-			return sessionsLoadedMsg{Err: err}
-		}
-		return sessionsLoadedMsg{Items: page.Items}
-	}
-}
-
-func openSessionCmd(cli *client.Client, sessionKey string, historyLimit int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		session, err := cli.GetSession(ctx, sessionKey)
-		if err != nil {
-			return sessionOpenedMsg{Err: err}
-		}
-		history, err := cli.GetSessionHistory(ctx, sessionKey, "", historyLimit, true)
-		if err != nil {
-			return sessionOpenedMsg{Err: err}
-		}
-		return sessionOpenedMsg{Session: &session, Messages: history.Items}
-	}
-}
-
-func openConversationCmd(cli *client.Client, conversation string, historyLimit int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		session, err := findConversationSession(ctx, cli, conversation)
-		if err != nil {
-			return sessionOpenedMsg{Err: err}
-		}
-		if session == nil {
-			return sessionOpenedMsg{Conversation: conversation}
-		}
-		history, err := cli.GetSessionHistory(ctx, session.SessionKey, "", historyLimit, true)
-		if err != nil {
-			return sessionOpenedMsg{Err: err}
-		}
-		return sessionOpenedMsg{Session: session, Messages: history.Items}
-	}
-}
-
-func checkConversationAvailableCmd(cli *client.Client, conversation string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		session, err := findConversationSession(ctx, cli, conversation)
-		if err != nil {
-			return conversationCheckedMsg{Conversation: conversation, Err: err}
-		}
-		return conversationCheckedMsg{Conversation: conversation, Available: session == nil}
-	}
-}
-
-func findConversationSession(ctx context.Context, cli *client.Client, conversation string) (*api.SessionRecord, error) {
-	conversation = strings.TrimSpace(conversation)
-	if conversation == "" {
-		return nil, nil
-	}
-	cursor := ""
-	for {
-		page, err := cli.ListSessions(ctx, "", conversation, cursor, 200)
-		if err != nil {
-			return nil, err
-		}
-		for i := range page.Items {
-			item := page.Items[i]
-			if item.ConversationID != conversation {
-				continue
-			}
-			if item.ChannelType != "dm" || item.ParticipantID != fixedParticipantID {
-				continue
-			}
-			matched := item
-			return &matched, nil
-		}
-		if page.NextCursor == "" {
-			return nil, nil
-		}
-		cursor = page.NextCursor
-	}
-}
-
-func startSendCmd(cli *client.Client, req api.IngestRequest, noStream bool) tea.Cmd {
-	return func() tea.Msg {
-		updates := make(chan tea.Msg, 64)
-		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			defer close(updates)
-			emit := func(event api.ChatStreamEvent) error {
-				updates <- streamFrameMsg{Frame: event}
-				return nil
-			}
-
-			var err error
-			if noStream {
-				resp, ingestErr := cli.Ingest(ctx, req)
-				if ingestErr != nil {
-					updates <- streamErrorMsg{Err: ingestErr}
-					return
-				}
-				if err = emit(api.ChatStreamEvent{
-					Type:                  api.ChatStreamEventAccepted,
-					EventID:               resp.EventID,
-					At:                    time.Now().UTC(),
-					StreamProtocolVersion: api.ChatStreamProtocolVersion,
-					IngestResponse:        &resp,
-				}); err != nil {
-					updates <- streamErrorMsg{Err: err}
-					return
-				}
-				rec, waitErr := cli.WaitEvent(ctx, resp.EventID)
-				if waitErr != nil {
-					updates <- streamErrorMsg{Err: waitErr}
-					return
-				}
-				if err = emit(eventToTerminalFrame(rec)); err != nil {
-					updates <- streamErrorMsg{Err: err}
-					return
-				}
-			} else {
-				_, err = cli.StreamChat(ctx, req, func(event api.ChatStreamEvent) error {
-					updates <- streamFrameMsg{Frame: event}
-					return nil
-				})
-				if err != nil {
-					updates <- streamErrorMsg{Err: err}
-					return
-				}
-			}
-			updates <- streamDoneMsg{}
-		}()
-		return streamStartedMsg{Updates: updates, Cancel: cancel}
-	}
-}
-
-func waitForAsyncMsg(ch <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		msg, ok := <-ch
-		if !ok {
-			return streamDoneMsg{}
-		}
-		return msg
-	}
-}
-
-func eventToTerminalFrame(rec api.EventRecord) api.ChatStreamEvent {
-	frame := api.ChatStreamEvent{
-		Type:        api.ChatStreamEventDone,
-		EventID:     rec.EventID,
-		At:          time.Now().UTC(),
-		EventRecord: &rec,
-		Error:       rec.Error,
-	}
-	if rec.Status == model.EventStatusFailed {
-		frame.Type = api.ChatStreamEventError
-	}
-	return frame
-}
-
-func isTerminalFrame(frame api.ChatStreamEvent) bool {
-	return frame.IsTerminal()
-}
-
-func defaultConversationID() string {
-	now := time.Now().UTC()
-	return fmt.Sprintf("cli_%s_%09d", now.Format("20060102T150405Z"), now.Nanosecond())
-}
-
-func nonEmpty(v, fallback string) string {
-	if strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	return v
 }

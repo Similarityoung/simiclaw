@@ -3,26 +3,20 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/runner"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
+	"github.com/similarityyoung/simiclaw/internal/runtime/lanes"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
-	"github.com/similarityyoung/simiclaw/pkg/api"
-	"github.com/similarityyoung/simiclaw/pkg/logging"
-	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type EventLoop struct {
-	repo      EventLoopRepository
-	runner    runner.Runner
-	streamHub *streaming.Hub
-	maxRounds int
-	queue     chan string
+	facts     kernel.Facts
+	processor *kernel.Service
+	queue     chan runtimemodel.WorkItem
+	scheduler *lanes.Scheduler
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -30,41 +24,38 @@ type EventLoop struct {
 	enqueueID atomic.Uint64
 }
 
-type EventLoopRepository interface {
-	ListRunnableEventIDs(ctx context.Context, limit int) ([]string, error)
-	ClaimLoopEvent(ctx context.Context, eventID, runID string, now time.Time) (runtimemodel.ClaimedEvent, bool, error)
-	FinalizeLoopRun(ctx context.Context, finalize runtimemodel.RunFinalize) error
-	GetLoopEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error)
-}
-
-func NewEventLoop(repo EventLoopRepository, run runner.Runner, streamHub *streaming.Hub, queueCap, maxRounds int) *EventLoop {
+func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.EventSink, queueCap int) *EventLoop {
 	if queueCap <= 0 {
 		queueCap = 1024
 	}
-	if maxRounds <= 0 {
-		maxRounds = 4
+	loop := &EventLoop{
+		facts:     facts,
+		queue:     make(chan runtimemodel.WorkItem, queueCap),
+		scheduler: lanes.NewScheduler(),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &EventLoop{
-		repo:      repo,
-		runner:    run,
-		streamHub: streamHub,
-		maxRounds: maxRounds,
-		queue:     make(chan string, queueCap),
-		ctx:       ctx,
-		cancel:    cancel,
-	}
+	processor := kernel.NewService(facts, executor, events)
+	processor.SetClock(func() time.Time { return time.Now().UTC() })
+	processor.SetIDGenerator(func() uint64 { return loop.enqueueID.Add(1) })
+	loop.processor = processor
+	return loop
 }
 
-func (l *EventLoop) Start() {
+func (l *EventLoop) Start(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime event loop requires a non-nil context")
+	}
+	l.ctx, l.cancel = context.WithCancel(ctx)
 	l.alive.Store(true)
 	l.wg.Add(2)
 	go l.consumeLoop()
 	go l.repumpLoop()
+	return nil
 }
 
 func (l *EventLoop) Stop() {
-	l.cancel()
+	if l.cancel != nil {
+		l.cancel()
+	}
 	l.wg.Wait()
 	l.alive.Store(false)
 }
@@ -74,8 +65,12 @@ func (l *EventLoop) IsAlive() bool {
 }
 
 func (l *EventLoop) TryEnqueue(eventID string) bool {
+	return l.tryEnqueueWork(newEventWorkItem(eventID))
+}
+
+func (l *EventLoop) tryEnqueueWork(work runtimemodel.WorkItem) bool {
 	select {
-	case l.queue <- eventID:
+	case l.queue <- normalizeWorkItem(work):
 		return true
 	default:
 		return false
@@ -92,8 +87,8 @@ func (l *EventLoop) consumeLoop() {
 		select {
 		case <-l.ctx.Done():
 			return
-		case eventID := <-l.queue:
-			l.processEvent(eventID)
+		case work := <-l.queue:
+			l.processWork(work)
 		}
 	}
 }
@@ -107,16 +102,17 @@ func (l *EventLoop) repumpLoop() {
 		case <-l.ctx.Done():
 			return
 		case <-ticker.C:
+			if l.facts == nil {
+				continue
+			}
 			ctx, cancel := context.WithTimeout(l.ctx, time.Second)
-			ids, err := l.repo.ListRunnableEventIDs(ctx, cap(l.queue))
+			items, err := l.facts.ListRunnable(ctx, cap(l.queue))
 			cancel()
 			if err != nil {
 				continue
 			}
-			for _, id := range ids {
-				select {
-				case l.queue <- id:
-				default:
+			for _, work := range items {
+				if !l.tryEnqueueWork(work) {
 					break
 				}
 			}
@@ -124,146 +120,54 @@ func (l *EventLoop) repumpLoop() {
 	}
 }
 
-func (l *EventLoop) processEvent(eventID string) {
-	now := time.Now().UTC()
-	runID := fmt.Sprintf("run_%d_%d", now.UnixNano(), l.enqueueID.Add(1))
+func (l *EventLoop) processWork(work runtimemodel.WorkItem) {
 	ctx, cancel := context.WithTimeout(l.ctx, 2*time.Minute)
 	defer cancel()
+	work = l.prepareWorkForScheduling(ctx, normalizeWorkItem(work))
 
-	claimed, ok, err := l.repo.ClaimLoopEvent(ctx, eventID, runID, now)
-	if err != nil || !ok {
-		return
-	}
-
-	logger := logging.L("eventloop").With(
-		logging.String("event_id", claimed.Event.EventID),
-		logging.String("session_key", claimed.Event.SessionKey),
-		logging.String("session_id", claimed.Event.ActiveSessionID),
-		logging.String("run_id", claimed.RunID),
-	)
-	streamSink := newHubStreamSink(l.streamHub, claimed.Event.EventID)
-	streamSink.OnStatus("processing", "claimed")
-
-	output := runner.RunOutput{RunMode: claimed.RunMode}
-	var runErr error
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			runErr = fmt.Errorf("runner panic: %v", recovered)
-		}
-		if output.RunMode == "" {
-			output.RunMode = claimed.RunMode
-		}
-		finalize := runtimemodel.RunFinalize{
-			RunID:       claimed.RunID,
-			EventID:     claimed.Event.EventID,
-			SessionKey:  claimed.Event.SessionKey,
-			SessionID:   claimed.Event.ActiveSessionID,
-			RunMode:     output.RunMode,
-			RunStatus:   model.RunStatusCompleted,
-			EventStatus: model.EventStatusProcessed,
-			Now:         time.Now().UTC(),
-		}
-		if output.Trace.Provider != "" {
-			finalize.Provider = output.Trace.Provider
-			finalize.Model = output.Trace.Model
-			finalize.PromptTokens = output.Trace.PromptTokens
-			finalize.CompletionTokens = output.Trace.CompletionTokens
-			finalize.TotalTokens = output.Trace.TotalTokens
-			finalize.LatencyMS = output.Trace.LatencyMS
-			finalize.FinishReason = output.Trace.FinishReason
-			finalize.RawFinishReason = output.Trace.RawFinishReason
-			finalize.ProviderRequestID = output.Trace.ProviderRequestID
-			finalize.OutputText = output.Trace.OutputText
-			finalize.ToolCalls = output.Trace.ToolCalls
-			finalize.Diagnostics = output.Trace.Diagnostics
-		}
-		for _, msg := range output.Messages {
-			finalize.Messages = append(finalize.Messages, runtimemodel.StoredMessage{
-				MessageID:  fmt.Sprintf("msg_%d_%d", finalize.Now.UnixNano(), l.enqueueID.Add(1)),
-				SessionKey: claimed.Event.SessionKey,
-				SessionID:  claimed.Event.ActiveSessionID,
-				RunID:      claimed.RunID,
-				Role:       msg.Role,
-				Content:    msg.Content,
-				Visible:    msg.Visible,
-				ToolCalls:  msg.ToolCalls,
-				ToolCallID: msg.ToolCallID,
-				ToolName:   msg.ToolName,
-				ToolArgs:   msg.ToolArgs,
-				ToolResult: msg.ToolResult,
-				Meta:       msg.Meta,
-				CreatedAt:  finalize.Now,
-			})
-		}
-		if runErr != nil {
-			finalize.RunStatus = model.RunStatusFailed
-			finalize.EventStatus = model.EventStatusFailed
-			finalize.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: runErr.Error()}
-		} else if output.SuppressOutput {
-			finalize.EventStatus = model.EventStatusSuppressed
-			finalize.AssistantReply = ""
-		} else {
-			finalize.AssistantReply = output.AssistantReply
-			if strings.TrimSpace(output.AssistantReply) != "" {
-				if claimed.Event.Source == "telegram" {
-					chatID, err := telegramTargetID(claimed.Event)
-					if err != nil {
-						runErr = err
-						finalize.RunStatus = model.RunStatusFailed
-						finalize.EventStatus = model.EventStatusFailed
-						finalize.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
-						finalize.AssistantReply = ""
-					} else {
-						finalize.OutboxChannel = "telegram"
-						finalize.OutboxTargetID = chatID
-						finalize.OutboxBody = output.AssistantReply
-					}
-				} else {
-					finalize.OutboxBody = output.AssistantReply
-				}
-			}
-		}
-		if err := l.repo.FinalizeLoopRun(ctx, finalize); err != nil {
-			logger.Error("finalize failed",
-				logging.String("status", "failed"),
-				logging.String("error_code", model.ErrorCodeInternal),
-				logging.Error(err),
-			)
-			if l.streamHub != nil {
-				l.streamHub.PublishTerminal(claimed.Event.EventID, api.ChatStreamEvent{
-					Type:  api.ChatStreamEventError,
-					Error: &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()},
-				})
-			}
+	if l.scheduler != nil {
+		lease, err := l.scheduler.Acquire(ctx, work)
+		if err != nil {
 			return
 		}
-		if l.streamHub != nil {
-			if rec, ok, err := l.repo.GetLoopEventRecord(ctx, claimed.Event.EventID); err == nil && ok {
-				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromRecord(rec))
-			} else {
-				l.streamHub.PublishTerminal(claimed.Event.EventID, terminalEventFromFinalize(finalize))
-			}
-		}
-		logger.Info("completed",
-			logging.String("status", string(finalize.EventStatus)),
-			logging.Int64("latency_ms", time.Since(now).Milliseconds()),
-		)
-	}()
+		defer lease.Release()
+	}
 
-	output, runErr = l.runner.Run(ctx, claimed.Event, l.maxRounds, streamSink)
+	_ = l.processor.Process(ctx, work)
 }
 
-func telegramTargetID(event model.InternalEvent) (string, error) {
-	if event.Payload.Extra == nil {
-		return "", fmt.Errorf("telegram event missing payload.extra.telegram_chat_id")
+func normalizeWorkItem(work runtimemodel.WorkItem) runtimemodel.WorkItem {
+	if work.Kind == "" {
+		work.Kind = runtimemodel.WorkKindEvent
 	}
-	raw := strings.TrimSpace(event.Payload.Extra["telegram_chat_id"])
-	if raw == "" {
-		return "", fmt.Errorf("telegram event missing payload.extra.telegram_chat_id")
+	if work.Identity == "" {
+		switch work.Kind {
+		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
+			work.Identity = work.EventID
+		case runtimemodel.WorkKindOutbox:
+			work.Identity = work.OutboxID
+		case runtimemodel.WorkKindScheduledJob:
+			work.Identity = work.JobID
+		}
 	}
-	chatID, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("invalid payload.extra.telegram_chat_id %q: %w", raw, err)
+	return work
+}
+
+func (l *EventLoop) prepareWorkForScheduling(ctx context.Context, work runtimemodel.WorkItem) runtimemodel.WorkItem {
+	if work.SessionKey == "" && l.facts != nil {
+		switch work.Kind {
+		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
+			eventID := work.EventID
+			if eventID == "" {
+				eventID = work.Identity
+			}
+			if rec, ok, err := l.facts.GetEventRecord(ctx, eventID); err == nil && ok {
+				work.SessionKey = rec.SessionKey
+			}
+		}
 	}
-	return strconv.FormatInt(chatID, 10), nil
+	if work.LaneKey == "" {
+		work.LaneKey = string(lanes.Resolve(work))
+	}
+	return work
 }

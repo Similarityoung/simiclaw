@@ -15,7 +15,7 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 | 架构测试 | `make test-architecture` | 跑 `./tests/architecture/...`，保护依赖方向和结构边界 |
 | 单元测试 | `make test-unit` | 跑 `./cmd/... ./internal/... ./pkg/...`，尽可能带 coverage |
 | Devtools 测试 | `make test-devtools` | 跑 `./devtools/...`，单独覆盖 CI / 仓库养护代码 |
-| 核心 race | `make test-unit-race-core` | 只对 `gateway/runtime/session/store` 跑 `-race` |
+| 核心 race | `make test-unit-race-core` | 只对 `gateway/runtime/store` 跑 `-race` |
 | 集成测试 | `make test-integration` | `./tests/integration/...`，使用 `integration` build tag |
 | E2E smoke | `make test-e2e-smoke` | 根据 `VERSION_STAGE` 选择 `SmokeV1` 或 `SmokeV1Alpha` |
 | 全量 E2E | `make test-e2e` | `./tests/e2e/... -count=1` |
@@ -37,9 +37,10 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 ## 单测与调试示例
 
 ```bash
-go test ./internal/session/... -run TestComputeKeyDMThreadIgnored -v
+go test ./internal/gateway/bindings/... -run TestComputeKeyDMThreadIgnored -v
 go test ./internal/config/... -run TestLoad -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v
 go test ./tests/e2e/... -run SmokeV1 -v -count=1
 go test ./tests/architecture/... -v
 make docs-style
@@ -54,13 +55,14 @@ make guardrails-check
 - 对文档和架构层改动，最小建议是至少跑 `go test ./tests/architecture/... -v`
 - 对 docs、CI 配置或 `devtools/` 改动，最小建议是补 `make docs-style` 和 `make test-devtools`
 - Guardrails 与 baseline 变更前，先跑 `make guardrails-check` 或 `make guardrails-report`
+- 对 runtime kernel refactor 的 US4 / lane-ready 收口，推荐按顺序跑：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、`go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v`、`make accept-current`
 
 ## Verification
 
 - 测试命令: `Makefile`
 - 阶段定义: `VERSION_STAGE`
-- 架构测试: `tests/architecture/boundaries_test.go`
-- 集成测试: `tests/integration/runtime_integration_test.go`, `tests/integration/telegram_integration_test.go`
+- 架构测试: `tests/architecture/boundaries_test.go`, `tests/architecture/runtime_kernel_boundaries_test.go`
+- 集成测试: `tests/integration/runtime_trace_path_test.go`, `tests/integration/runtime_lanes_test.go`, `tests/integration/telegram_integration_test.go`
 - E2E 测试: `tests/e2e/smoke_v1_test.go`
 
 ## Related Docs

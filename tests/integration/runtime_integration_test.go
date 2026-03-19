@@ -5,6 +5,7 @@ package integration
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -503,7 +504,7 @@ func newTestAppWithConfig(t *testing.T, mutate func(*config.Config)) *bootstrap.
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	if err := app.Start(); err != nil {
+	if err := app.Start(context.Background()); err != nil {
 		t.Fatalf("start app: %v", err)
 	}
 	t.Cleanup(app.Stop)

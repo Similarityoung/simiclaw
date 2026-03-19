@@ -2,13 +2,15 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
+	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -54,25 +56,27 @@ type HistoryReader interface {
 type ProviderRunner struct {
 	registry        *tools.Registry
 	providers       *provider.Factory
-	writer          *memory.Writer
-	historyLoader   runHistoryLoader
+	memoryWriter    runnercontext.MemoryWriter
+	contextBuilder  runnercontext.Assembler
 	promptAssembler llmPromptAssembler
 	toolExecutor    llmToolExecutor
 	traceAssembler  runTraceAssembler
+	payloads        *runtimepayload.Registry
 }
 
-func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory) *ProviderRunner {
+func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory, payloads *runtimepayload.Registry) *ProviderRunner {
 	if registry == nil {
 		registry = tools.NewRegistry()
 		tools.RegisterBuiltins(registry)
 	}
 	prompts := prompt.NewBuilder(workspace)
 	runner := &ProviderRunner{
-		registry:  registry,
-		providers: providers,
-		writer:    memory.NewWriter(workspace),
+		registry:     registry,
+		providers:    providers,
+		memoryWriter: runnercontext.NewMemoryWriter(workspace),
+		payloads:     payloads,
 	}
-	runner.historyLoader = runHistoryLoader{reader: historyReader, historyLimit: 20}
+	runner.contextBuilder = runnercontext.NewAssembler(historyReader)
 	runner.promptAssembler = llmPromptAssembler{prompts: prompts, registry: runner.registry}
 	runner.toolExecutor = llmToolExecutor{workspace: workspace, registry: runner.registry}
 	runner.traceAssembler = runTraceAssembler{}
@@ -92,78 +96,68 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 		}
 		return runNewSession(event, start, &trace), nil
 	}
-	runMode := model.RunModeNormal
-	if isNoReplyPayload(event.Payload.Type) {
-		runMode = model.RunModeNoReply
+	if r.payloads == nil {
+		return RunOutput{}, errors.New("payload registry unavailable")
 	}
+	plan := r.payloads.Resolve(event.Payload.Type)
 	trace := api.RunTrace{
 		EventID:    event.EventID,
 		SessionKey: event.SessionKey,
 		SessionID:  event.ActiveSessionID,
-		RunMode:    runMode,
+		RunMode:    plan.RunMode,
 		Status:     model.RunStatusCompleted,
 		StartedAt:  start,
 	}
-	safeSink := newSafeStreamSink(sink, &trace)
-	if runMode == model.RunModeNoReply {
-		return r.runNoReply(ctx, event, maxToolRounds, start, &trace, safeSink)
-	}
-	return r.runInteractive(ctx, event, maxToolRounds, start, &trace, safeSink)
+	return r.runWithPlan(ctx, event, maxToolRounds, start, &trace, sink, plan)
 }
 
-func (r *ProviderRunner) runNoReply(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink) (RunOutput, error) {
-	if event.Payload.Type == "cron_fire" {
-		return r.runSuppressedCronFire(ctx, event, maxToolRounds, now, trace)
+func (r *ProviderRunner) runWithPlan(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink, plan runtimepayload.Plan) (RunOutput, error) {
+	switch plan.Kind {
+	case runtimepayload.ExecutionKindMemoryWrite:
+		return r.runMemoryWrite(event, now, trace, plan)
+	default:
+		streamSink := sink
+		if plan.SuppressStream {
+			streamSink = nil
+		}
+		return r.runLLM(ctx, event, maxToolRounds, now, trace, newSafeStreamSink(streamSink, trace), llmRunOptions{
+			runMode:               plan.RunMode,
+			suppressOutput:        plan.SuppressOutput,
+			userVisible:           plan.UserVisible,
+			toolVisible:           plan.ToolVisible,
+			finalAssistantVisible: plan.FinalAssistantVisible,
+			messageMeta:           cloneMap(plan.MessageMeta),
+			allowedTools:          plan.AllowedTools,
+		})
 	}
+}
 
+func (r *ProviderRunner) runMemoryWrite(event model.InternalEvent, now time.Time, trace *api.RunTrace, plan runtimepayload.Plan) (RunOutput, error) {
 	note := strings.TrimSpace(event.Payload.Text)
 	if note == "" {
 		note = event.Payload.Type
 	}
-	visibility := memory.VisibilityForChannel(event.Conversation.ChannelType)
-	switch event.Payload.Type {
-	case "memory_flush":
-		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now, visibility)
-	case "compaction":
-		_, _ = r.writer.WriteCurated(note, now, visibility)
+	switch plan.MemoryWriteTarget {
+	case runtimepayload.MemoryWriteTargetDaily:
+		_ = r.memoryWriter.WriteDaily("system:"+event.Payload.Type, note, now, event.Conversation.ChannelType)
+	case runtimepayload.MemoryWriteTargetCurated:
+		_ = r.memoryWriter.WriteCurated(note, now, event.Conversation.ChannelType)
 	}
 	trace.OutputText = note
 	trace.FinishedAt = time.Now().UTC()
 	trace.LatencyMS = time.Since(now).Milliseconds()
 	return RunOutput{
-		RunMode: runModeForPayload(event.Payload.Type),
+		RunMode: plan.RunMode,
 		Messages: []OutputMessage{{
 			Role:    "system",
 			Content: note,
 			Visible: false,
-			Meta:    map[string]any{payloadTypeMetaKey: event.Payload.Type},
+			Meta:    cloneMap(plan.MessageMeta),
 		}},
 		Trace:          *trace,
 		AssistantReply: "",
-		SuppressOutput: true,
+		SuppressOutput: plan.SuppressOutput,
 	}, nil
-}
-
-func (r *ProviderRunner) runSuppressedCronFire(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace) (RunOutput, error) {
-	return r.runLLM(ctx, event, maxToolRounds, now, trace, newSafeStreamSink(nil, trace), llmRunOptions{
-		runMode:               model.RunModeNoReply,
-		suppressOutput:        true,
-		userVisible:           false,
-		toolVisible:           false,
-		finalAssistantVisible: false,
-		messageMeta:           map[string]any{payloadTypeMetaKey: event.Payload.Type},
-		allowedTools:          cronFireAllowedTools,
-	})
-}
-
-func (r *ProviderRunner) runInteractive(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink) (RunOutput, error) {
-	return r.runLLM(ctx, event, maxToolRounds, now, trace, sink, llmRunOptions{
-		runMode:               model.RunModeNormal,
-		suppressOutput:        false,
-		userVisible:           true,
-		toolVisible:           true,
-		finalAssistantVisible: true,
-	})
 }
 
 type llmRunOptions struct {
@@ -184,7 +178,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
-	history, err := r.historyLoader.Load(ctx, event.ActiveSessionID, event.Payload.Text)
+	history, err := r.contextBuilder.Load(ctx, event.ActiveSessionID, event.Payload.Text)
 	if err != nil {
 		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
@@ -197,7 +191,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		Visible: opts.userVisible,
 		Meta:    cloneMap(opts.messageMeta),
 	}}
-	assembly := r.promptAssembler.Assemble(event, now, history.history, opts.allowedTools)
+	assembly := r.promptAssembler.Assemble(event, now, history.History, opts.allowedTools)
 	chatMessages := assembly.chatMessages
 	toolDefs := assembly.toolDefs
 

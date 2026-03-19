@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -11,9 +12,9 @@ import (
 
 type runTraceAssembler struct{}
 
-func (runTraceAssembler) AttachContext(trace *api.RunTrace, history loadedHistory) {
-	trace.ContextManifest = toAPIContextManifest(history.manifest)
-	trace.RAGHits = toAPIRAGHits(history.ragHits)
+func (runTraceAssembler) AttachContext(trace *api.RunTrace, history runnercontext.Loaded) {
+	trace.ContextManifest = toAPIContextManifest(history.Manifest)
+	trace.RAGHits = toAPIRAGHits(history.RAGHits)
 }
 
 func (runTraceAssembler) Fail(trace *api.RunTrace, startedAt time.Time, err error) {

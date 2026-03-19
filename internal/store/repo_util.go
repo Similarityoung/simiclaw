@@ -19,14 +19,3 @@ func mustParseTime(raw string) time.Time {
 	}
 	return t.UTC()
 }
-
-func boolToInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}
-
-func isNoReplyPayload(payloadType string) bool {
-	return payloadType == "memory_flush" || payloadType == "compaction" || payloadType == "cron_fire"
-}

@@ -8,16 +8,19 @@ import (
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/internal/httpapi"
-	"github.com/similarityyoung/simiclaw/internal/ingest"
-	"github.com/similarityyoung/simiclaw/internal/ingeststore"
-	"github.com/similarityyoung/simiclaw/internal/outbound"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
+	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
+	httpserver "github.com/similarityyoung/simiclaw/internal/http"
+	outboundsender "github.com/similarityyoung/simiclaw/internal/outbound/sender"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
+	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/store"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
+	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 )
 
@@ -28,7 +31,7 @@ type App struct {
 	EventLoop  *runtime.EventLoop
 	Supervisor *runtime.Supervisor
 	Telegram   *telegramchannel.Runtime
-	StreamHub  *streaming.Hub
+	StreamHub  *runtimeevents.Hub
 	Handler    http.Handler
 }
 
@@ -48,22 +51,25 @@ func NewApp(cfg config.Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	streamHub := streaming.NewHub()
-	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
-	eventLoop := runtime.NewEventLoop(db, run, streamHub, cfg.EventQueueCapacity, cfg.MaxToolRounds)
-	ingestAdapter := ingeststore.New(db)
-	ingestService := ingest.NewService(
+	streamHub := runtimeevents.NewHub()
+	payloads := runtimepayload.NewBuiltinRegistry()
+	queryRepo := storequeries.NewRepository(db)
+	run := runner.NewProviderRunner(cfg.Workspace, queryRepo, registry, providers, payloads)
+	runtimeRepo := storetx.NewRuntimeRepository(db)
+	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
+	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, streamHub, cfg.EventQueueCapacity)
+	gatewayService := gateway.NewService(
 		cfg.TenantID,
-		ingestAdapter,
+		runtimeRepo,
 		eventLoop,
-		ingest.NewScopeResolver(cfg.TenantID, ingestAdapter),
+		gatewaybindings.NewResolver(cfg.TenantID, runtimeRepo),
+		gatewayrouting.NewService(payloads),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,
 		cfg.RateLimitSessionBurst,
 	)
-	gatewayService := gateway.NewService(ingestService)
-	queryService := querysvc.NewService(db)
+	queryService := querysvc.NewService(queryRepo)
 
 	var telegramRuntime *telegramchannel.Runtime
 	if cfg.Channels.Telegram.Enabled {
@@ -74,9 +80,9 @@ func NewApp(cfg config.Config) (*App, error) {
 		}
 	}
 
-	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, db, db, ingestService, eventLoop, sender)
-	server := httpapi.New(cfg, gatewayService, queryService, supervisor, streamHub)
+	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
+	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
+	server := httpserver.New(cfg, gatewayService, queryService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
 		DB:         db,
@@ -89,14 +95,13 @@ func NewApp(cfg config.Config) (*App, error) {
 	}, nil
 }
 
-func (a *App) Start() error {
+func (a *App) Start(ctx context.Context) error {
 	if a.Telegram != nil {
 		if err := a.Telegram.Start(); err != nil {
 			return err
 		}
 	}
-	a.Supervisor.Start()
-	return nil
+	return a.Supervisor.Start(ctx)
 }
 
 func (a *App) Stop() {
@@ -108,7 +113,7 @@ func (a *App) Stop() {
 }
 
 func (a *App) RunHTTPServer(ctx context.Context) error {
-	if err := a.Start(); err != nil {
+	if err := a.Start(ctx); err != nil {
 		return err
 	}
 	defer a.Stop()
@@ -116,7 +121,7 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 	srv := &http.Server{Addr: a.Cfg.ListenAddr, Handler: a.Handler}
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()

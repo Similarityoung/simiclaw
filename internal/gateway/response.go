@@ -1,12 +1,10 @@
 package gateway
 
 const (
-	retryAfterSeconds       = 1
-	statusClientClosedReq   = 499
-	ingestStatusAccepted    = "accepted"
-	ingestStatusDuplicate   = "duplicate_acked"
-	ingestStatusURLTemplate = "/v1/events/%s"
-	msgIdempotencyConflict  = "idempotency payload hash mismatch"
+	statusClientClosedReq  = 499
+	ingestStatusAccepted   = "accepted"
+	ingestStatusDuplicate  = "duplicate_acked"
+	msgIdempotencyConflict = "idempotency payload hash mismatch"
 )
 
 type APIError struct {

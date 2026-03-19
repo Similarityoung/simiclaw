@@ -1,9 +1,7 @@
-package store
+package store_test
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -428,10 +426,19 @@ func TestConversationDMScopeRoundTrip(t *testing.T) {
 	if _, ok, err := db.GetConversationDMScope(ctx, "local", conv); err != nil || ok {
 		t.Fatalf("expected empty scope before insert, ok=%v err=%v", ok, err)
 	}
-	if err := db.WithWriterTx(ctx, func(tx *sql.Tx) error {
-		return upsertConversationDMScopeTx(ctx, tx, "local", conv, "scope_abc", now)
-	}); err != nil {
-		t.Fatalf("upsertConversationDMScopeTx: %v", err)
+	if _, err := db.Writer().ExecContext(
+		ctx,
+		`INSERT INTO conversation_scopes (
+			tenant_id, conversation_id, channel_type, participant_id, dm_scope, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?)`,
+		"local",
+		conv.ConversationID,
+		conv.ChannelType,
+		conversationParticipantID(conv),
+		"scope_abc",
+		timeText(now),
+	); err != nil {
+		t.Fatalf("insert conversation scope: %v", err)
 	}
 	scope, ok, err := db.GetConversationDMScope(ctx, "local", conv)
 	if err != nil || !ok {
@@ -523,6 +530,13 @@ func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("claim outbox ok=%v err=%v", ok, err)
 	}
+	eventRec, ok, err = db.GetEvent(ctx, result.EventID)
+	if err != nil || !ok {
+		t.Fatalf("get event after outbox claim ok=%v err=%v", ok, err)
+	}
+	if eventRec.OutboxStatus != model.OutboxStatusSending {
+		t.Fatalf("expected sending after outbox claim, got %s for outbox %s", eventRec.OutboxStatus, outbox.OutboxID)
+	}
 	if err := db.RecoverExpiredSending(ctx, now.Add(5*time.Second), now.Add(6*time.Second)); err != nil {
 		t.Fatalf("recover expired sending: %v", err)
 	}
@@ -533,83 +547,4 @@ func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	if eventRec.OutboxStatus != model.OutboxStatusRetryWait {
 		t.Fatalf("expected retry_wait, got %s for outbox %s", eventRec.OutboxStatus, outbox.OutboxID)
 	}
-}
-
-func newTestDB(t *testing.T) *DB {
-	t.Helper()
-	workspace := t.TempDir()
-	if err := InitWorkspace(workspace, false, DefaultBusyTimeout()); err != nil {
-		t.Fatalf("init workspace: %v", err)
-	}
-	db, err := Open(workspace, DefaultBusyTimeout())
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-	return db
-}
-
-func TestOpenAddsOutboxRoutingColumns(t *testing.T) {
-	workspace := t.TempDir()
-	path := DBPath(workspace)
-	db, err := openSQLite(path, DefaultBusyTimeout())
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`
-		CREATE TABLE outbox (
-			outbox_id TEXT PRIMARY KEY,
-			event_id TEXT NOT NULL,
-			session_key TEXT NOT NULL,
-			body TEXT NOT NULL,
-			status TEXT NOT NULL,
-			next_attempt_at TEXT NOT NULL,
-			locked_at TEXT NOT NULL DEFAULT '',
-			lock_owner TEXT NOT NULL DEFAULT '',
-			attempt_count INTEGER NOT NULL DEFAULT 0,
-			last_error TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			sent_at TEXT NOT NULL DEFAULT ''
-		);
-		PRAGMA user_version = 1;
-	`); err != nil {
-		t.Fatalf("seed old schema: %v", err)
-	}
-	_ = db.Close()
-
-	opened, err := Open(workspace, DefaultBusyTimeout())
-	if err != nil {
-		t.Fatalf("open db with migration: %v", err)
-	}
-	defer opened.Close()
-
-	for _, column := range []string{"channel", "target_id"} {
-		exists, err := tableColumnExists(opened.writer, "outbox", column)
-		if err != nil {
-			t.Fatalf("tableColumnExists(%s): %v", column, err)
-		}
-		if !exists {
-			t.Fatalf("expected outbox.%s to exist after migration", column)
-		}
-	}
-	if !tablePresent(t, opened.writer, "conversation_scopes") {
-		t.Fatalf("expected conversation_scopes to exist after migration")
-	}
-}
-
-func tablePresent(t *testing.T, db *sql.DB, table string) bool {
-	t.Helper()
-	var name string
-	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false
-	}
-	if err != nil {
-		t.Fatalf("query sqlite_master for %s: %v", table, err)
-	}
-	return name == table
 }

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/contextfile"
 	"github.com/similarityyoung/simiclaw/internal/memory"
+	"github.com/similarityyoung/simiclaw/internal/workspacefile"
 )
 
 type promptFingerprinter struct {
@@ -72,7 +72,7 @@ func (f promptFingerprinter) snapshotContextFileFingerprint(rel string) string {
 		}
 		return "stat_error"
 	}
-	normalizedRel, absPath, err := contextfile.ResolvePath(f.workspace, rel)
+	normalizedRel, absPath, err := workspacefile.ResolveContextPath(f.workspace, rel)
 	if err != nil {
 		return "denied:" + fileMarker(absCandidate, info)
 	}

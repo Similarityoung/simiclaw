@@ -13,6 +13,40 @@ type ClaimedEvent struct {
 	RunMode pkgmodel.RunMode
 }
 
+type WorkKind string
+
+const (
+	WorkKindEvent        WorkKind = "event"
+	WorkKindOutbox       WorkKind = "outbox"
+	WorkKindScheduledJob WorkKind = "scheduled_job"
+	WorkKindRecovery     WorkKind = "recovery"
+)
+
+type WorkItem struct {
+	Kind       WorkKind
+	Identity   string
+	EventID    string
+	OutboxID   string
+	JobID      string
+	SessionKey string
+	LaneKey    string
+	Source     string
+	Channel    string
+	Metadata   map[string]string
+}
+
+type ClaimContext struct {
+	Work       WorkItem
+	Event      pkgmodel.InternalEvent
+	RunID      string
+	RunMode    pkgmodel.RunMode
+	SessionKey string
+	SessionID  string
+	Source     string
+	Channel    string
+	Metadata   map[string]string
+}
+
 type StoredMessage struct {
 	MessageID  string
 	SessionKey string
@@ -57,6 +91,36 @@ type RunFinalize struct {
 	OutboxTargetID    string
 	OutboxBody        string
 	Now               time.Time
+}
+
+type FinalizeCommand = RunFinalize
+
+type DeliveryIntent struct {
+	Channel  string
+	TargetID string
+	Body     string
+	Metadata map[string]string
+}
+
+type ExecutionResult struct {
+	RunMode           pkgmodel.RunMode
+	AssistantReply    string
+	OutputMessages    []StoredMessage
+	ToolCalls         []pkgmodel.ToolCall
+	Diagnostics       map[string]string
+	Delivery          *DeliveryIntent
+	SuppressOutput    bool
+	Provider          string
+	Model             string
+	PromptTokens      int
+	CompletionTokens  int
+	TotalTokens       int
+	LatencyMS         int64
+	FinishReason      string
+	RawFinishReason   string
+	ProviderRequestID string
+	OutputText        string
+	Error             *pkgmodel.ErrorBlock
 }
 
 type EventRecord struct {
@@ -107,4 +171,44 @@ type ClaimedJob struct {
 	Payload      ScheduledJobPayload
 	AttemptCount int
 	NextRunAt    time.Time
+}
+
+type RuntimeEventKind string
+
+const (
+	RuntimeEventClaimed         RuntimeEventKind = "claimed"
+	RuntimeEventExecuting       RuntimeEventKind = "executing"
+	RuntimeEventReasoningDelta  RuntimeEventKind = "reasoning_delta"
+	RuntimeEventTextDelta       RuntimeEventKind = "text_delta"
+	RuntimeEventToolStarted     RuntimeEventKind = "tool_started"
+	RuntimeEventToolFinished    RuntimeEventKind = "tool_finished"
+	RuntimeEventFinalizeStarted RuntimeEventKind = "finalize_started"
+	RuntimeEventCompleted       RuntimeEventKind = "completed"
+	RuntimeEventFailed          RuntimeEventKind = "failed"
+)
+
+type RuntimeEvent struct {
+	Kind        RuntimeEventKind
+	Work        WorkItem
+	EventID     string
+	Sequence    int64
+	RunID       string
+	SessionKey  string
+	SessionID   string
+	Status      string
+	Delta       string
+	ToolCallID  string
+	ToolName    string
+	Args        map[string]any
+	Result      map[string]any
+	Truncated   bool
+	Message     string
+	OccurredAt  time.Time
+	Metadata    map[string]string
+	Error       *pkgmodel.ErrorBlock
+	EventRecord *EventRecord
+}
+
+func (e RuntimeEvent) IsTerminal() bool {
+	return e.Kind == RuntimeEventCompleted || e.Kind == RuntimeEventFailed
 }

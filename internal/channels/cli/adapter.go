@@ -4,19 +4,18 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
-
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func BuildIngestRequest(conversationID, participantID string, seq int64, text string) api.IngestRequest {
+func NormalizeMessage(conversationID, participantID string, seq int64, text string, now time.Time) gatewaymodel.NormalizedIngress {
 	if conversationID == "" {
 		conversationID = "cli_default"
 	}
 	if participantID == "" {
 		participantID = "local_user"
 	}
-	return api.IngestRequest{
+	return gatewaymodel.NormalizedIngress{
 		Source: "cli",
 		Conversation: model.Conversation{
 			ConversationID: conversationID,
@@ -24,7 +23,7 @@ func BuildIngestRequest(conversationID, participantID string, seq int64, text st
 			ParticipantID:  participantID,
 		},
 		IdempotencyKey: fmt.Sprintf("cli:%s:%d", conversationID, seq),
-		Timestamp:      time.Now().UTC().Format(time.RFC3339),
+		Timestamp:      now.UTC(),
 		Payload: model.EventPayload{
 			Type: "message",
 			Text: text,

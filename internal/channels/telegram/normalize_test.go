@@ -28,8 +28,8 @@ func TestNormalizeTextUpdate(t *testing.T) {
 	if req.IdempotencyKey != "telegram:update:123" {
 		t.Fatalf("unexpected key: %s", req.IdempotencyKey)
 	}
-	if req.Timestamp != receivedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("expected received_at timestamp, got %s", req.Timestamp)
+	if !req.Timestamp.Equal(receivedAt) {
+		t.Fatalf("expected received_at timestamp, got %s", req.Timestamp.Format(time.RFC3339Nano))
 	}
 	if req.Conversation.ConversationID != "tg_chat_999" {
 		t.Fatalf("unexpected conversation id: %s", req.Conversation.ConversationID)
