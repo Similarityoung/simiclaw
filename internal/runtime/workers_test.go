@@ -112,10 +112,9 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	supervisor := &Supervisor{
 		workers: repo,
 		ingest:  ingestService,
-		ctx:     context.Background(),
 	}
 
-	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
+	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 
 	if len(queue.eventIDs) != 1 {
 		t.Fatalf("expected one enqueued event, got %+v", queue.eventIDs)
@@ -182,10 +181,9 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 		workers: repo,
 		ingest:  ingestService,
 		loop:    loop,
-		ctx:     context.Background(),
 	}
 
-	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
+	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 
 	if got := loop.InboundDepth(); got != 1 {
 		t.Fatalf("expected one event queued into fallback loop, got depth=%d", got)
@@ -344,7 +342,9 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	ingestService.SetClock(func() time.Time { return now })
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
-	supervisor.Start()
+	if err := supervisor.Start(context.Background()); err != nil {
+		t.Fatalf("Start supervisor: %v", err)
+	}
 
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
@@ -461,8 +461,8 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 	}
 
 	repo := storetx.NewRuntimeRepository(db)
-	supervisor := &Supervisor{workers: repo, ctx: context.Background()}
-	supervisor.runScheduledKind(now, model.ScheduledJobKindCron)
+	supervisor := &Supervisor{workers: repo}
+	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 
 	var lastError string
 	if err := db.Reader().QueryRow(`SELECT last_error FROM scheduled_jobs WHERE job_id = 'cron:broken'`).Scan(&lastError); err != nil {

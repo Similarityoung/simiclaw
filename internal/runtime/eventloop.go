@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,13 +28,10 @@ func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.Ev
 	if queueCap <= 0 {
 		queueCap = 1024
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	loop := &EventLoop{
 		facts:     facts,
 		queue:     make(chan runtimemodel.WorkItem, queueCap),
 		scheduler: lanes.NewScheduler(),
-		ctx:       ctx,
-		cancel:    cancel,
 	}
 	processor := kernel.NewService(facts, executor, events)
 	processor.SetClock(func() time.Time { return time.Now().UTC() })
@@ -42,15 +40,22 @@ func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.Ev
 	return loop
 }
 
-func (l *EventLoop) Start() {
+func (l *EventLoop) Start(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime event loop requires a non-nil context")
+	}
+	l.ctx, l.cancel = context.WithCancel(ctx)
 	l.alive.Store(true)
 	l.wg.Add(2)
 	go l.consumeLoop()
 	go l.repumpLoop()
+	return nil
 }
 
 func (l *EventLoop) Stop() {
-	l.cancel()
+	if l.cancel != nil {
+		l.cancel()
+	}
 	l.wg.Wait()
 	l.alive.Store(false)
 }

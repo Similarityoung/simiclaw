@@ -22,7 +22,7 @@ func TestSchedulerSerializesSameLane(t *testing.T) {
 	}
 	defer first.Release()
 
-	acquired := make(chan Lease, 1)
+	acquired := make(chan *Lease, 1)
 	errs := make(chan error, 1)
 	go func() {
 		lease, err := scheduler.Acquire(context.Background(), runtimemodel.WorkItem{
@@ -72,7 +72,7 @@ func TestSchedulerAllowsDifferentLanes(t *testing.T) {
 	}
 	defer first.Release()
 
-	acquired := make(chan Lease, 1)
+	acquired := make(chan *Lease, 1)
 	errs := make(chan error, 1)
 	go func() {
 		lease, err := scheduler.Acquire(context.Background(), runtimemodel.WorkItem{

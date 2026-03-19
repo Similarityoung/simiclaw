@@ -48,7 +48,6 @@ type ReadinessRepository interface {
 }
 
 func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor runtimeworkers.EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
-	ctx, cancel := context.WithCancel(context.Background())
 	var enqueuer runtimeworkers.EventEnqueuer
 	if loop != nil {
 		enqueuer = loop
@@ -70,26 +69,36 @@ func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness Readin
 		ingest:     ingestor,
 		loop:       loop,
 		background: registry.All(),
-		ctx:        ctx,
-		cancel:     cancel,
 	}
 }
 
-func (s *Supervisor) Start() {
+func (s *Supervisor) Start(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime supervisor requires a non-nil context")
+	}
+	s.ctx, s.cancel = context.WithCancel(ctx)
 	if s.loop != nil {
-		s.loop.Start()
+		if err := s.loop.Start(s.ctx); err != nil {
+			s.cancel()
+			s.ctx = nil
+			s.cancel = nil
+			return err
+		}
 	}
 	s.wg.Add(len(s.background))
 	for _, worker := range s.background {
 		go s.runWorker(worker)
 	}
-	if s.workers != nil {
-		_ = s.workers.UpsertCronJobs(context.Background(), s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC())
+	if s.workers != nil && s.ctx != nil {
+		_ = s.workers.UpsertCronJobs(s.ctx, s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC())
 	}
+	return nil
 }
 
 func (s *Supervisor) Stop() {
-	s.cancel()
+	if s.cancel != nil {
+		s.cancel()
+	}
 	if s.loop != nil {
 		s.loop.Stop()
 	}
@@ -161,11 +170,7 @@ func (s *Supervisor) workerHeartbeatNames() []string {
 	return names
 }
 
-func (s *Supervisor) runScheduledKind(now time.Time, kind model.ScheduledJobKind) {
-	ctx := s.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (s *Supervisor) runScheduledKind(ctx context.Context, now time.Time, kind model.ScheduledJobKind) {
 	var enqueuer runtimeworkers.EventEnqueuer
 	if s.loop != nil {
 		enqueuer = s.loop

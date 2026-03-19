@@ -222,7 +222,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	if err := app.Start(); err != nil {
+	if err := app.Start(context.Background()); err != nil {
 		t.Fatalf("Start app: %v", err)
 	}
 	t.Cleanup(app.Stop)

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func runSmokeV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	if err := app.Start(); err != nil {
+	if err := app.Start(context.Background()); err != nil {
 		t.Fatalf("start app: %v", err)
 	}
 	defer app.Stop()

@@ -13,7 +13,10 @@ type Lease struct {
 	once    sync.Once
 }
 
-func (l Lease) Key() Key {
+func (l *Lease) Key() Key {
+	if l == nil {
+		return ""
+	}
 	return l.key
 }
 
@@ -44,13 +47,13 @@ func NewScheduler() *Scheduler {
 	}
 }
 
-func (s *Scheduler) Acquire(ctx context.Context, work runtimemodel.WorkItem) (Lease, error) {
+func (s *Scheduler) Acquire(ctx context.Context, work runtimemodel.WorkItem) (*Lease, error) {
 	key := Resolve(work)
 	state := s.retain(key)
 
 	select {
 	case <-state.token:
-		lease := Lease{key: key}
+		lease := &Lease{key: key}
 		lease.release = func() {
 			state.token <- struct{}{}
 			s.drop(key, state)
@@ -58,7 +61,7 @@ func (s *Scheduler) Acquire(ctx context.Context, work runtimemodel.WorkItem) (Le
 		return lease, nil
 	case <-ctx.Done():
 		s.drop(key, state)
-		return Lease{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 

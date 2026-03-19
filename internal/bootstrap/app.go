@@ -95,14 +95,13 @@ func NewApp(cfg config.Config) (*App, error) {
 	}, nil
 }
 
-func (a *App) Start() error {
+func (a *App) Start(ctx context.Context) error {
 	if a.Telegram != nil {
 		if err := a.Telegram.Start(); err != nil {
 			return err
 		}
 	}
-	a.Supervisor.Start()
-	return nil
+	return a.Supervisor.Start(ctx)
 }
 
 func (a *App) Stop() {
@@ -114,7 +113,7 @@ func (a *App) Stop() {
 }
 
 func (a *App) RunHTTPServer(ctx context.Context) error {
-	if err := a.Start(); err != nil {
+	if err := a.Start(ctx); err != nil {
 		return err
 	}
 	defer a.Stop()
@@ -122,7 +121,7 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 	srv := &http.Server{Addr: a.Cfg.ListenAddr, Handler: a.Handler}
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()

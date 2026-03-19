@@ -68,7 +68,9 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	}
 
 	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
-	loop.Start()
+	if err := loop.Start(context.Background()); err != nil {
+		t.Fatalf("Start loop: %v", err)
+	}
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
 		t.Fatalf("failed to enqueue event")
@@ -158,7 +160,9 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 
 	hub := streaming.NewHub()
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
-	loop.Start()
+	if err := loop.Start(context.Background()); err != nil {
+		t.Fatalf("Start loop: %v", err)
+	}
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
 		t.Fatal("failed to enqueue event")
@@ -198,7 +202,9 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 	}
 	hub := streaming.NewHub()
 	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1), hub, 1)
-	loop.Start()
+	if err := loop.Start(context.Background()); err != nil {
+		t.Fatalf("Start loop: %v", err)
+	}
 
 	if !loop.TryEnqueue("evt_stop") {
 		t.Fatalf("failed to enqueue event")
@@ -246,6 +252,10 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
 	repo := &laneHydrationFacts{}
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
+	if err := loop.Start(context.Background()); err != nil {
+		t.Fatalf("Start loop: %v", err)
+	}
+	defer loop.Stop()
 
 	loop.processWork(runtimemodel.WorkItem{
 		Kind:     runtimemodel.WorkKindEvent,

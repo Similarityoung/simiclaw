@@ -20,22 +20,10 @@
       "reason": "telegram runtime lifecycle root"
     },
     {
-      "rule_id": "context-background",
-      "file": "internal/runtime/eventloop.go",
-      "start_line": 47,
-      "reason": "event loop lifecycle root"
-    },
-    {
-      "rule_id": "context-background",
-      "file": "internal/runtime/workers.go",
-      "start_line": 65,
-      "reason": "supervisor lifecycle root"
-    },
-    {
-      "rule_id": "context-background",
-      "file": "internal/bootstrap/app.go",
-      "start_line": 119,
-      "reason": "http shutdown fallback context"
+      "rule_id": "go-statement",
+      "file": "internal/runtime/supervisor.go",
+      "symbol": "(*Supervisor).Start",
+      "reason": "supervisor owns background worker fan-out and shutdown join"
     },
     {
       "rule_id": "writefile",
