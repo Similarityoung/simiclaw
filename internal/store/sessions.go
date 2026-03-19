@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
-
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 

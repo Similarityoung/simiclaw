@@ -58,3 +58,55 @@ func TestRegisterBuiltinsAddsNamedWorkers(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisterBuiltinsExposeRoleMetadata(t *testing.T) {
+	registry := NewRegistry()
+	RegisterBuiltins(registry, Builtins{})
+
+	want := map[string]kernel.WorkerRole{
+		"heartbeat": {
+			Name:          "heartbeat",
+			HeartbeatName: "heartbeat",
+			PollCadence:   heartbeatInterval,
+			FailurePolicy: "best-effort heartbeat updates",
+		},
+		"processing_recovery": {
+			Name:          "processing_recovery",
+			HeartbeatName: "processing_sweeper",
+			PollCadence:   processingSweepTick,
+			FailurePolicy: "continue on recover errors and requeue best-effort",
+		},
+		"delivery_poll": {
+			Name:          "delivery_poll",
+			HeartbeatName: "outbox_retry",
+			PollCadence:   outboxPollTick,
+			FailurePolicy: "retry with bounded backoff and dead-letter after max attempts",
+		},
+		"scheduled_jobs_delayed": {
+			Name:          "scheduled_jobs_delayed",
+			HeartbeatName: "delayed_jobs",
+			PollCadence:   delayedPollTick,
+			FailurePolicy: "retry failed jobs after cooldown and best-effort fallback enqueue",
+		},
+		"scheduled_jobs_cron": {
+			Name:          "scheduled_jobs_cron",
+			HeartbeatName: "cron",
+			PollCadence:   delayedPollTick,
+			FailurePolicy: "retry cron ingest failures after cooldown",
+		},
+	}
+
+	for _, worker := range registry.All() {
+		role := worker.Role()
+		expected, ok := want[role.Name]
+		if !ok {
+			t.Fatalf("unexpected worker role: %+v", role)
+		}
+		if role != expected {
+			t.Fatalf("unexpected role metadata for %q:\nwant: %+v\ngot:  %+v", role.Name, expected, role)
+		}
+		if role.HeartbeatName == "" || role.PollCadence <= 0 || role.FailurePolicy == "" {
+			t.Fatalf("role metadata must stay explicit, got %+v", role)
+		}
+	}
+}

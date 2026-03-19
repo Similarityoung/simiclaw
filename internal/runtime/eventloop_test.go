@@ -60,12 +60,12 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	hub := streaming.NewHub()
 	sub := hub.Reserve(req.IdempotencyKey)
 	defer hub.Release(sub)
-	if terminal := hub.Attach(sub, result.EventID); terminal != nil {
-		t.Fatalf("unexpected terminal before processing: %+v", terminal)
+	if replay := hub.Attach(sub, result.EventID); len(replay) > 0 {
+		t.Fatalf("unexpected replay before processing: %+v", replay)
 	}
 
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
+	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
 	loop.Start()
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
@@ -74,7 +74,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	var terminal api.ChatStreamEvent
+	var terminal runtimemodel.RuntimeEvent
 	for {
 		event, ok := sub.Next(ctx)
 		if !ok {
@@ -85,7 +85,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 			break
 		}
 	}
-	if terminal.Type != api.ChatStreamEventError {
+	if terminal.Kind != runtimemodel.RuntimeEventFailed {
 		t.Fatalf("expected terminal error, got %+v", terminal)
 	}
 
@@ -154,7 +154,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
 	loop.Start()
 	defer loop.Stop()
 	if !loop.TryEnqueue(result.EventID) {
@@ -194,7 +194,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 		finished: make(chan struct{}),
 	}
 	hub := streaming.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1, hub), NewHubRuntimeEventSink(hub, repo), 1)
+	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1), hub, 1)
 	loop.Start()
 
 	if !loop.TryEnqueue("evt_stop") {

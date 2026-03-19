@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
-	"github.com/similarityyoung/simiclaw/pkg/model"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
@@ -16,20 +15,21 @@ func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 	sub2 := hub.Reserve("k2")
 	defer hub.Release(sub2)
 
-	if terminal := hub.Attach(sub1, "evt_1"); terminal != nil {
-		t.Fatalf("unexpected terminal for sub1: %+v", terminal)
+	if replay := hub.Attach(sub1, "evt_1"); len(replay) > 0 {
+		t.Fatalf("unexpected replay for sub1: %+v", replay)
 	}
-	if terminal := hub.Attach(sub2, "evt_1"); terminal != nil {
-		t.Fatalf("unexpected terminal for sub2: %+v", terminal)
+	if replay := hub.Attach(sub2, "evt_1"); len(replay) > 0 {
+		t.Fatalf("unexpected replay for sub2: %+v", replay)
 	}
 
-	published := hub.Publish("evt_1", api.ChatStreamEvent{
-		Type:    api.ChatStreamEventStatus,
-		Status:  "processing",
-		Message: "claimed",
-	})
-	if published.Sequence != 2 {
-		t.Fatalf("expected first live sequence 2, got %d", published.Sequence)
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventClaimed,
+		EventID:    "evt_1",
+		Status:     "processing",
+		Message:    "claimed",
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("Publish: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -42,19 +42,17 @@ func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 	if !ok {
 		t.Fatalf("sub2 did not receive event")
 	}
-	if ev1.Sequence != published.Sequence || ev2.Sequence != published.Sequence {
-		t.Fatalf("sequence mismatch: published=%d ev1=%d ev2=%d", published.Sequence, ev1.Sequence, ev2.Sequence)
+	if ev1.Sequence != 2 || ev2.Sequence != 2 {
+		t.Fatalf("expected first live sequence 2, got ev1=%d ev2=%d", ev1.Sequence, ev2.Sequence)
 	}
 }
 
 func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 	hub := NewHub()
-	terminal := hub.PublishTerminal("evt_2", api.ChatStreamEvent{
-		Type: api.ChatStreamEventDone,
-		EventRecord: &api.EventRecord{
-			EventID: "evt_2",
-			Status:  model.EventStatusProcessed,
-		},
+	terminal := hub.PublishTerminal(runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventCompleted,
+		EventID:    "evt_2",
+		OccurredAt: time.Now().UTC(),
 	})
 	if terminal.Sequence != 2 {
 		t.Fatalf("expected terminal sequence 2, got %d", terminal.Sequence)
@@ -63,13 +61,46 @@ func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 	sub := hub.Reserve("k3")
 	defer hub.Release(sub)
 	replayed := hub.Attach(sub, "evt_2")
-	if replayed == nil {
+	if len(replayed) != 1 {
 		t.Fatalf("expected replayed terminal")
 	}
-	if replayed.Type != api.ChatStreamEventDone {
+	if replayed[0].Kind != runtimemodel.RuntimeEventCompleted {
 		t.Fatalf("expected done terminal, got %+v", replayed)
 	}
-	if replayed.Sequence != terminal.Sequence {
-		t.Fatalf("expected same sequence, got %d want %d", replayed.Sequence, terminal.Sequence)
+	if replayed[0].Sequence != terminal.Sequence {
+		t.Fatalf("expected same sequence, got %d want %d", replayed[0].Sequence, terminal.Sequence)
+	}
+}
+
+func TestHubReplaysPreAttachHistoryInOrder(t *testing.T) {
+	hub := NewHub()
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventClaimed,
+		EventID:    "evt_3",
+		Message:    "claimed",
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("Publish claimed: %v", err)
+	}
+	terminal := hub.PublishTerminal(runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventCompleted,
+		EventID:    "evt_3",
+		OccurredAt: time.Now().UTC(),
+	})
+
+	sub := hub.Reserve("k4")
+	defer hub.Release(sub)
+	replay := hub.Attach(sub, "evt_3")
+	if len(replay) != 2 {
+		t.Fatalf("expected claimed + terminal replay, got %+v", replay)
+	}
+	if replay[0].Kind != runtimemodel.RuntimeEventClaimed {
+		t.Fatalf("expected first replayed event to be claimed, got %+v", replay)
+	}
+	if replay[1].Kind != runtimemodel.RuntimeEventCompleted {
+		t.Fatalf("expected terminal replay, got %+v", replay)
+	}
+	if replay[1].Sequence != terminal.Sequence {
+		t.Fatalf("expected terminal sequence %d, got %d", terminal.Sequence, replay[1].Sequence)
 	}
 }

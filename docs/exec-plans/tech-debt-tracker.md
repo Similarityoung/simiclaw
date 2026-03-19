@@ -8,7 +8,7 @@
 
 | Area | Current State | Evidence | Suggested Next Step |
 | --- | --- | --- | --- |
-| API 示例 | 已有 HTTP 路由说明，但没有稳定请求/响应样例 | `internal/httpapi/routes.go`, `pkg/api/` | 增加面向操作的 curl / JSON 示例文档 |
+| API 示例 | 已有 HTTP 路由说明，但没有稳定请求/响应样例 | `internal/http/server.go`, `internal/http/{ingest,query,stream}/`, `pkg/api/` | 增加面向操作的 curl / JSON 示例文档 |
 | 数据库可读文档 | `schema.sql` 是唯一完整事实源 | `internal/store/schema.sql` | 生成 `docs/generated/db-schema.md` 或等价视图 |
 | 前端架构 | `web/` 已有多页面与状态管理，但没有说明文档 | `web/src/` | 补前端路由、状态与 API 依赖说明 |
 | Telegram 运维 | 配置入口和部分测试已存在，缺单独操作手册 | `internal/config/config.go`, `tests/integration/telegram_integration_test.go` | 写最小接入与故障排查文档 |

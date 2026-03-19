@@ -1,60 +1,50 @@
 package runtime
 
 import (
+	"context"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-type hubStreamSink struct {
-	hub     *streaming.Hub
-	eventID string
+type runtimeEventStreamSink struct {
+	ctx   context.Context
+	claim runtimemodel.ClaimContext
+	sink  kernel.EventSink
 }
 
-func newHubStreamSink(hub *streaming.Hub, eventID string) hubStreamSink {
-	return hubStreamSink{hub: hub, eventID: eventID}
+func newRuntimeEventStreamSink(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) runtimeEventStreamSink {
+	return runtimeEventStreamSink{ctx: ctx, claim: claim, sink: sink}
 }
 
-func (s hubStreamSink) OnStatus(status, message string) {
-	if s.hub == nil {
+func (s runtimeEventStreamSink) OnStatus(string, string) {
+}
+
+func (s runtimeEventStreamSink) OnReasoningDelta(delta string) {
+	if delta == "" {
 		return
 	}
-	s.hub.Publish(s.eventID, api.ChatStreamEvent{
-		Type:    api.ChatStreamEventStatus,
-		Status:  status,
-		Message: message,
-	})
-}
-
-func (s hubStreamSink) OnReasoningDelta(delta string) {
-	if s.hub == nil || delta == "" {
-		return
-	}
-	s.hub.Publish(s.eventID, api.ChatStreamEvent{
-		Type:  api.ChatStreamEventReasoningDelta,
+	s.publish(runtimemodel.RuntimeEvent{
+		Kind:  runtimemodel.RuntimeEventReasoningDelta,
 		Delta: delta,
 	})
 }
 
-func (s hubStreamSink) OnTextDelta(delta string) {
-	if s.hub == nil || delta == "" {
+func (s runtimeEventStreamSink) OnTextDelta(delta string) {
+	if delta == "" {
 		return
 	}
-	s.hub.Publish(s.eventID, api.ChatStreamEvent{
-		Type:  api.ChatStreamEventTextDelta,
+	s.publish(runtimemodel.RuntimeEvent{
+		Kind:  runtimemodel.RuntimeEventTextDelta,
 		Delta: delta,
 	})
 }
 
-func (s hubStreamSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
-	if s.hub == nil {
-		return
-	}
-	s.hub.Publish(s.eventID, api.ChatStreamEvent{
-		Type:       api.ChatStreamEventToolStart,
+func (s runtimeEventStreamSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
+	s.publish(runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventToolStarted,
 		ToolCallID: toolCallID,
 		ToolName:   toolName,
 		Args:       args,
@@ -62,12 +52,9 @@ func (s hubStreamSink) OnToolStart(toolCallID, toolName string, args map[string]
 	})
 }
 
-func (s hubStreamSink) OnToolResult(toolCallID, toolName string, result map[string]any, truncated bool, apiErr *model.ErrorBlock) {
-	if s.hub == nil {
-		return
-	}
-	s.hub.Publish(s.eventID, api.ChatStreamEvent{
-		Type:       api.ChatStreamEventToolResult,
+func (s runtimeEventStreamSink) OnToolResult(toolCallID, toolName string, result map[string]any, truncated bool, apiErr *model.ErrorBlock) {
+	s.publish(runtimemodel.RuntimeEvent{
+		Kind:       runtimemodel.RuntimeEventToolFinished,
 		ToolCallID: toolCallID,
 		ToolName:   toolName,
 		Result:     result,
@@ -76,61 +63,19 @@ func (s hubStreamSink) OnToolResult(toolCallID, toolName string, result map[stri
 	})
 }
 
-func terminalEventFromRecord(rec runtimemodel.EventRecord) api.ChatStreamEvent {
-	apiRec := api.EventRecord{
-		EventID:           rec.EventID,
-		Status:            rec.Status,
-		OutboxStatus:      rec.OutboxStatus,
-		SessionKey:        rec.SessionKey,
-		SessionID:         rec.SessionID,
-		RunID:             rec.RunID,
-		RunMode:           rec.RunMode,
-		AssistantReply:    rec.AssistantReply,
-		OutboxID:          rec.OutboxID,
-		ProcessingLease:   rec.ProcessingLease,
-		ReceivedAt:        rec.ReceivedAt,
-		CreatedAt:         rec.CreatedAt,
-		UpdatedAt:         rec.UpdatedAt,
-		PayloadHash:       rec.PayloadHash,
-		Provider:          rec.Provider,
-		Model:             rec.Model,
-		ProviderRequestID: rec.ProviderRequestID,
-		Error:             rec.Error,
+func (s runtimeEventStreamSink) publish(event runtimemodel.RuntimeEvent) {
+	if s.sink == nil {
+		return
 	}
-	switch rec.Status {
-	case model.EventStatusFailed:
-		return api.ChatStreamEvent{
-			Type:        api.ChatStreamEventError,
-			EventID:     rec.EventID,
-			At:          nonZeroTime(rec.UpdatedAt),
-			EventRecord: &apiRec,
-			Error:       rec.Error,
-		}
-	default:
-		return api.ChatStreamEvent{
-			Type:        api.ChatStreamEventDone,
-			EventID:     rec.EventID,
-			At:          nonZeroTime(rec.UpdatedAt),
-			EventRecord: &apiRec,
-		}
+	event.Work = s.claim.Work
+	event.EventID = s.claim.Event.EventID
+	event.RunID = s.claim.RunID
+	event.SessionKey = s.claim.SessionKey
+	event.SessionID = s.claim.SessionID
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Now().UTC()
 	}
-}
-
-func terminalEventFromFinalize(finalize runtimemodel.RunFinalize) api.ChatStreamEvent {
-	rec := runtimemodel.EventRecord{
-		EventID:        finalize.EventID,
-		Status:         finalize.EventStatus,
-		RunID:          finalize.RunID,
-		RunMode:        finalize.RunMode,
-		SessionKey:     finalize.SessionKey,
-		SessionID:      finalize.SessionID,
-		AssistantReply: finalize.AssistantReply,
-		Provider:       finalize.Provider,
-		Model:          finalize.Model,
-		UpdatedAt:      nonZeroTime(finalize.Now),
-		Error:          finalize.Error,
-	}
-	return terminalEventFromRecord(rec)
+	_ = s.sink.Publish(s.ctx, event)
 }
 
 func nonZeroTime(in time.Time) time.Time {

@@ -178,6 +178,8 @@ type RuntimeEventKind string
 const (
 	RuntimeEventClaimed         RuntimeEventKind = "claimed"
 	RuntimeEventExecuting       RuntimeEventKind = "executing"
+	RuntimeEventReasoningDelta  RuntimeEventKind = "reasoning_delta"
+	RuntimeEventTextDelta       RuntimeEventKind = "text_delta"
 	RuntimeEventToolStarted     RuntimeEventKind = "tool_started"
 	RuntimeEventToolFinished    RuntimeEventKind = "tool_finished"
 	RuntimeEventFinalizeStarted RuntimeEventKind = "finalize_started"
@@ -186,16 +188,27 @@ const (
 )
 
 type RuntimeEvent struct {
-	Kind       RuntimeEventKind
-	Work       WorkItem
-	EventID    string
-	RunID      string
-	SessionKey string
-	SessionID  string
-	ToolCallID string
-	ToolName   string
-	Message    string
-	OccurredAt time.Time
-	Metadata   map[string]string
-	Error      *pkgmodel.ErrorBlock
+	Kind        RuntimeEventKind
+	Work        WorkItem
+	EventID     string
+	Sequence    int64
+	RunID       string
+	SessionKey  string
+	SessionID   string
+	Status      string
+	Delta       string
+	ToolCallID  string
+	ToolName    string
+	Args        map[string]any
+	Result      map[string]any
+	Truncated   bool
+	Message     string
+	OccurredAt  time.Time
+	Metadata    map[string]string
+	Error       *pkgmodel.ErrorBlock
+	EventRecord *EventRecord
+}
+
+func (e RuntimeEvent) IsTerminal() bool {
+	return e.Kind == RuntimeEventCompleted || e.Kind == RuntimeEventFailed
 }

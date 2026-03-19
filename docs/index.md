@@ -38,7 +38,7 @@
 ## 权威来源
 
 - 命令与测试: `Makefile`, `VERSION_STAGE`
-- 运行时主链路: `internal/bootstrap/app.go`, `internal/ingest/service.go`, `internal/runtime/eventloop.go`, `internal/runner/runner.go`
+- 运行时主链路: `internal/bootstrap/app.go`, `internal/gateway/service.go`, `internal/runtime/eventloop.go`, `internal/runtime/kernel/service.go`, `internal/runner/runner.go`
 - 存储与 schema: `internal/store/db.go`, `internal/store/schema.sql`
 - 边界约束: `tests/architecture/boundaries_test.go`
 - Prompt / workspace: `internal/prompt/*.go`, `internal/workspace/scaffold.go`, `internal/workspacefile/workspacefile.go`

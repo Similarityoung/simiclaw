@@ -31,7 +31,7 @@
 | 入口层 | CLI、HTTP、前端与渠道适配 | `cmd/simiclaw/`, `internal/http/`, `internal/channels/`, `web/` |
 | 应用装配层 | 配置加载、依赖组装、生命周期管理 | `internal/bootstrap/`, `internal/config/` |
 | 写路径与执行层 | gateway、event loop、runner、worker、outbox | `internal/gateway/`, `internal/runtime/`, `internal/runner/`, `internal/outbound/` |
-| 持久化与查询层 | SQLite schema、事务、读服务 | `internal/store/`, `internal/query/`, `internal/readmodel/` |
+| 持久化与查询层 | SQLite schema、事务、读服务 | `internal/store/`, `internal/query/` |
 | 上下文与能力层 | prompt、memory、skills、workspace 文件边界 | `internal/prompt/`, `internal/memory/`, `internal/tools/`, `internal/workspace/`, `internal/workspacefile/` |
 | 对外稳定契约 | HTTP / SSE / CLI wire model 与共享类型 | `pkg/api/`, `pkg/model/`, `pkg/logging/` |
 
@@ -49,7 +49,6 @@
 ## Enforced Boundaries
 
 - `tests/architecture/boundaries_test.go` 会阻止 `internal/http`、`internal/ingest/port` 以外的上层入口、`internal/query`、`internal/runner`、`internal/runtime`、`internal/channels`、`internal/workspace` 直接依赖 `internal/store`。
-- `internal/readmodel` 只能被 `internal/store` 使用。
 - `pkg/api` 是稳定对外契约；内部子系统通过各自的 `internal/<subsystem>/model` 传递局部 DTO。
 - 只有 ingest 入口能直接调用 `IngestEvent`；写路径不能在系统里随意旁路。
 

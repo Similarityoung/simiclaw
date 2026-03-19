@@ -54,8 +54,8 @@ func NewApp(cfg config.Config) (*App, error) {
 	payloads := runtimepayload.NewBuiltinRegistry()
 	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers, payloads)
 	runtimeRepo := storetx.NewRuntimeRepository(db)
-	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds, streamHub)
-	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, runtime.NewHubRuntimeEventSink(streamHub, runtimeRepo), cfg.EventQueueCapacity)
+	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
+	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, streamHub, cfg.EventQueueCapacity)
 	gatewayService := gateway.NewService(
 		cfg.TenantID,
 		runtimeRepo,

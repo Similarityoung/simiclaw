@@ -13,6 +13,7 @@ import (
 	httpingest "github.com/similarityyoung/simiclaw/internal/http/ingest"
 	httpquery "github.com/similarityyoung/simiclaw/internal/http/query"
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -59,7 +60,7 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		httpingest.WriteAPIError(w, apiErr)
 		return
 	}
-	terminal := h.hub.Attach(sub, accepted.Result.EventID)
+	replay := h.hub.Attach(sub, accepted.Result.EventID)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -78,13 +79,19 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	if err := writeSSEEvent(w, flusher, acceptedEvent); err != nil {
 		return
 	}
-	if terminal != nil {
-		_ = writeSSEEvent(w, flusher, *terminal)
-		return
+	for _, event := range replay {
+		apiEvent := runtimeEventToAPI(event)
+		if err := writeSSEEvent(w, flusher, apiEvent); err != nil {
+			return
+		}
+		if apiEvent.IsTerminal() {
+			return
+		}
 	}
 	if eventRec, ok, err := h.query.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
-		if terminalEvent := terminalEventFromRecord(eventRec); terminalEvent != nil {
-			h.hub.PublishTerminal(accepted.Result.EventID, *terminalEvent)
+		if terminalEvent := terminalRuntimeEventFromRecord(eventRec); terminalEvent != nil {
+			_ = writeSSEEvent(w, flusher, runtimeEventToAPI(h.hub.PublishTerminal(*terminalEvent)))
+			return
 		}
 	}
 
@@ -94,10 +101,11 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		waitErr := waitCtx.Err()
 		cancel()
 		if ok {
-			if err := writeSSEEvent(w, flusher, event); err != nil {
+			apiEvent := runtimeEventToAPI(event)
+			if err := writeSSEEvent(w, flusher, apiEvent); err != nil {
 				return
 			}
-			if event.IsTerminal() {
+			if apiEvent.IsTerminal() {
 				return
 			}
 			continue
@@ -146,27 +154,136 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 	return nil
 }
 
-func terminalEventFromRecord(rec querymodel.EventRecord) *api.ChatStreamEvent {
-	apiRec := httpquery.ToAPIEventRecord(rec)
+func terminalRuntimeEventFromRecord(rec querymodel.EventRecord) *runtimemodel.RuntimeEvent {
+	eventRecord := queryEventRecordToRuntime(rec)
 	switch rec.Status {
 	case model.EventStatusFailed:
-		return &api.ChatStreamEvent{
-			Type:        api.ChatStreamEventError,
+		return &runtimemodel.RuntimeEvent{
+			Kind:        runtimemodel.RuntimeEventFailed,
 			EventID:     rec.EventID,
-			At:          rec.UpdatedAt,
-			EventRecord: &apiRec,
+			RunID:       rec.RunID,
+			SessionKey:  rec.SessionKey,
+			SessionID:   rec.SessionID,
+			OccurredAt:  rec.UpdatedAt,
 			Error:       rec.Error,
+			EventRecord: &eventRecord,
 		}
 	case model.EventStatusProcessed, model.EventStatusSuppressed:
-		return &api.ChatStreamEvent{
-			Type:        api.ChatStreamEventDone,
+		return &runtimemodel.RuntimeEvent{
+			Kind:        runtimemodel.RuntimeEventCompleted,
 			EventID:     rec.EventID,
-			At:          rec.UpdatedAt,
-			EventRecord: &apiRec,
+			RunID:       rec.RunID,
+			SessionKey:  rec.SessionKey,
+			SessionID:   rec.SessionID,
+			OccurredAt:  rec.UpdatedAt,
+			EventRecord: &eventRecord,
 		}
 	default:
 		return nil
 	}
+}
+
+func runtimeEventToAPI(event runtimemodel.RuntimeEvent) api.ChatStreamEvent {
+	out := api.ChatStreamEvent{
+		EventID:  event.EventID,
+		Sequence: event.Sequence,
+		At:       nonZeroTime(event.OccurredAt),
+	}
+	switch event.Kind {
+	case runtimemodel.RuntimeEventClaimed, runtimemodel.RuntimeEventExecuting, runtimemodel.RuntimeEventFinalizeStarted:
+		out.Type = api.ChatStreamEventStatus
+		out.Status = "processing"
+		out.Message = event.Message
+	case runtimemodel.RuntimeEventReasoningDelta:
+		out.Type = api.ChatStreamEventReasoningDelta
+		out.Delta = event.Delta
+	case runtimemodel.RuntimeEventTextDelta:
+		out.Type = api.ChatStreamEventTextDelta
+		out.Delta = event.Delta
+	case runtimemodel.RuntimeEventToolStarted:
+		out.Type = api.ChatStreamEventToolStart
+		out.ToolCallID = event.ToolCallID
+		out.ToolName = event.ToolName
+		out.Args = event.Args
+		out.Truncated = event.Truncated
+	case runtimemodel.RuntimeEventToolFinished:
+		out.Type = api.ChatStreamEventToolResult
+		out.ToolCallID = event.ToolCallID
+		out.ToolName = event.ToolName
+		out.Result = event.Result
+		out.Truncated = event.Truncated
+		out.Error = event.Error
+	case runtimemodel.RuntimeEventFailed:
+		out.Type = api.ChatStreamEventError
+		out.Error = event.Error
+		if event.EventRecord != nil {
+			apiRec := runtimeEventRecordToAPI(*event.EventRecord)
+			out.EventRecord = &apiRec
+			if out.Error == nil {
+				out.Error = apiRec.Error
+			}
+		}
+	case runtimemodel.RuntimeEventCompleted:
+		out.Type = api.ChatStreamEventDone
+		if event.EventRecord != nil {
+			apiRec := runtimeEventRecordToAPI(*event.EventRecord)
+			out.EventRecord = &apiRec
+		}
+	}
+	return out
+}
+
+func queryEventRecordToRuntime(rec querymodel.EventRecord) runtimemodel.EventRecord {
+	return runtimemodel.EventRecord{
+		EventID:           rec.EventID,
+		Status:            rec.Status,
+		OutboxStatus:      rec.OutboxStatus,
+		SessionKey:        rec.SessionKey,
+		SessionID:         rec.SessionID,
+		RunID:             rec.RunID,
+		RunMode:           rec.RunMode,
+		AssistantReply:    rec.AssistantReply,
+		OutboxID:          rec.OutboxID,
+		ProcessingLease:   rec.ProcessingLease,
+		ReceivedAt:        rec.ReceivedAt,
+		CreatedAt:         rec.CreatedAt,
+		UpdatedAt:         rec.UpdatedAt,
+		PayloadHash:       rec.PayloadHash,
+		Provider:          rec.Provider,
+		Model:             rec.Model,
+		ProviderRequestID: rec.ProviderRequestID,
+		Error:             rec.Error,
+	}
+}
+
+func runtimeEventRecordToAPI(rec runtimemodel.EventRecord) api.EventRecord {
+	return httpquery.ToAPIEventRecord(querymodel.EventRecord{
+		EventID:           rec.EventID,
+		Status:            rec.Status,
+		OutboxStatus:      rec.OutboxStatus,
+		SessionKey:        rec.SessionKey,
+		SessionID:         rec.SessionID,
+		RunID:             rec.RunID,
+		RunMode:           rec.RunMode,
+		AssistantReply:    rec.AssistantReply,
+		OutboxID:          rec.OutboxID,
+		ProcessingLease:   rec.ProcessingLease,
+		ReceivedAt:        rec.ReceivedAt,
+		CreatedAt:         rec.CreatedAt,
+		UpdatedAt:         rec.UpdatedAt,
+		PayloadHash:       rec.PayloadHash,
+		Provider:          rec.Provider,
+		Model:             rec.Model,
+		ProviderRequestID: rec.ProviderRequestID,
+		Error:             rec.Error,
+	})
+}
+
+func nonZeroTime(in time.Time) time.Time {
+	if in.IsZero() {
+		return time.Now().UTC()
+	}
+	return in
 }
 
 func readSSEEvent(r *bufio.Reader) (string, []byte, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -32,11 +33,13 @@ func TestRuntimeKernelLifecycleStreamAndPersistence(t *testing.T) {
 
 	sub := app.StreamHub.Reserve(req.IdempotencyKey + ":terminal-replay")
 	defer app.StreamHub.Release(sub)
-	terminal := app.StreamHub.Attach(sub, resp.EventID)
-	if terminal == nil {
+	replay := app.StreamHub.Attach(sub, resp.EventID)
+	if len(replay) == 0 {
 		t.Fatalf("expected terminal replay after event finished, event=%+v", event)
 	}
-	if terminal.Type != api.ChatStreamEventDone {
+	assertRuntimeReplayPath(t, replay, []string{"claimed", "running", "finalizing"})
+	terminal := replay[len(replay)-1]
+	if terminal.Kind != runtimemodel.RuntimeEventCompleted {
 		t.Fatalf("expected done terminal replay, got %+v", terminal)
 	}
 	if terminal.EventRecord == nil {
@@ -55,5 +58,18 @@ func TestRuntimeKernelLifecycleStreamAndPersistence(t *testing.T) {
 	}
 	if trace.Status != model.RunStatusCompleted || trace.RunMode != model.RunModeNormal {
 		t.Fatalf("expected completed normal run trace, got %+v", trace)
+	}
+}
+
+func assertRuntimeReplayPath(t *testing.T, replay []runtimemodel.RuntimeEvent, want []string) {
+	t.Helper()
+	idx := 0
+	for _, event := range replay {
+		if idx < len(want) && event.Message == want[idx] {
+			idx++
+		}
+	}
+	if idx != len(want) {
+		t.Fatalf("expected replay path %v, got %+v", want, replay)
 	}
 }

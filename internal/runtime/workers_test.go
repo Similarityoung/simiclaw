@@ -19,7 +19,6 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -173,7 +172,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 4)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
 	ingestService := newGatewayIngestor("local", repo, &rejectEnqueuer{})
 	ingestService.SetClock(func() time.Time { return now })
 	supervisor := &Supervisor{
@@ -207,16 +206,21 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	}
 }
 
-func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
+func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
 	hub := streaming.NewHub()
 	sub := hub.Reserve("idem")
 	defer hub.Release(sub)
-	if terminal := hub.Attach(sub, "evt_stream"); terminal != nil {
-		t.Fatalf("unexpected terminal event: %+v", terminal)
+	if replay := hub.Attach(sub, "evt_stream"); len(replay) > 0 {
+		t.Fatalf("unexpected replay: %+v", replay)
 	}
 
-	sink := newHubStreamSink(hub, "evt_stream")
-	sink.OnStatus("processing", "claimed")
+	sink := newRuntimeEventStreamSink(context.Background(), runtimemodel.ClaimContext{
+		Work:       runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_stream", Identity: "evt_stream"},
+		Event:      model.InternalEvent{EventID: "evt_stream"},
+		RunID:      "run_stream",
+		SessionKey: "local:dm:u1",
+		SessionID:  "ses_1",
+	}, hub)
 	sink.OnReasoningDelta("thinking")
 	sink.OnTextDelta("hello")
 	sink.OnToolStart("call_1", "memory_search", map[string]any{"query": "x"}, false)
@@ -224,42 +228,19 @@ func TestHubStreamSinkPublishesEventsAndTerminalHelpers(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	for _, want := range []api.ChatStreamEventType{
-		api.ChatStreamEventStatus,
-		api.ChatStreamEventReasoningDelta,
-		api.ChatStreamEventTextDelta,
-		api.ChatStreamEventToolStart,
-		api.ChatStreamEventToolResult,
+	for _, want := range []runtimemodel.RuntimeEventKind{
+		runtimemodel.RuntimeEventReasoningDelta,
+		runtimemodel.RuntimeEventTextDelta,
+		runtimemodel.RuntimeEventToolStarted,
+		runtimemodel.RuntimeEventToolFinished,
 	} {
 		event, ok := sub.Next(ctx)
 		if !ok {
 			t.Fatalf("expected stream event %s", want)
 		}
-		if event.Type != want {
-			t.Fatalf("expected event type %s, got %+v", want, event)
+		if event.Kind != want {
+			t.Fatalf("expected event kind %s, got %+v", want, event)
 		}
-	}
-
-	failed := terminalEventFromFinalize(runtimemodel.RunFinalize{
-		EventID:     "evt_fail",
-		RunID:       "run_fail",
-		RunMode:     model.RunModeNormal,
-		EventStatus: model.EventStatusFailed,
-		SessionKey:  "local:dm:u1",
-		SessionID:   "ses_1",
-		Error:       &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: "boom"},
-		Now:         time.Now().UTC(),
-	})
-	if failed.Type != api.ChatStreamEventError || failed.Error == nil {
-		t.Fatalf("expected failed terminal event, got %+v", failed)
-	}
-	done := terminalEventFromRecord(runtimemodel.EventRecord{
-		EventID:   "evt_done",
-		Status:    model.EventStatusProcessed,
-		UpdatedAt: time.Now().UTC(),
-	})
-	if done.Type != api.ChatStreamEventDone {
-		t.Fatalf("expected done terminal event, got %+v", done)
 	}
 	if nonZeroTime(time.Time{}).IsZero() {
 		t.Fatalf("expected nonZeroTime to synthesize timestamp")
@@ -344,7 +325,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 8)
 	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
 	ingestService.SetClock(func() time.Time { return now })
 	sender := &captureSender{}
@@ -411,8 +392,11 @@ func TestTelegramTargetIDValidation(t *testing.T) {
 	}
 }
 
-func TestHubStreamSinkHandlesNilHubAndEmptyDeltas(t *testing.T) {
-	sink := newHubStreamSink(nil, "evt_nil")
+func TestRuntimeEventStreamSinkHandlesNilHubAndEmptyDeltas(t *testing.T) {
+	sink := newRuntimeEventStreamSink(context.Background(), runtimemodel.ClaimContext{
+		Work:  runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_nil", Identity: "evt_nil"},
+		Event: model.InternalEvent{EventID: "evt_nil"},
+	}, nil)
 	sink.OnStatus("processing", "noop")
 	sink.OnReasoningDelta("")
 	sink.OnTextDelta("")
@@ -435,7 +419,7 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 1)
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 1)
 	supervisor := NewSupervisor(cfg, repo, repo, nil, loop, &captureSender{})
 	state, err := supervisor.ReadyState(context.Background())
 	if err == nil || state["event_loop"] != "down" {
@@ -476,7 +460,7 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 }
 
 func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
-	loop := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 0, nil), nil, 0)
+	loop := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 0), nil, 0)
 	if cap(loop.queue) != 1024 {
 		t.Fatalf("expected default queue capacity, got cap=%d", cap(loop.queue))
 	}
@@ -484,7 +468,7 @@ func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
 		t.Fatalf("expected first enqueue to succeed")
 	}
 
-	full := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 1, nil), nil, 1)
+	full := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 1), nil, 1)
 	if !full.TryEnqueue("evt_1") {
 		t.Fatalf("expected bounded queue first enqueue to succeed")
 	}

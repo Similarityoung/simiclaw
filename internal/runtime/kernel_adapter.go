@@ -7,29 +7,26 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type runnerExecutor struct {
 	runner    runner.Runner
 	maxRounds int
-	streamHub *streaming.Hub
 }
 
-func NewRunnerExecutor(run runner.Runner, maxRounds int, streamHub *streaming.Hub) kernel.Executor {
+func NewRunnerExecutor(run runner.Runner, maxRounds int) kernel.Executor {
 	if maxRounds <= 0 {
 		maxRounds = 4
 	}
 	return runnerExecutor{
 		runner:    run,
 		maxRounds: maxRounds,
-		streamHub: streamHub,
 	}
 }
 
-func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimContext, _ kernel.EventSink) (runtimemodel.ExecutionResult, error) {
-	output, err := e.runner.Run(ctx, claim.Event, e.maxRounds, newHubStreamSink(e.streamHub, claim.Event.EventID))
+func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) (runtimemodel.ExecutionResult, error) {
+	output, err := e.runner.Run(ctx, claim.Event, e.maxRounds, newRuntimeEventStreamSink(ctx, claim, sink))
 	result, convErr := executionResultFromRunOutput(claim, output)
 	if err == nil && convErr != nil {
 		err = convErr

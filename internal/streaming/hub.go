@@ -5,11 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 const (
 	defaultSubscriptionBuffer = 64
+	defaultReplayBuffer       = 2048
 	defaultTerminalRetention  = 10 * time.Minute
 )
 
@@ -26,14 +27,15 @@ type Subscription struct {
 }
 
 type queuedEvent struct {
-	event     api.ChatStreamEvent
+	event     runtimemodel.RuntimeEvent
 	droppable bool
 }
 
 type eventState struct {
 	nextSequence int64
 	subscribers  map[*Subscription]struct{}
-	terminal     *api.ChatStreamEvent
+	history      []queuedEvent
+	terminal     *runtimemodel.RuntimeEvent
 	updatedAt    time.Time
 }
 
@@ -44,6 +46,7 @@ type Hub struct {
 	nextSubscription  uint64
 	terminalRetention time.Duration
 	maxQueued         int
+	maxReplay         int
 }
 
 func NewHub() *Hub {
@@ -52,6 +55,7 @@ func NewHub() *Hub {
 		reservations:      make(map[*Subscription]struct{}),
 		terminalRetention: defaultTerminalRetention,
 		maxQueued:         defaultSubscriptionBuffer,
+		maxReplay:         defaultReplayBuffer,
 	}
 }
 
@@ -89,7 +93,7 @@ func (h *Hub) Release(sub *Subscription) {
 	sub.close()
 }
 
-func (h *Hub) Attach(sub *Subscription, eventID string) *api.ChatStreamEvent {
+func (h *Hub) Attach(sub *Subscription, eventID string) []runtimemodel.RuntimeEvent {
 	if sub == nil {
 		return nil
 	}
@@ -100,25 +104,32 @@ func (h *Hub) Attach(sub *Subscription, eventID string) *api.ChatStreamEvent {
 	delete(h.reservations, sub)
 	state := h.ensureEventLocked(eventID, now)
 	sub.eventID = eventID
-	if state.terminal != nil {
-		terminal := *state.terminal
-		return &terminal
+	replay := state.replay()
+	if state.terminal == nil {
+		state.subscribers[sub] = struct{}{}
 	}
-	state.subscribers[sub] = struct{}{}
 	state.updatedAt = now
+	return replay
+}
+
+func (h *Hub) Publish(_ context.Context, event runtimemodel.RuntimeEvent) error {
+	if event.EventID == "" {
+		return nil
+	}
+	h.publish(event, event.IsTerminal())
 	return nil
 }
 
-func (h *Hub) Publish(eventID string, event api.ChatStreamEvent) api.ChatStreamEvent {
-	return h.publish(eventID, event, false)
+func (h *Hub) PublishTerminal(event runtimemodel.RuntimeEvent) runtimemodel.RuntimeEvent {
+	return h.publish(event, true)
 }
 
-func (h *Hub) PublishTerminal(eventID string, event api.ChatStreamEvent) api.ChatStreamEvent {
-	return h.publish(eventID, event, true)
-}
-
-func (h *Hub) publish(eventID string, event api.ChatStreamEvent, terminal bool) api.ChatStreamEvent {
+func (h *Hub) publish(event runtimemodel.RuntimeEvent, terminal bool) runtimemodel.RuntimeEvent {
 	now := time.Now().UTC()
+	eventID := event.EventID
+	if eventID == "" {
+		return event
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pruneLocked(now)
@@ -127,25 +138,31 @@ func (h *Hub) publish(eventID string, event api.ChatStreamEvent, terminal bool) 
 		cached := *state.terminal
 		return cached
 	}
-	event.EventID = eventID
-	if event.At.IsZero() {
-		event.At = now
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = now
 	}
 	if event.Sequence == 0 {
 		event.Sequence = state.nextSequence
 		state.nextSequence++
 	}
 	state.updatedAt = now
-	droppable := event.Type == api.ChatStreamEventStatus ||
-		event.Type == api.ChatStreamEventReasoningDelta ||
-		event.Type == api.ChatStreamEventTextDelta
+	queueDroppable := event.Kind == runtimemodel.RuntimeEventClaimed ||
+		event.Kind == runtimemodel.RuntimeEventExecuting ||
+		event.Kind == runtimemodel.RuntimeEventFinalizeStarted ||
+		event.Kind == runtimemodel.RuntimeEventReasoningDelta ||
+		event.Kind == runtimemodel.RuntimeEventTextDelta
+	replayDroppable := event.Kind == runtimemodel.RuntimeEventReasoningDelta ||
+		event.Kind == runtimemodel.RuntimeEventTextDelta
+	if !terminal {
+		state.appendHistory(queuedEvent{event: event, droppable: replayDroppable}, h.maxReplay)
+	}
 	for sub := range state.subscribers {
 		if terminal {
 			sub.enqueue(event, false)
 			sub.close()
 			continue
 		}
-		sub.enqueue(event, droppable)
+		sub.enqueue(event, queueDroppable)
 	}
 	if terminal {
 		cached := event
@@ -170,6 +187,38 @@ func (h *Hub) ensureEventLocked(eventID string, now time.Time) *eventState {
 	return state
 }
 
+func (s *eventState) appendHistory(item queuedEvent, maxQueued int) {
+	s.history = append(s.history, item)
+	if maxQueued <= 0 || len(s.history) <= maxQueued {
+		return
+	}
+	filtered := s.history[:0]
+	for _, existing := range s.history {
+		if len(filtered) < maxQueued || !existing.droppable {
+			filtered = append(filtered, existing)
+		}
+	}
+	s.history = filtered
+	if len(s.history) <= maxQueued {
+		return
+	}
+	s.history = append([]queuedEvent(nil), s.history[len(s.history)-maxQueued:]...)
+}
+
+func (s *eventState) replay() []runtimemodel.RuntimeEvent {
+	if len(s.history) == 0 && s.terminal == nil {
+		return nil
+	}
+	events := make([]runtimemodel.RuntimeEvent, 0, len(s.history)+1)
+	for _, item := range s.history {
+		events = append(events, item.event)
+	}
+	if s.terminal != nil {
+		events = append(events, *s.terminal)
+	}
+	return events
+}
+
 func (h *Hub) pruneLocked(now time.Time) {
 	for eventID, state := range h.events {
 		if state.terminal == nil || len(state.subscribers) > 0 {
@@ -181,7 +230,7 @@ func (h *Hub) pruneLocked(now time.Time) {
 	}
 }
 
-func (s *Subscription) Next(ctx context.Context) (api.ChatStreamEvent, bool) {
+func (s *Subscription) Next(ctx context.Context) (runtimemodel.RuntimeEvent, bool) {
 	for {
 		s.mu.Lock()
 		if len(s.pending) > 0 {
@@ -193,20 +242,20 @@ func (s *Subscription) Next(ctx context.Context) (api.ChatStreamEvent, bool) {
 		}
 		if s.closed {
 			s.mu.Unlock()
-			return api.ChatStreamEvent{}, false
+			return runtimemodel.RuntimeEvent{}, false
 		}
 		notify := s.notify
 		s.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
-			return api.ChatStreamEvent{}, false
+			return runtimemodel.RuntimeEvent{}, false
 		case <-notify:
 		}
 	}
 }
 
-func (s *Subscription) enqueue(event api.ChatStreamEvent, droppable bool) bool {
+func (s *Subscription) enqueue(event runtimemodel.RuntimeEvent, droppable bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

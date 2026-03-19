@@ -64,6 +64,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		RunID:      claim.RunID,
 		SessionKey: claim.SessionKey,
 		SessionID:  claim.SessionID,
+		Status:     "processing",
 		Message:    "claimed",
 		OccurredAt: claimedAt,
 	})
@@ -74,6 +75,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		RunID:      claim.RunID,
 		SessionKey: claim.SessionKey,
 		SessionID:  claim.SessionID,
+		Status:     "processing",
 		Message:    "running",
 		OccurredAt: claimedAt,
 	})
@@ -87,6 +89,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		RunID:      claim.RunID,
 		SessionKey: claim.SessionKey,
 		SessionID:  claim.SessionID,
+		Status:     "processing",
 		Message:    "finalizing",
 		OccurredAt: finalize.Now,
 	})
@@ -117,16 +120,21 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	if finalize.EventStatus == model.EventStatusFailed {
 		eventKind = runtimemodel.RuntimeEventFailed
 	}
+	var eventRecord *runtimemodel.EventRecord
+	if rec, ok, err := s.facts.GetEventRecord(ctx, claim.Event.EventID); err == nil && ok {
+		eventRecord = &rec
+	}
 	s.publish(ctx, runtimemodel.RuntimeEvent{
-		Kind:       eventKind,
-		Work:       claim.Work,
-		EventID:    claim.Event.EventID,
-		RunID:      claim.RunID,
-		SessionKey: claim.SessionKey,
-		SessionID:  claim.SessionID,
-		Message:    string(finalize.EventStatus),
-		OccurredAt: finalize.Now,
-		Error:      finalize.Error,
+		Kind:        eventKind,
+		Work:        claim.Work,
+		EventID:     claim.Event.EventID,
+		RunID:       claim.RunID,
+		SessionKey:  claim.SessionKey,
+		SessionID:   claim.SessionID,
+		Message:     string(finalize.EventStatus),
+		OccurredAt:  finalize.Now,
+		Error:       finalize.Error,
+		EventRecord: eventRecord,
 	})
 	logger.Info("completed",
 		logging.String("status", string(finalize.EventStatus)),

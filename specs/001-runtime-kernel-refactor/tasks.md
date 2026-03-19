@@ -101,16 +101,16 @@
 
 ### Tests for User Story 3
 
-- [ ] T031 [P] [US3] 在 `tests/integration/runtime_trace_path_test.go` 中验证 ingest -> claim -> execute -> finalize -> delivery 的可追踪路径
-- [ ] T032 [P] [US3] 在 `internal/runtime/workers/registry_test.go` 或 `internal/runtime/workers/*_test.go` 中验证 worker role metadata、heartbeat name、failure strategy
+- [X] T031 [P] [US3] 在 `tests/integration/runtime_trace_path_test.go` 中验证 ingest -> claim -> execute -> finalize -> delivery 的可追踪路径
+- [X] T032 [P] [US3] 在 `internal/runtime/workers/registry_test.go` 或 `internal/runtime/workers/*_test.go` 中验证 worker role metadata、heartbeat name、failure strategy
 
 ### Implementation for User Story 3
 
-- [ ] T033 [US3] 在 `internal/runtime/kernel/events.go` 与 `internal/runtime/kernel/service.go` 中定义并发布 runtime events
-- [ ] T034 [P] [US3] 将 `internal/http/stream/` 建立在 runtime events 之上，替代旧的隐式 streaming 入口
-- [ ] T035 [P] [US3] 将 read model 统一收敛到 `internal/query/model/`，并更新 `internal/http/query/` 的映射与读取路径
-- [ ] T036 [US3] 更新 `docs/design-docs/runtime-flow.md`、`docs/design-docs/module-boundaries.md`、`ARCHITECTURE.md`，明确新的 owner 与主链路入口
-- [ ] T037 [US3] 运行并记录最小验证：`make test-unit`、`make test-integration`、必要时 `make accept-current`
+- [X] T033 [US3] 在 `internal/runtime/kernel/events.go` 与 `internal/runtime/kernel/service.go` 中定义并发布 runtime events
+- [X] T034 [P] [US3] 将 `internal/http/stream/` 建立在 runtime events 之上，替代旧的隐式 streaming 入口
+- [X] T035 [P] [US3] 将 read model 统一收敛到 `internal/query/model/`，并更新 `internal/http/query/` 的映射与读取路径
+- [X] T036 [US3] 更新 `docs/design-docs/runtime-flow.md`、`docs/design-docs/module-boundaries.md`、`ARCHITECTURE.md`，明确新的 owner 与主链路入口
+- [X] T037 [US3] 运行并记录最小验证：`make test-unit`、`make test-integration`、必要时 `make accept-current`
 
 **Checkpoint**: User Story 3 完成后，维护者不依赖口口相传也能看懂主链路与后台 worker 的归属
 
