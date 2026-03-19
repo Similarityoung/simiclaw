@@ -10,11 +10,11 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/internal/runner"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -60,7 +60,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	sub := hub.Reserve(req.IdempotencyKey)
 	defer hub.Release(sub)
 	if replay := hub.Attach(sub, result.EventID); len(replay) > 0 {
@@ -158,7 +158,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
@@ -200,7 +200,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 		started:  make(chan struct{}),
 		finished: make(chan struct{}),
 	}
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1), hub, 1)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)

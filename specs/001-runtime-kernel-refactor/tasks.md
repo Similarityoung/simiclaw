@@ -152,6 +152,30 @@
 
 ---
 
+## Phase 8: User Story 5 - 完成剩余 Owner 收口 (Priority: P1)
+
+**Goal**: 把根级灰色 supporting packages 收回到 `runtime`、`prompt`、`workspacefile`、`cmd/simiclaw/internal` 的明确 owner 下面，完成目录收口
+
+**Independent Test**: 仅完成本故事时，团队应能在不改变外部行为的前提下删除 `internal/streaming`、`internal/systemprompt`、`internal/contextfile`、`internal/ui/messages`，并通过新的 owner 目录定位相关实现
+
+### Tests for User Story 5
+
+- [X] T051 [P] [US5] 在 `tests/architecture/` 中补 owner closure 守护，禁止新代码重新引入根级 `internal/streaming`、`internal/systemprompt`、`internal/contextfile`、`internal/ui`
+- [X] T052 [P] [US5] 在 `internal/runtime/` 与 `internal/http/stream/` 相关测试中保留 runtime event replay / terminal / SSE 行为校验，覆盖 owner 迁移后关键语义
+- [X] T053 [P] [US5] 在 `internal/prompt/`、`internal/tools/`、`internal/workspacefile/`、`cmd/simiclaw/internal/` 相关测试中覆盖 prompt 模板加载、context 白名单读取和 CLI 文案输出行为
+
+### Implementation for User Story 5
+
+- [X] T054 [US5] 将 `internal/streaming/{hub.go,hub_test.go}` 收口到 `internal/runtime/events/`，并更新 `internal/bootstrap/app.go`、`internal/http/{server.go,stream/handler.go}` 与相关测试引用
+- [X] T055 [US5] 将 `internal/systemprompt/` 收口到 `internal/prompt/`，合并静态 system prompt 模板加载逻辑，更新 `internal/prompt/{renderer.go,builder_test.go}` 等调用
+- [X] T056 [US5] 将 `internal/contextfile/get.go` 收口到 `internal/workspacefile/`，统一 context read 与 workspace file boundary owner，并更新 `internal/prompt/{loader.go,fingerprint.go}` 与 `internal/tools/context_get.go`
+- [X] T057 [US5] 将 `internal/ui/messages/*` 下沉到 `cmd/simiclaw/internal/messages/`，更新 `cmd/simiclaw/internal/{chat,root,initcmd,inspect,version,gateway}/` 引用
+- [X] T058 [US5] 更新 `docs/design-docs/runtime-kernel-refactor.md`、`docs/design-docs/runtime-flow.md`、`docs/design-docs/prompt-and-workspace-context.md`、`ARCHITECTURE.md`，把新的 owner 形状写成权威说明
+- [X] T059 [US5] 删除旧包与旧 import，确保不保留任何兼容路径或灰色 root-level supporting package
+- [X] T060 [US5] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`go test ./internal/runtime/... ./internal/http/... ./internal/prompt/... ./internal/tools/... ./internal/workspacefile/... ./cmd/simiclaw/internal/...`、`make test-unit`，必要时运行 `make accept-current`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -163,6 +187,7 @@
 - **Phase 5 (US3)**: 依赖 US1 与 US2 的基础结构，尤其依赖 runtime events 与新的 HTTP/Query 入口
 - **Phase 6 (US4)**: 依赖前面所有阶段；这是收口迁移与 lane-ready 的阶段
 - **Phase 7 (Polish)**: 依赖所有目标阶段完成
+- **Phase 8 (US5 Follow-up)**: 依赖 Phase 7；只处理剩余 owner 收口，不重开已完成的 runtime/gateway/store 主链路
 
 ### User Story Dependencies
 
@@ -170,6 +195,7 @@
 - **US2 (P1)**: 建立扩展点和统一边界，依赖 foundational contracts，建议在 US1 基础上开展
 - **US3 (P2)**: 依赖 US1 的 kernel owner 和 US2 的边界收敛
 - **US4 (P3)**: 依赖 US1-US3，负责迁移收口与并发入口预留
+- **US5 (P1)**: 依赖 US1-US4 已完成；负责删除剩余灰色 supporting packages 并补 owner 守护
 
 ### Within Each User Story
 
@@ -177,6 +203,7 @@
 - 先定义 contracts/model，再改 service/usecase
 - 先完成新路径装配，再删除旧路径
 - 每个故事完成后都要跑对应最小验证，不把问题拖到最后一起爆
+- US5 必须先迁新 owner，再删除旧包，避免任何兼容 shim 残留
 
 ### Parallel Opportunities
 
@@ -186,6 +213,7 @@
 - US2 中 `T025`、`T026`、`T027` 可并行
 - US3 中 `T034` 与 `T035` 可并行
 - US4 中 `T038` 与 `T039` 可并行，`T041` 与 `T042` 可分支推进后再汇合
+- US5 中 `T054`、`T055`、`T057` 可并行；`T056` 需与 `workspacefile` 调用点一起收敛，之后统一进入 `T059`、`T060`
 
 ---
 

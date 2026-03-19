@@ -1,4 +1,4 @@
-package systemprompt
+package prompt
 
 import (
 	"embed"
@@ -16,17 +16,17 @@ const (
 //go:embed system/*.md
 var systemFS embed.FS
 
-var SystemText = mustLoadSystemText()
+var systemText = mustLoadSystemText()
 
-type SystemTextSet struct {
+type systemTextSet struct {
 	IdentityRuntime string
 	ToolContract    string
 	MemoryPolicy    string
 	HeartbeatPolicy string
 }
 
-func mustLoadSystemText() SystemTextSet {
-	return SystemTextSet{
+func mustLoadSystemText() systemTextSet {
+	return systemTextSet{
 		IdentityRuntime: mustReadSystemText(identityRuntimeSystemFile),
 		ToolContract:    mustReadSystemText(toolContractSystemFile),
 		MemoryPolicy:    mustReadSystemText(memoryPolicySystemFile),
@@ -42,7 +42,7 @@ func mustReadSystemText(path string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func Render(raw string, replacements map[string]string) string {
+func renderSystemTemplate(raw string, replacements map[string]string) string {
 	for key, value := range replacements {
 		raw = strings.ReplaceAll(raw, "{{"+key+"}}", value)
 	}

@@ -13,8 +13,8 @@ import (
 	httpingest "github.com/similarityyoung/simiclaw/internal/http/ingest"
 	httpquery "github.com/similarityyoung/simiclaw/internal/http/query"
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -32,10 +32,10 @@ type Query interface {
 type Handlers struct {
 	gateway Gateway
 	query   Query
-	hub     *streaming.Hub
+	hub     *runtimeevents.Hub
 }
 
-func NewHandlers(gateway Gateway, query Query, hub *streaming.Hub) *Handlers {
+func NewHandlers(gateway Gateway, query Query, hub *runtimeevents.Hub) *Handlers {
 	return &Handlers{gateway: gateway, query: query, hub: hub}
 }
 

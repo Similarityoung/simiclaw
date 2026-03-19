@@ -6,7 +6,7 @@ SimiClaw 把 prompt 视为一条有固定层次的 system message，而不是一
 
 ## Context
 
-相关代码主要在 `internal/prompt/`、`internal/memory/`、`internal/workspace/`、`internal/tools/` 和 `internal/workspacefile/`。这一层同时负责“给模型看什么”和“模型能安全改什么”。
+相关代码主要在 `internal/prompt/`（含 `system/*.md` 模板）、`internal/memory/`、`internal/workspace/`、`internal/tools/` 和 `internal/workspacefile/`。这一层同时负责“给模型看什么”和“模型能安全改什么”。
 
 ## Details
 
@@ -59,16 +59,17 @@ SimiClaw 把 prompt 视为一条有固定层次的 system message，而不是一
 
 - `context_get` 只能读取固定上下文文件或 skill 正文
 - `workspace_patch` / `workspace_delete` 只能在 workspace 内操作 UTF-8 文本
+- `workspacefile.ResolveContextPath` 只允许根上下文文件与 `skills/<name>/SKILL.md`
 - `workspacefile.ResolvePath` 会拒绝越界路径、`runtime/` 路径，以及非 `dm` 场景下的 private memory 路径
-- 创建、patch、delete 都依赖同一套路径解析和文本校验逻辑
+- 创建、patch、delete 与 context read 都依赖同一 owner 下的路径解析和文本校验逻辑
 
 ## Verification
 
-- prompt 组装与渲染: `internal/prompt/builder.go`, `internal/prompt/loader.go`, `internal/prompt/renderer.go`
+- prompt 组装与渲染: `internal/prompt/builder.go`, `internal/prompt/loader.go`, `internal/prompt/renderer.go`, `internal/prompt/system_text.go`
 - scaffold 行为: `internal/workspace/scaffold.go`
 - memory 写入与检索: `internal/memory/writer.go`, `internal/memory/search.go`
 - 工具暴露: `internal/tools/context_get.go`, `internal/tools/workspace_file.go`
-- 文件安全边界: `internal/workspacefile/workspacefile.go`
+- 文件安全边界: `internal/workspacefile/workspacefile.go`, `internal/workspacefile/context.go`
 
 ## Related Docs
 

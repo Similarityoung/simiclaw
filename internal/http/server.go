@@ -11,7 +11,7 @@ import (
 	httpstream "github.com/similarityyoung/simiclaw/internal/http/stream"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 )
 
 type Server struct {
@@ -19,7 +19,7 @@ type Server struct {
 	handler    http.Handler
 }
 
-func New(cfg config.Config, gatewayService *gateway.Service, queryService *querysvc.Service, supervisor *runtime.Supervisor, streamHub *streaming.Hub) *Server {
+func New(cfg config.Config, gatewayService *gateway.Service, queryService *querysvc.Service, supervisor *runtime.Supervisor, streamHub *runtimeevents.Hub) *Server {
 	server := &Server{supervisor: supervisor}
 	write := httpingest.NewHandler(gatewayService)
 	read := httpquery.NewHandlers(queryService)

@@ -8,19 +8,18 @@ import (
 	"testing"
 	"time"
 
-	systemprompt "github.com/similarityyoung/simiclaw/internal/systemprompt"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 func TestEmbeddedPromptSystemTextLoaded(t *testing.T) {
-	if systemprompt.SystemText.IdentityRuntime == "" || systemprompt.SystemText.ToolContract == "" || systemprompt.SystemText.MemoryPolicy == "" || systemprompt.SystemText.HeartbeatPolicy == "" {
-		t.Fatalf("expected embedded system prompt text to be loaded, got %+v", systemprompt.SystemText)
+	if systemText.IdentityRuntime == "" || systemText.ToolContract == "" || systemText.MemoryPolicy == "" || systemText.HeartbeatPolicy == "" {
+		t.Fatalf("expected embedded system prompt text to be loaded, got %+v", systemText)
 	}
-	if !strings.Contains(systemprompt.SystemText.IdentityRuntime, "{{workspace_path}}") {
-		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", systemprompt.SystemText.IdentityRuntime)
+	if !strings.Contains(systemText.IdentityRuntime, "{{workspace_path}}") {
+		t.Fatalf("expected identity runtime template to contain workspace placeholder, got: %s", systemText.IdentityRuntime)
 	}
-	if !strings.Contains(systemprompt.SystemText.ToolContract, "workspace_patch") || !strings.Contains(systemprompt.SystemText.ToolContract, "workspace_delete") || !strings.Contains(systemprompt.SystemText.ToolContract, "web_search") || !strings.Contains(systemprompt.SystemText.ToolContract, "web_fetch") {
-		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", systemprompt.SystemText.ToolContract)
+	if !strings.Contains(systemText.ToolContract, "workspace_patch") || !strings.Contains(systemText.ToolContract, "workspace_delete") || !strings.Contains(systemText.ToolContract, "web_search") || !strings.Contains(systemText.ToolContract, "web_fetch") {
+		t.Fatalf("expected tool contract to mention workspace write tools, got: %s", systemText.ToolContract)
 	}
 }
 

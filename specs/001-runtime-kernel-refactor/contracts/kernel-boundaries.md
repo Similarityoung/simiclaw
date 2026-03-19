@@ -90,3 +90,17 @@
 - lane 是 ownership model，不是新的事实源
 - lane 设计不得破坏单 writer 和两阶段执行
 - 同一 lane 的串行化策略必须显式，而不是隐含在 goroutine 时序中
+
+## Boundary 7: Supporting Package Ownership
+
+### Purpose
+
+防止“主链路已重构，但 supporting code 仍漂在根级 `internal/`”的未收口状态长期存在。
+
+### Rules
+
+- runtime event publication / replay / subscription 归属 `internal/runtime` owner；`internal/http/stream` 只消费 runtime events，不拥有事件总线本体。
+- static system prompt assets 归属 `internal/prompt` owner，不单独形成根级 `internal/systemprompt`。
+- workspace context read boundary 与 workspace file write boundary 归属同一 `internal/workspacefile` owner，不单独形成根级 `internal/contextfile`。
+- CLI-only user-visible message catalogs 归属 `cmd/simiclaw/internal` owner，不单独形成仓库级 `internal/ui`。
+- 若某 supporting package 只服务一个明确子系统，则必须并回该 owner；不得以长期根级灰色包形式保留。

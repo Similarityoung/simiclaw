@@ -42,7 +42,7 @@
 - 运行时主链路: `internal/bootstrap/app.go`, `internal/gateway/service.go`, `internal/runtime/eventloop.go`, `internal/runtime/kernel/service.go`, `internal/runtime/lanes/*.go`, `internal/runner/runner.go`, `internal/runner/context/*.go`
 - 存储与 schema: `internal/store/db.go`, `internal/store/schema.sql`, `internal/store/tx/*.go`, `internal/store/projections/*.go`, `internal/store/queries/*.go`
 - 边界约束: `tests/architecture/boundaries_test.go`
-- Prompt / workspace: `internal/prompt/*.go`, `internal/workspace/scaffold.go`, `internal/workspacefile/workspacefile.go`
+- Prompt / workspace: `internal/prompt/*.go`, `internal/prompt/system/*.md`, `internal/workspace/scaffold.go`, `internal/workspacefile/{workspacefile.go,context.go}`
 
 ## Status
 

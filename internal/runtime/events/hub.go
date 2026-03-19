@@ -1,4 +1,4 @@
-package streaming
+package events
 
 import (
 	"context"

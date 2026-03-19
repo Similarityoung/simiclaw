@@ -10,6 +10,7 @@
 - 本次重构的强保边界仅包括 SQLite 事实模型与核心运行不变量；除这些边界外，现有后端实现、目录组织、适配层和接口形状都允许重构或重写。
 - 第一阶段优先重建 runtime kernel 和扩展接口，不把当前 HTTP、CLI、Telegram 接入实现作为首要保留目标；这些能力应在新内核稳定后重新挂接。
 - 规划中的默认实施顺序固定为：`runtime kernel -> gateway/routing -> http/channels/delivery -> concurrency lanes`。
+- 当前剩余缺口被定义为“owner 收口未完成”而不是“文档偏移”：`internal/streaming`、`internal/systemprompt`、`internal/contextfile`、`internal/ui/messages` 不应作为长期根级灰色包继续存在。
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -71,6 +72,21 @@
 1. **Given** 未来能力规划已经明确，**When** 团队按照重构 spec 推进，**Then** 新能力开发应当建立在稳定内核之上，而不是继续叠加临时实现。
 2. **Given** 需要分阶段迁移，**When** 团队执行每一阶段，**Then** 每一步都应存在可验证、可回滚的中间状态。
 
+---
+
+### User Story 5 - 维护者能够从目录直接定位最终 owner 而不是灰色支撑包 (Priority: P1)
+
+作为项目维护者，我需要把仍漂在根级 `internal/` 的灰色 supporting packages 收回到明确 owner 下面，这样后续修改 runtime events、prompt 模板、workspace context 边界和 CLI 文案时，不会再绕过已经确立的子系统边界。
+
+**Why this priority**: 如果这些包继续留在根级 `internal/`，后续新增能力虽然不会立刻破坏运行语义，但会持续侵蚀目录即架构的可发现性，让“主链路已完成、边缘 owner 失真”的状态长期存在。
+
+**Independent Test**: 只实现这一故事时，团队应该能在不改变外部行为的前提下，把 runtime event publication、static system prompt、workspace context read boundary、CLI-only messages 分别收回 `runtime`、`prompt`、`workspacefile`、`cmd/simiclaw/internal` 的 owner 范围，并删除原有灰色包。
+
+**Acceptance Scenarios**:
+
+1. **Given** 维护者需要修改 SSE 或 runtime event replay 行为，**When** 他按目录定位 owner，**Then** runtime events 应属于 `runtime`，而 `http/stream` 只保留外部传输适配职责。
+2. **Given** 维护者需要修改 system prompt 模板、workspace 上下文白名单或 CLI 文案，**When** 他按目录定位 owner，**Then** 这些代码应分别位于 `prompt`、`workspacefile`、`cmd/simiclaw/internal` 之下，而不是根级 `internal/` 的灰色支撑包中。
+
 ### Edge Cases
 
 - 重构进行到一半时，旧实现和新实现并存，如何避免运行语义出现双写、旁路发送或重复执行，同时允许旧适配层被临时下线或替换。
@@ -78,6 +94,8 @@
 - 引入未来 lane / session serialization 模型时，如何避免破坏现有单 writer 与两阶段执行约束。
 - 文档、测试和实现不同步时，如何防止新的内核结构再次退化成“代码能跑但边界失真”。
 - `.specify/` 工作流和仓库自身 `codex/` 分支规范并存时，如何保持 feature spec 与实际开发分支一致。
+- `internal/contextfile` 并入 `workspacefile` 时，如何保持白名单、symlink 校验、越界拒绝和 prompt fingerprint 语义完全不变。
+- `internal/streaming` 收回 runtime owner 时，如何保持 reservation、replay、terminal retention 和 HTTP stream 消费路径不退化。
 
 ## Requirements *(mandatory)*
 
@@ -98,6 +116,11 @@
 - **FR-013**: System MUST treat current HTTP, CLI, Telegram, and other external boundaries as replaceable layers; preserving their current implementation shape is NOT a requirement for the first migration slice.
 - **FR-014**: System MUST define the new kernel contracts before rebuilding HTTP/channels boundaries, including contracts for runtime execution, payload handling, external ingress/egress, worker lifecycle, and delivery senders.
 - **FR-015**: System MUST sequence implementation work so that runtime kernel and extension interfaces are established before gateway/routing, HTTP/channel/delivery, and concurrency-lane refactors.
+- **FR-016**: System MUST ensure root-level `internal/` packages correspond to explicit long-lived subsystem owners; support code that belongs to exactly one owner MUST be colocated under that owner rather than remain as a root-level grey package.
+- **FR-017**: System MUST place runtime event publication, replay, and subscription infrastructure under `internal/runtime`, with `internal/http/stream` remaining only a transport adapter over runtime events.
+- **FR-018**: System MUST place static system prompt assets under `internal/prompt` and place workspace context read boundary logic under `internal/workspacefile`, so prompt assembly and `context_get` share one file-boundary owner.
+- **FR-019**: System MUST place CLI-only user-visible message catalogs under `cmd/simiclaw/internal`, not under a repository-wide `internal/ui` package.
+- **FR-020**: System MUST add or update architecture guidance and tests so that the owner closure for runtime events, prompt assets, workspace context boundaries, and CLI messages does not regress.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -106,6 +129,7 @@
 - **Channel Pipeline**: The normalized ingress plus durable egress flow for HTTP, CLI, and Telegram.
 - **Execution Lane**: The future-facing concurrency unit used to reason about session ordering, named queue behavior, and bounded worker ownership.
 - **Migration Slice**: A staged, reversible refactor step that changes internal structure while preserving current runtime facts and externally observable semantics.
+- **Owner Closure Slice**: A follow-up migration slice that removes root-level supporting packages by moving them under their explicit subsystem owner without changing external behavior.
 
 ## Success Criteria *(mandatory)*
 
@@ -116,3 +140,5 @@
 - **SC-003**: The primary event path from ingest to finalize to delivery can be traced through documented code ownership points without relying on hidden tribal knowledge.
 - **SC-004**: No single migration slice requires an all-at-once cutover; each accepted slice can be validated and, if needed, rolled back independently.
 - **SC-005**: The resulting architecture and governance docs clearly explain where future work for agent loop, tool use, sessions/context, channels, gateway/routing, intelligence, heartbeat/cron, delivery, resilience, and concurrency should be implemented, starting from the new kernel contracts.
+- **SC-006**: After the owner-closure slice lands, `internal/streaming`, `internal/systemprompt`, `internal/contextfile`, and `internal/ui/messages` no longer exist as root-level long-lived packages.
+- **SC-007**: A maintainer can locate runtime event hub code, system prompt assets, workspace context path policy, and CLI-only messages directly under `runtime`, `prompt`, `workspacefile`, and `cmd/simiclaw/internal` without needing extra oral context or special-case docs.

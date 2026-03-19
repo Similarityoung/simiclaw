@@ -12,13 +12,13 @@ import (
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -170,7 +170,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 		t.Fatalf("insert scheduled job: %v", err)
 	}
 
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	queryRepo := storequeries.NewRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
@@ -213,7 +213,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 }
 
 func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	sub := hub.Reserve("idem")
 	defer hub.Release(sub)
 	if replay := hub.Attach(sub, "evt_stream"); len(replay) > 0 {
@@ -335,7 +335,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 		t.Fatalf("insert outbox: %v", err)
 	}
 
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 8)
 	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
 	ingestService.SetClock(func() time.Time { return now })
@@ -430,7 +430,7 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 	}
 	defer db.Close()
 
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 1)
 	supervisor := NewSupervisor(cfg, repo, repo, nil, loop, &captureSender{})

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/contextfile"
 	"github.com/similarityyoung/simiclaw/internal/memory"
+	"github.com/similarityyoung/simiclaw/internal/workspacefile"
 )
 
 type promptLoader struct {
@@ -71,7 +71,7 @@ func (l promptLoader) loadCuratedMemoryBlocks(memoryMode string) []textEntry {
 }
 
 func (l promptLoader) readContextText(rel string) (textEntry, bool) {
-	normalizedRel, absPath, err := contextfile.ResolvePath(l.workspace, rel)
+	normalizedRel, absPath, err := workspacefile.ResolveContextPath(l.workspace, rel)
 	if err != nil {
 		return textEntry{}, false
 	}

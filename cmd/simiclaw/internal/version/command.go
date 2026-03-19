@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 )
 
 const AppVersion = "v1.0"

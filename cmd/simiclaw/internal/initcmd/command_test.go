@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 )
 
 func TestRunScaffoldsLayeredPromptFiles(t *testing.T) {

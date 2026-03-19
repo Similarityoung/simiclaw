@@ -13,8 +13,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -65,7 +65,7 @@ func TestHandleChatStreamReplaysTerminalEventFromQuery(t *testing.T) {
 			},
 			ok: true,
 		},
-		streaming.NewHub(),
+		runtimeevents.NewHub(),
 	)
 
 	body, err := json.Marshal(api.IngestRequest{
@@ -100,7 +100,7 @@ func TestHandleChatStreamReplaysTerminalEventFromQuery(t *testing.T) {
 
 func TestHandleChatStreamReplaysPreAttachRuntimeEvents(t *testing.T) {
 	now := time.Date(2026, 3, 19, 11, 0, 0, 0, time.UTC)
-	hub := streaming.NewHub()
+	hub := runtimeevents.NewHub()
 	handler := NewHandlers(
 		fakeGateway{
 			accepted: gateway.AcceptedIngest{

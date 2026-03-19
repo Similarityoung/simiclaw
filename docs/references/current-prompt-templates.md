@@ -9,7 +9,7 @@
 - 代码动态生成的 section 格式
 - 影响 prompt 变体的运行时条件
 
-权威来源仍然是 `internal/systemprompt/`、`internal/prompt/`、`internal/workspace/templates/` 和 `internal/runner/`；本文件是为提示词优化准备的“展开视图”。
+权威来源仍然是 `internal/prompt/`、`internal/prompt/system/`、`internal/workspace/templates/` 和 `internal/runner/`；本文件是为提示词优化准备的“展开视图”。
 
 ## 最终发给模型的消息结构
 
@@ -44,7 +44,7 @@
 
 ## 内置 Runtime 模板
 
-### `internal/systemprompt/system/identity_runtime.md`
+### `internal/prompt/system/identity_runtime.md`
 
 ```md
 ## Identity & Runtime Rules
@@ -58,7 +58,7 @@ You are SimiClaw, a local-first agent runtime assistant operating inside a real 
 - Priority order: fixed runtime rules > explicit user instructions > AGENTS.md > SOUL.md and other contextual files.
 ```
 
-### `internal/systemprompt/system/tool_contract.md`
+### `internal/prompt/system/tool_contract.md`
 
 ```md
 ## Tool Contract
@@ -75,7 +75,7 @@ You are SimiClaw, a local-first agent runtime assistant operating inside a real 
 - If tool output conflicts with assumptions, prefer the tool output.
 ```
 
-### `internal/systemprompt/system/memory_policy.md`
+### `internal/prompt/system/memory_policy.md`
 
 ```md
 ## Memory Policy
@@ -86,7 +86,7 @@ You are SimiClaw, a local-first agent runtime assistant operating inside a real 
 - Treat recalled context as helpful evidence, not absolute truth. If explicit user instructions conflict with memory, follow the explicit instruction.
 ```
 
-### `internal/systemprompt/system/heartbeat_runtime.md`
+### `internal/prompt/system/heartbeat_runtime.md`
 
 ```md
 ## Heartbeat Policy
@@ -352,13 +352,13 @@ Keep it short. Do not turn it into a long policy document.
 ## 你真正该改哪一层
 
 - 想改全局 agent 身份、行为优先级、真实性约束：
-  改 `internal/systemprompt/system/identity_runtime.md`
+  改 `internal/prompt/system/identity_runtime.md`
 - 想改工具使用规则、改写策略、web/memory/context 使用原则：
-  改 `internal/systemprompt/system/tool_contract.md`
+  改 `internal/prompt/system/tool_contract.md`
 - 想改 memory 的召回与注入话术：
-  改 `internal/systemprompt/system/memory_policy.md` 和 `internal/prompt/renderer.go`
+  改 `internal/prompt/system/memory_policy.md` 和 `internal/prompt/renderer.go`
 - 想改 `cron_fire` 的行为边界：
-  改 `internal/systemprompt/system/heartbeat_runtime.md` 和 `internal/runner/policy.go`
+  改 `internal/prompt/system/heartbeat_runtime.md` 和 `internal/runner/policy.go`
 - 想改 workspace 默认人格或 onboarding 文案：
   改 `internal/workspace/templates/*.md`
 - 想改 section 顺序、fallback 文案、skills 展示格式、run context 格式：
@@ -371,7 +371,7 @@ Keep it short. Do not turn it into a long policy document.
 - Prompt 组装: `internal/prompt/builder.go`
 - Prompt 渲染: `internal/prompt/renderer.go`
 - Prompt 装载: `internal/prompt/loader.go`
-- Runtime system 文件: `internal/systemprompt/system/*.md`
+- Runtime system 文件: `internal/prompt/system/*.md`
 - Workspace 模板: `internal/workspace/templates/*.md`
 - 消息拼装: `internal/runner/prompt_assembler.go`
 - 历史过滤: `internal/runner/history_transform.go`

@@ -43,6 +43,12 @@ type PathInfo struct {
 	ChannelType   string
 }
 
+type pathCandidate struct {
+	RequestPath   string
+	WorkspaceReal string
+	CandidateAbs  string
+}
+
 type PatchArgs struct {
 	Path    string
 	OldText string
@@ -67,44 +73,23 @@ type DeleteResult struct {
 }
 
 func ResolvePath(workspace, rawPath, channelType string) (PathInfo, error) {
-	requestRel, cleanPath, err := normalizeRequestPath(rawPath)
+	candidate, err := resolveWorkspaceCandidate(workspace, rawPath)
 	if err != nil {
 		return PathInfo{}, err
 	}
 
-	workspaceAbs, err := filepath.Abs(workspace)
-	if err != nil {
-		return PathInfo{}, err
-	}
-	workspaceReal := workspaceAbs
-	if resolvedWorkspace, err := filepath.EvalSymlinks(workspaceAbs); err == nil {
-		workspaceReal = resolvedWorkspace
-	}
-
-	candidateAbs, err := filepath.Abs(filepath.Join(workspaceAbs, cleanPath))
-	if err != nil {
-		return PathInfo{}, err
-	}
-	inside, err := isWithinWorkspace(workspaceAbs, candidateAbs)
-	if err != nil {
-		return PathInfo{}, err
-	}
-	if !inside {
-		return PathInfo{}, &Error{Code: CodeForbidden, Message: "path denied: outside workspace"}
-	}
-
-	stat, statErr := os.Lstat(candidateAbs)
+	stat, statErr := os.Lstat(candidate.CandidateAbs)
 	exists := statErr == nil
 	if statErr != nil && !os.IsNotExist(statErr) {
 		return PathInfo{}, statErr
 	}
 
-	effectiveAbs, effectiveRel, err := resolveEffectivePath(workspaceReal, candidateAbs, exists)
+	effectiveAbs, effectiveRel, err := resolveEffectivePath(candidate.WorkspaceReal, candidate.CandidateAbs, exists)
 	if err != nil {
 		return PathInfo{}, err
 	}
 	if isRuntimePath(effectiveRel) {
-		return PathInfo{}, &Error{Code: CodeForbidden, Message: fmt.Sprintf("path denied: %q is under runtime/", requestRel)}
+		return PathInfo{}, &Error{Code: CodeForbidden, Message: fmt.Sprintf("path denied: %q is under runtime/", candidate.RequestPath)}
 	}
 	if isPrivateMemoryPath(effectiveRel) && !strings.EqualFold(strings.TrimSpace(channelType), "dm") {
 		return PathInfo{}, &Error{Code: CodeForbidden, Message: "path denied: private memory requires dm channel"}
@@ -114,7 +99,7 @@ func ResolvePath(workspace, rawPath, channelType string) (PathInfo, error) {
 	}
 
 	return PathInfo{
-		RequestPath:   requestRel,
+		RequestPath:   candidate.RequestPath,
 		EffectivePath: effectiveRel,
 		AbsPath:       effectiveAbs,
 		Exists:        exists,
@@ -267,31 +252,63 @@ func normalizeRequestPath(rawPath string) (string, string, error) {
 	return filepath.ToSlash(clean), clean, nil
 }
 
+func resolveWorkspaceCandidate(workspace, rawPath string) (pathCandidate, error) {
+	requestRel, cleanPath, err := normalizeRequestPath(rawPath)
+	if err != nil {
+		return pathCandidate{}, err
+	}
+	workspaceAbs, workspaceReal, err := resolveWorkspaceRoot(workspace)
+	if err != nil {
+		return pathCandidate{}, err
+	}
+	candidateAbs, err := resolveCandidatePath(workspaceAbs, cleanPath)
+	if err != nil {
+		return pathCandidate{}, err
+	}
+	return pathCandidate{
+		RequestPath:   requestRel,
+		WorkspaceReal: workspaceReal,
+		CandidateAbs:  candidateAbs,
+	}, nil
+}
+
+func resolveWorkspaceRoot(workspace string) (string, string, error) {
+	workspaceAbs, err := filepath.Abs(workspace)
+	if err != nil {
+		return "", "", err
+	}
+	workspaceReal := workspaceAbs
+	if resolvedWorkspace, err := filepath.EvalSymlinks(workspaceAbs); err == nil {
+		workspaceReal = resolvedWorkspace
+	}
+	return workspaceAbs, workspaceReal, nil
+}
+
+func resolveCandidatePath(workspaceAbs, cleanPath string) (string, error) {
+	candidateAbs, err := filepath.Abs(filepath.Join(workspaceAbs, cleanPath))
+	if err != nil {
+		return "", err
+	}
+	inside, err := isWithinWorkspace(workspaceAbs, candidateAbs)
+	if err != nil {
+		return "", err
+	}
+	if !inside {
+		return "", &Error{Code: CodeForbidden, Message: "path denied: outside workspace"}
+	}
+	return candidateAbs, nil
+}
+
 func resolveEffectivePath(workspaceReal, candidateAbs string, exists bool) (string, string, error) {
 	if exists {
-		resolved, err := filepath.EvalSymlinks(candidateAbs)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return "", "", &Error{Code: CodeInvalidArgument, Message: "path points to a broken symlink"}
-			}
-			return "", "", err
-		}
-		resolvedAbs, err := filepath.Abs(resolved)
+		resolvedAbs, resolvedRel, ok, err := resolveExistingPath(workspaceReal, candidateAbs)
 		if err != nil {
 			return "", "", err
 		}
-		inside, err := isWithinWorkspace(workspaceReal, resolvedAbs)
-		if err != nil {
-			return "", "", err
+		if !ok {
+			return "", "", &Error{Code: CodeInvalidArgument, Message: "path points to a broken symlink"}
 		}
-		if !inside {
-			return "", "", &Error{Code: CodeForbidden, Message: "path denied: symlink escapes workspace"}
-		}
-		rel, err := filepath.Rel(workspaceReal, resolvedAbs)
-		if err != nil {
-			return "", "", err
-		}
-		return resolvedAbs, filepath.ToSlash(filepath.Clean(rel)), nil
+		return resolvedAbs, resolvedRel, nil
 	}
 
 	ancestor, tail, err := findExistingAncestor(candidateAbs)
@@ -326,6 +343,32 @@ func resolveEffectivePath(workspaceReal, candidateAbs string, exists bool) (stri
 		return "", "", err
 	}
 	return effectiveAbs, filepath.ToSlash(filepath.Clean(rel)), nil
+}
+
+func resolveExistingPath(workspaceReal, candidateAbs string) (string, string, bool, error) {
+	resolved, err := filepath.EvalSymlinks(candidateAbs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", false, nil
+		}
+		return "", "", false, err
+	}
+	resolvedAbs, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", "", false, err
+	}
+	inside, err := isWithinWorkspace(workspaceReal, resolvedAbs)
+	if err != nil {
+		return "", "", false, err
+	}
+	if !inside {
+		return "", "", false, &Error{Code: CodeForbidden, Message: "path denied: symlink escapes workspace"}
+	}
+	rel, err := filepath.Rel(workspaceReal, resolvedAbs)
+	if err != nil {
+		return "", "", false, err
+	}
+	return resolvedAbs, filepath.ToSlash(filepath.Clean(rel)), true, nil
 }
 
 func findExistingAncestor(absPath string) (string, []string, error) {

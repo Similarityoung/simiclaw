@@ -10,8 +10,8 @@ import (
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/initcmd"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/inspect"
+	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/messages"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
-	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 )
 
 func NewCommand(streams common.IOStreams) *cobra.Command {

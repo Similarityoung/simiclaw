@@ -16,11 +16,11 @@ import (
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
+	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
-	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 )
 
@@ -31,7 +31,7 @@ type App struct {
 	EventLoop  *runtime.EventLoop
 	Supervisor *runtime.Supervisor
 	Telegram   *telegramchannel.Runtime
-	StreamHub  *streaming.Hub
+	StreamHub  *runtimeevents.Hub
 	Handler    http.Handler
 }
 
@@ -51,7 +51,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	streamHub := streaming.NewHub()
+	streamHub := runtimeevents.NewHub()
 	payloads := runtimepayload.NewBuiltinRegistry()
 	queryRepo := storequeries.NewRepository(db)
 	run := runner.NewProviderRunner(cfg.Workspace, queryRepo, registry, providers, payloads)

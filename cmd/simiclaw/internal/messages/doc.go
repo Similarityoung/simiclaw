@@ -5,8 +5,7 @@
 //   - chat.go: chat CLI / TUI / REPL strings and formatting helpers
 //   - inspect.go: inspect command output labels and formatting helpers
 //
-// Runtime model prompts stay in internal/systemprompt.
+// Runtime model prompts stay in internal/prompt.
 // Workspace scaffold templates stay in internal/workspace/templates/.
-// Future Web or Telegram surfaces can add channel-specific files here without mixing
-// user-visible messages into runtime prompt text.
+// This package is intentionally CLI-only and lives under cmd/simiclaw/internal.
 package messages

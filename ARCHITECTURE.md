@@ -18,7 +18,7 @@
   - `runtime.EventLoop` claim event 并驱动 `runner`
   - `runner` 组装 prompt、调用 provider、执行 tools、生成 trace
   - `store` 在结果事务中提交 messages、runs、sessions、events、outbox、jobs
-  - `outbound` / `streaming` 负责提交后的真实发送与流式通知
+  - `outbound` / `runtime events` / `http stream` 负责提交后的真实发送与流式通知
 - 外部依赖:
   - SQLite (`modernc.org/sqlite`)
   - OpenAI-compatible LLM provider (`github.com/openai/openai-go/v3`)
@@ -42,7 +42,7 @@
 2. 事件执行
    `runtime.EventLoop` 从 SQLite 列出 runnable event，claim 成功后创建 started run，在事务外调用 `runner.ProviderRunner`，最后把执行结果一次性提交回 SQLite。
 3. Prompt 与工具回合
-   `prompt.Builder` 把 system prompt、memory、workspace 上下文、skills 索引和当前 run context 组装成静态前缀；`runner` 再与 provider 和 `tools.Registry` 协作完成多轮 tool calling。
+  `prompt.Builder` 把 `internal/prompt/system/*.md` 中的 system 模板、memory、workspace 上下文、skills 索引和当前 run context 组装成静态前缀；`runner` 再与 provider 和 `tools.Registry` 协作完成多轮 tool calling。
 4. 查询与观测
    `query.Service` 负责 events / runs / sessions 的读模型；`internal/http/query` 和 `inspect` 只消费这些查询接口，而不直接暴露 store 内部类型。
 
