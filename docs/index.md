@@ -9,6 +9,7 @@
 - [`../README.md`](../README.md): 用户与开发者的最小起步路径
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md): 系统结构总览、主数据流和硬约束
 - [`design-docs/runtime-flow.md`](design-docs/runtime-flow.md): 从 ingest 到 finalize 的执行链路
+- [`design-docs/runtime-kernel-refactor.md`](design-docs/runtime-kernel-refactor.md): 迁移收口结果、lane-ready hooks 与 rollback/checkpoint
 - [`references/configuration.md`](references/configuration.md): 配置、环境变量、鉴权与 CLI 运行参数
 
 ## 文档域
@@ -38,14 +39,14 @@
 ## 权威来源
 
 - 命令与测试: `Makefile`, `VERSION_STAGE`
-- 运行时主链路: `internal/bootstrap/app.go`, `internal/gateway/service.go`, `internal/runtime/eventloop.go`, `internal/runtime/kernel/service.go`, `internal/runner/runner.go`
-- 存储与 schema: `internal/store/db.go`, `internal/store/schema.sql`
+- 运行时主链路: `internal/bootstrap/app.go`, `internal/gateway/service.go`, `internal/runtime/eventloop.go`, `internal/runtime/kernel/service.go`, `internal/runtime/lanes/*.go`, `internal/runner/runner.go`, `internal/runner/context/*.go`
+- 存储与 schema: `internal/store/db.go`, `internal/store/schema.sql`, `internal/store/tx/*.go`, `internal/store/projections/*.go`, `internal/store/queries/*.go`
 - 边界约束: `tests/architecture/boundaries_test.go`
 - Prompt / workspace: `internal/prompt/*.go`, `internal/workspace/scaffold.go`, `internal/workspacefile/workspacefile.go`
 
 ## Status
 
-- 已验证: 架构分层、运行时链路、配置入口、测试矩阵、工作区布局
+- 已验证: 架构分层、运行时链路、US4 lane-ready 迁移收口、配置入口、测试矩阵、工作区布局
 - 待补全: API 请求/响应示例、前端架构说明、数据库 schema 的自动生成文档
 - 待治理: 文档链接校验与周期性 doc-gardening 还没有进入 CI
 

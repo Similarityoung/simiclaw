@@ -40,6 +40,7 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 go test ./internal/gateway/bindings/... -run TestComputeKeyDMThreadIgnored -v
 go test ./internal/config/... -run TestLoad -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v
 go test ./tests/e2e/... -run SmokeV1 -v -count=1
 go test ./tests/architecture/... -v
 make docs-style
@@ -54,13 +55,14 @@ make guardrails-check
 - 对文档和架构层改动，最小建议是至少跑 `go test ./tests/architecture/... -v`
 - 对 docs、CI 配置或 `devtools/` 改动，最小建议是补 `make docs-style` 和 `make test-devtools`
 - Guardrails 与 baseline 变更前，先跑 `make guardrails-check` 或 `make guardrails-report`
+- 对 runtime kernel refactor 的 US4 / lane-ready 收口，推荐按顺序跑：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、`go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v`、`make accept-current`
 
 ## Verification
 
 - 测试命令: `Makefile`
 - 阶段定义: `VERSION_STAGE`
-- 架构测试: `tests/architecture/boundaries_test.go`
-- 集成测试: `tests/integration/runtime_integration_test.go`, `tests/integration/telegram_integration_test.go`
+- 架构测试: `tests/architecture/boundaries_test.go`, `tests/architecture/runtime_kernel_boundaries_test.go`
+- 集成测试: `tests/integration/runtime_trace_path_test.go`, `tests/integration/runtime_lanes_test.go`, `tests/integration/telegram_integration_test.go`
 - E2E 测试: `tests/e2e/smoke_v1_test.go`
 
 ## Related Docs

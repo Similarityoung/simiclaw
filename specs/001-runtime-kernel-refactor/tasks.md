@@ -145,10 +145,10 @@
 
 **Purpose**: 清理迁移遗留、补齐文档与最终验证
 
-- [ ] T047 [P] 更新导航与参考文档：`AGENTS.md`、`docs/index.md`、`docs/references/testing.md`
-- [ ] T048 清理死代码、旧 import、旧包注释与冗余 shim，确保没有遗留“新旧双路径”
-- [ ] T049 运行 `make fmt` 并修复格式化问题
-- [ ] T050 汇总本次迁移的验证结果与遗留事项到 `specs/001-runtime-kernel-refactor/quickstart.md`
+- [X] T047 [P] 更新导航与参考文档：`AGENTS.md`、`docs/index.md`、`docs/references/testing.md`
+- [X] T048 清理死代码、旧 import、旧包注释与冗余 shim，确保没有遗留“新旧双路径”
+- [X] T049 运行 `make fmt` 并修复格式化问题
+- [X] T050 汇总本次迁移的验证结果与遗留事项到 `specs/001-runtime-kernel-refactor/quickstart.md`
 
 ---
 

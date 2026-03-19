@@ -56,10 +56,10 @@ go test ./tests/integration/... -tags=integration -run TestName
 - `internal/channels/telegram/runtime.go`: Telegram channel adapter. Normalizes private text updates, forwards accepted requests into the gateway, and reports liveness through a narrow heartbeat recorder rather than a concrete store dependency.
 - `internal/http/server.go` + `internal/http/{ingest,query,stream,middleware}`: HTTP exposure layer for `healthz`, `readyz`, events, runs, sessions, ingest, and streaming chat. It maps internal query/runtime results to `pkg/api` wire models rather than returning store projections directly.
 - `internal/query/service.go` + `internal/query/model`: read-side query boundary. `internal/query/model` holds query-local filters, cursors, pages, and trace/read DTOs exchanged with the store adapter; `internal/http/query` is responsible for converting them into `pkg/api` wire models.
-- `internal/runtime/eventloop.go` + `internal/runtime/kernel`: core execution loop. Claims runnable events, invokes the runner through the kernel, finalizes runs, writes messages / trace / outbox state, and publishes runtime lifecycle events.
+- `internal/runtime/eventloop.go` + `internal/runtime/kernel` + `internal/runtime/lanes`: core execution loop. EventLoop owns queueing, repump, and lane leases; kernel owns claim -> execute -> finalize; runtime events are published after each lifecycle transition.
 - `internal/runtime/workers/` + `internal/runtime/model`: supervisor-managed background workers for heartbeat, processing recovery, outbox retry, delayed jobs, and cron. `internal/runtime/model` contains runtime-local claim/finalize/job DTOs instead of exposing store types.
 - `internal/runner/runner.go` + `internal/runner/model`: loads recent message history and SQLite FTS hits, resolves the configured LLM provider, executes tools through the registry, and produces trace/output. `internal/runner/model` contains runner-local history and retrieval DTOs. `memory_flush`, `cron_fire`, and `compaction` are handled as no-reply payloads that write directly into workspace memory.
-- `internal/store/db.go` + `internal/store/history.go`: workspace initialization, SQLite open/schema validation, read/write connections, recent history reads, and FTS-backed message search.
+- `internal/store/db.go` + `internal/store/{tx,queries,projections}`: workspace initialization, SQLite open/schema validation, write transactions, derived session projections, recent history reads, and FTS-backed message search.
 - `internal/workspace/scaffold.go` + `internal/workspacefile/workspacefile.go`: workspace scaffolding plus workspace-safe path / patch / atomic write helpers. These helpers are the shared filesystem boundary; do not route them through `internal/store`.
 - `internal/config/config.go`: defaults, file/env overrides, and provider selection/validation.
 - `internal/systemprompt/system.go`: embedded runtime system prompt fragments used by the prompt builder.
@@ -70,18 +70,21 @@ go test ./tests/integration/... -tags=integration -run TestName
 - To understand how a request flows from ingest to execution:
   - `internal/gateway/service.go`
   - `internal/runtime/eventloop.go`
+  - `internal/runtime/kernel/service.go`
   - `internal/runner/runner.go`
 - To understand startup and wiring:
   - `cmd/simiclaw/main.go`
   - `internal/bootstrap/app.go`
 - To understand persistence and retrieval:
   - `internal/store/db.go`
-  - `internal/store/history.go`
+  - `internal/store/tx/`
+  - `internal/store/queries/`
 
 ## Validation entry points
 
 - When changing the core runtime path, start by checking:
-  - `tests/integration/runtime_integration_test.go`
+  - `tests/integration/runtime_trace_path_test.go`
+  - `tests/integration/runtime_lanes_test.go`
   - `tests/e2e/smoke_v1_test.go`
 - Repository test entry points:
   - unit: `make test-unit`

@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: active
+- State: completed
 - Spec: [`specs/001-runtime-kernel-refactor/spec.md`](/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/spec.md)
 - Plan: [`specs/001-runtime-kernel-refactor/plan.md`](/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/plan.md)
 - Tasks: [`specs/001-runtime-kernel-refactor/tasks.md`](/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/tasks.md)
@@ -38,7 +38,7 @@
 
 ## Current Phase
 
-当前已完成 US4 的迁移收口，现状如下：
+当前已完成 US4 的迁移收口与 U5 文档/验证收尾，现状如下：
 
 - `internal/runtime/{kernel,payload,workers,lanes}`
 - `internal/gateway/{bindings,model,routing}`
@@ -70,6 +70,6 @@
 go test ./tests/architecture/... -v
 make test-unit
 make test-unit-race-core
-go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane|TestTelegramStartupRecoversPendingOutbox' -v
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v
 make accept-current
 ```

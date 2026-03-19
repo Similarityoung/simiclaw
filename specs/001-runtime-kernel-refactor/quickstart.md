@@ -90,9 +90,28 @@ make accept-current
 go test ./tests/architecture/... -v
 make test-unit
 make test-unit-race-core
-go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane|TestTelegramStartupRecoversPendingOutbox' -v
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v
 make accept-current
 ```
+
+## Latest Verification Snapshot
+
+- Date: `2026-03-19`
+- Result: US4 lane-ready / migration slice validation passed
+- Commands:
+  - `go test ./tests/architecture/... -v`
+  - `make test-unit`
+  - `make test-unit-race-core`
+  - `go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v`
+  - `make accept-current`
+- Notes:
+  - `internal/readmodel/` 与旧 `internal/store/{events,runs,sessions,outbox,history,list_queries,query_models,repo_types,runner_models}.go` 生产路径已清理，仓库内未再发现引用。
+  - `make accept-current` 已覆盖当前 integration / e2e 验证；quickstart 里的 targeted integration 命令同步更新为仓库中实际存在的测试入口。
+
+## U5 Closure
+
+- 导航、测试参考与迁移验证文档已经同步到 `store/{tx,projections,queries}`、`runner/context`、`runtime/lanes` 新形状。
+- Phase 7 的 T047-T050 已完成，可把后续工作视为 feature 之后的新需求，而不是本次迁移遗留。
 
 ## Done Criteria for a Migration Slice
 

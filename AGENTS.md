@@ -28,9 +28,9 @@ LLM_MODEL=openai/deepseek-chat
 - `cmd/simiclaw/`: CLI 入口与子命令，含 `serve`, `init`, `chat`, `inspect`, `version`, `completion`
 - `internal/bootstrap/`: 应用装配与进程生命周期
 - `internal/gateway/`: 写路径入口、binding/routing、校验、限流、幂等与 session scope 解析
-- `internal/runtime/` + `internal/runner/`: EventLoop、worker、LLM 执行、工具回合与最终提交
-- `internal/store/`: SQLite 初始化、schema、读写事务与恢复
-- `internal/query/` + `internal/http/`: 查询模型与 HTTP 读接口
+- `internal/runtime/` + `internal/runner/`: EventLoop、kernel、payload/worker/lane owner、LLM 执行、上下文组装、工具回合与最终提交
+- `internal/store/`: SQLite 初始化、schema，以及 `tx` / `projections` / `queries` 三层事实与读写职责
+- `internal/query/` + `internal/http/`: 查询模型、HTTP 读接口与 runtime event stream
 - `internal/prompt/` + `internal/memory/` + `internal/tools/`: prompt 组装、memory、tool surface
 - `internal/workspace/` + `internal/workspacefile/`: 工作区脚手架与安全文件边界
 - `pkg/`: 对外稳定契约，尤其是 `pkg/api`
@@ -56,6 +56,7 @@ LLM_MODEL=openai/deepseek-chat
 - 开发宪章: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 - 运行链路: [`docs/design-docs/runtime-flow.md`](docs/design-docs/runtime-flow.md)
 - 模块边界: [`docs/design-docs/module-boundaries.md`](docs/design-docs/module-boundaries.md)
+- 迁移收口与 lane-ready 现状: [`docs/design-docs/runtime-kernel-refactor.md`](docs/design-docs/runtime-kernel-refactor.md)
 - Prompt / Workspace 上下文: [`docs/design-docs/prompt-and-workspace-context.md`](docs/design-docs/prompt-and-workspace-context.md)
 - 配置与环境变量: [`docs/references/configuration.md`](docs/references/configuration.md)
 - 测试矩阵: [`docs/references/testing.md`](docs/references/testing.md)
