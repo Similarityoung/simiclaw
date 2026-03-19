@@ -48,7 +48,7 @@
 
 ## Enforced Boundaries
 
-- `tests/architecture/boundaries_test.go` 会阻止 `internal/http`、`internal/ingest/port` 以外的上层入口、`internal/query`、`internal/runner`、`internal/runtime`、`internal/channels`、`internal/workspace` 直接依赖 `internal/store`。
+- `tests/architecture/boundaries_test.go` 与 `tests/architecture/runtime_kernel_boundaries_test.go` 会阻止 `internal/http`、`internal/query`、`internal/runner`、`internal/runtime`、`internal/channels`、`internal/workspace` 直接依赖 `internal/store`；gateway 通过自有 contract 与事实层解耦。
 - `pkg/api` 是稳定对外契约；内部子系统通过各自的 `internal/<subsystem>/model` 传递局部 DTO。
 - 只有 ingest 入口能直接调用 `IngestEvent`；写路径不能在系统里随意旁路。
 

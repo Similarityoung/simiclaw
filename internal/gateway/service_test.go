@@ -8,13 +8,12 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type fakeRepo struct {
-	result     port.PersistResult
+	result     PersistResult
 	err        error
 	markQueued int
 	scope      string
@@ -23,7 +22,7 @@ type fakeRepo struct {
 	hintOK     bool
 }
 
-func (r *fakeRepo) PersistEvent(context.Context, string, string, port.PersistRequest, string, time.Time) (port.PersistResult, error) {
+func (r *fakeRepo) PersistEvent(context.Context, string, string, PersistRequest, string, time.Time) (PersistResult, error) {
 	return r.result, r.err
 }
 
@@ -47,7 +46,7 @@ func (fakeQueue) TryEnqueue(string) bool { return true }
 func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: port.PersistResult{
+		result: PersistResult{
 			EventID:     "evt_dup",
 			SessionKey:  "local:dm:u1",
 			SessionID:   "ses_dup",
@@ -69,7 +68,7 @@ func TestAcceptReturnsDuplicateAck(t *testing.T) {
 
 func TestAcceptMapsConflictError(t *testing.T) {
 	now := time.Now().UTC()
-	repo := &fakeRepo{err: port.ErrIdempotencyConflict}
+	repo := &fakeRepo{err: ErrIdempotencyConflict}
 	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
 	_, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
@@ -84,7 +83,7 @@ func TestAcceptMapsConflictError(t *testing.T) {
 func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: port.PersistResult{
+		result: PersistResult{
 			EventID:     "evt_ok",
 			SessionKey:  "local:dm:u1",
 			SessionID:   "ses_ok",
@@ -109,7 +108,7 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 func TestAcceptUsesNewSessionPayloadOverride(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
-		result: port.PersistResult{
+		result: PersistResult{
 			EventID:     "evt_new",
 			SessionKey:  "sk:new",
 			SessionID:   "ses_new",

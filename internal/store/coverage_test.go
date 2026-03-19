@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -56,8 +56,8 @@ func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 	}
 
 	_, err = db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:conflict", now.Add(2*time.Second))
-	if !errors.Is(err, port.ErrIdempotencyConflict) {
-		t.Fatalf("expected port.ErrIdempotencyConflict, got %v", err)
+	if !errors.Is(err, gateway.ErrIdempotencyConflict) {
+		t.Fatalf("expected gateway.ErrIdempotencyConflict, got %v", err)
 	}
 }
 

@@ -17,8 +17,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
-	ingestport "github.com/similarityyoung/simiclaw/internal/ingest/port"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
@@ -177,7 +177,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 			},
 		},
 	}
-	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, ingestport.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, gateway.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,

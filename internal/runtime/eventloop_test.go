@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
@@ -46,7 +46,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
 	}
-	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, gateway.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,
@@ -141,7 +141,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, gateway.PersistRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:1",

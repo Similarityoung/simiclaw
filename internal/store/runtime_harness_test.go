@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
@@ -88,7 +88,7 @@ func newTestDB(t *testing.T) *runtimeDB {
 	}
 }
 
-func (db *runtimeDB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req port.PersistRequest, payloadHash string, now time.Time) (port.PersistResult, error) {
+func (db *runtimeDB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req gateway.PersistRequest, payloadHash string, now time.Time) (gateway.PersistResult, error) {
 	return db.runtime.PersistEvent(ctx, tenantID, sessionKey, req, payloadHash, now)
 }
 
@@ -241,8 +241,8 @@ func (db *runtimeDB) FailOutboxSend(ctx context.Context, outboxID, eventID, mess
 	return db.runtime.FailOutboxSend(ctx, outboxID, eventID, message, dead, nextAttemptAt, now)
 }
 
-func persistRequest(req api.IngestRequest) port.PersistRequest {
-	return port.PersistRequest{
+func persistRequest(req api.IngestRequest) gateway.PersistRequest {
+	return gateway.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,

@@ -17,7 +17,6 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -34,10 +33,6 @@ var (
 	cliKeyRE            = regexp.MustCompile(`^cli:[^:]+:[0-9]+$`)
 	windowsVolumePathRE = regexp.MustCompile(`^[A-Za-z]:/`)
 )
-
-type Repository interface {
-	port.Repository
-}
 
 type Enqueuer interface {
 	TryEnqueue(eventID string) bool
@@ -157,7 +152,7 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid payload"}
 	}
 
-	persistReq := port.PersistRequest{
+	persistReq := PersistRequest{
 		Source:         in.Source,
 		Conversation:   in.Conversation,
 		Payload:        effective.Payload,
@@ -169,7 +164,7 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 
 	stored, err := s.repo.PersistEvent(ingestCtx, binding.TenantID, binding.SessionKey, persistReq, payloadHash, ts)
 	if err != nil {
-		if errors.Is(err, port.ErrIdempotencyConflict) {
+		if errors.Is(err, ErrIdempotencyConflict) {
 			return AcceptedIngest{}, &APIError{
 				StatusCode: http.StatusConflict,
 				Code:       model.ErrorCodeConflict,

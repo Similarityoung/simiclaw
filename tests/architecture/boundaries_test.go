@@ -52,10 +52,6 @@ func TestOnlyGatewayServiceCallsPersistEventOutsideTests(t *testing.T) {
 	t.Fatalf("found direct PersistEvent calls outside allowed gateway entrypoints:\n%s", strings.Join(violations, "\n"))
 }
 
-func TestIngestProductionCodeDoesNotImportStore(t *testing.T) {
-	assertNoPackageImport(t, storeImportPath, "internal/ingest")
-}
-
 func TestStoreProductionCodeDoesNotImportIngest(t *testing.T) {
 	assertNoPackageImport(t, ingestImportPath, "internal/store")
 }
@@ -122,10 +118,6 @@ func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
 
 func TestQueryModelProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/query/model")
-}
-
-func TestIngestPortProductionCodeDoesNotImportAPI(t *testing.T) {
-	assertNoPackageImport(t, apiImportPath, "internal/ingest/port")
 }
 
 func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {

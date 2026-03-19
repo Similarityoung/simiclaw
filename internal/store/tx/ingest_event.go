@@ -8,14 +8,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	storeprojections "github.com/similarityyoung/simiclaw/internal/store/projections"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (r *RuntimeRepository) PersistEvent(ctx context.Context, tenantID, sessionKey string, req port.PersistRequest, payloadHash string, now time.Time) (port.PersistResult, error) {
-	var result port.PersistResult
+func (r *RuntimeRepository) PersistEvent(ctx context.Context, tenantID, sessionKey string, req gateway.PersistRequest, payloadHash string, now time.Time) (gateway.PersistResult, error) {
+	var result gateway.PersistResult
 	err := r.db.WithWriterTx(ctx, func(tx *sql.Tx) error {
 		var (
 			existingEventID    string
@@ -31,9 +31,9 @@ func (r *RuntimeRepository) PersistEvent(ctx context.Context, tenantID, sessionK
 		).Scan(&existingEventID, &existingHash, &existingSessionKey, &existingSessionID, &createdAt)
 		if err == nil {
 			if existingHash != payloadHash {
-				return port.ErrIdempotencyConflict
+				return gateway.ErrIdempotencyConflict
 			}
-			result = port.PersistResult{
+			result = gateway.PersistResult{
 				EventID:         existingEventID,
 				SessionKey:      existingSessionKey,
 				SessionID:       existingSessionID,
@@ -106,7 +106,7 @@ func (r *RuntimeRepository) PersistEvent(ctx context.Context, tenantID, sessionK
 			return err
 		}
 
-		result = port.PersistResult{
+		result = gateway.PersistResult{
 			EventID:     eventID,
 			SessionKey:  sessionKey,
 			SessionID:   sessionID,

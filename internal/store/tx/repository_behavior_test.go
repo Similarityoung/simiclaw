@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -14,7 +14,7 @@ func TestPersistEventDuplicateReturnsStoredSessionKey(t *testing.T) {
 	repo := newTestRuntimeRepository(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	req := port.PersistRequest{
+	req := gateway.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
@@ -45,7 +45,7 @@ func TestListRunnableCarriesSessionLane(t *testing.T) {
 	repo := newTestRuntimeRepository(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	req := port.PersistRequest{
+	req := gateway.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},

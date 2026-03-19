@@ -1,11 +1,10 @@
-package port
+package gateway
 
 import (
 	"context"
 	"errors"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -29,14 +28,10 @@ type PersistResult struct {
 	ExistingEventID string
 }
 
-type SessionScopeRecord = bindings.SessionScopeRecord
-
+// Repository defines the gateway-owned persistence seam for inbound events.
+// Implementations may live in internal/store/tx, but callers depend on this
+// package-local contract.
 type Repository interface {
 	PersistEvent(ctx context.Context, tenantID, sessionKey string, req PersistRequest, payloadHash string, now time.Time) (PersistResult, error)
 	MarkEventQueued(ctx context.Context, eventID string, now time.Time) error
-}
-
-type SessionReader interface {
-	GetConversationDMScope(ctx context.Context, tenantID string, conv model.Conversation) (string, bool, error)
-	GetScopeSession(ctx context.Context, sessionKey string) (SessionScopeRecord, bool, error)
 }

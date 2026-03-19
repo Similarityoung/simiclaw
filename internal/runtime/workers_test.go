@@ -12,7 +12,6 @@ import (
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
-	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
@@ -270,7 +269,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	now := time.Now().UTC()
 	repo := storetx.NewRuntimeRepository(db)
 	queryRepo := storequeries.NewRepository(db)
-	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, "local:dm:u1", port.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, "local:dm:u1", gateway.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",
