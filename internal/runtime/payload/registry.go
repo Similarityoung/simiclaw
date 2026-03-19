@@ -10,6 +10,12 @@ func NewRegistry() *Registry {
 	return &Registry{handlers: make(map[string]Handler)}
 }
 
+func NewBuiltinRegistry() *Registry {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	return r
+}
+
 func (r *Registry) Register(handler Handler) {
 	if r == nil || handler == nil {
 		return

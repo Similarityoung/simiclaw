@@ -1,11 +1,11 @@
-package httpapi
+package query
 
 import (
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 )
 
-func toAPIEventRecord(rec querymodel.EventRecord) api.EventRecord {
+func ToAPIEventRecord(rec querymodel.EventRecord) api.EventRecord {
 	return api.EventRecord{
 		EventID:           rec.EventID,
 		Status:            rec.Status,

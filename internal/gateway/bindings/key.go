@@ -1,4 +1,4 @@
-package session
+package bindings
 
 import (
 	"crypto/sha256"
@@ -19,7 +19,7 @@ func ComputeKey(tenantID string, conv model.Conversation, dmScope string) (strin
 	if conv.ChannelType == "" {
 		return "", errors.New("channel_type is required")
 	}
-	dmScope = NormalizeScope(dmScope)
+	scope := NormalizeScope(dmScope)
 	participant := "-"
 	if conv.ChannelType == "dm" {
 		if conv.ParticipantID == "" {
@@ -27,7 +27,7 @@ func ComputeKey(tenantID string, conv model.Conversation, dmScope string) (strin
 		}
 		participant = conv.ParticipantID
 	}
-	raw := fmt.Sprintf("%s|%s|%s|%s|%s", tenantID, conv.ConversationID, conv.ChannelType, participant, dmScope)
-	h := sha256.Sum256([]byte(raw))
-	return "sk:" + hex.EncodeToString(h[:]), nil
+	raw := fmt.Sprintf("%s|%s|%s|%s|%s", tenantID, conv.ConversationID, conv.ChannelType, participant, scope)
+	sum := sha256.Sum256([]byte(raw))
+	return "sk:" + hex.EncodeToString(sum[:]), nil
 }

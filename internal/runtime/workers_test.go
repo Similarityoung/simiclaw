@@ -8,10 +8,14 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/gateway"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
+	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/session"
+	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
+	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
@@ -102,7 +106,8 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 
 	queue := &captureEnqueuer{}
 	repo := storetx.NewRuntimeRepository(db)
-	ingestService := ingest.NewService("local", repo, queue, ingest.NewScopeResolver("local", repo), 100, 100, 100, 100)
+	ingestService := newGatewayIngestor("local", repo, queue)
+	ingestService.SetClock(func() time.Time { return now })
 	supervisor := &Supervisor{
 		workers: repo,
 		ingest:  ingestService,
@@ -121,7 +126,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	if !ok {
 		t.Fatalf("scheduled event not found")
 	}
-	wantSessionKey, err := session.ComputeKey("local", conv, "scope_saved")
+	wantSessionKey, err := gatewaybindings.ComputeKey("local", conv, "scope_saved")
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}
@@ -169,7 +174,8 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 4)
-	ingestService := ingest.NewService("local", repo, &rejectEnqueuer{}, ingest.NewScopeResolver("local", repo), 100, 100, 100, 100)
+	ingestService := newGatewayIngestor("local", repo, &rejectEnqueuer{})
+	ingestService.SetClock(func() time.Time { return now })
 	supervisor := &Supervisor{
 		workers: repo,
 		ingest:  ingestService,
@@ -339,7 +345,8 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1, hub), NewHubRuntimeEventSink(hub, repo), 8)
-	ingestService := ingest.NewService(cfg.TenantID, repo, loop, ingest.NewScopeResolver(cfg.TenantID, repo), 100, 100, 100, 100)
+	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
+	ingestService.SetClock(func() time.Time { return now })
 	sender := &captureSender{}
 	supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
 	supervisor.Start()
@@ -500,4 +507,46 @@ func newRuntimeTestDB(t *testing.T) *store.DB {
 		_ = db.Close()
 	})
 	return db
+}
+
+type gatewayEventIngestor struct {
+	gateway *gateway.Service
+}
+
+func (g *gatewayEventIngestor) SetClock(now func() time.Time) {
+	g.gateway.SetClock(now)
+}
+
+func (g *gatewayEventIngestor) Ingest(ctx context.Context, req runtimeworkers.IngestRequest) (runtimeworkers.IngestResult, error) {
+	accepted, apiErr := g.gateway.Accept(ctx, gatewaymodel.NormalizedIngress{
+		Source:         req.Source,
+		Conversation:   req.Conversation,
+		IdempotencyKey: req.IdempotencyKey,
+		Timestamp:      req.Timestamp,
+		Payload:        req.Payload,
+	})
+	if apiErr != nil {
+		return runtimeworkers.IngestResult{}, apiErr
+	}
+	return runtimeworkers.IngestResult{
+		EventID:   accepted.Result.EventID,
+		Duplicate: accepted.Result.Duplicate,
+		Enqueued:  accepted.Result.Enqueued,
+	}, nil
+}
+
+func newGatewayIngestor(tenantID string, repo *storetx.RuntimeRepository, queue gateway.Enqueuer) *gatewayEventIngestor {
+	payloads := runtimepayload.NewBuiltinRegistry()
+	svc := gateway.NewService(
+		tenantID,
+		repo,
+		queue,
+		gatewaybindings.NewResolver(tenantID, repo),
+		gatewayrouting.NewService(payloads),
+		100,
+		100,
+		100,
+		100,
+	)
+	return &gatewayEventIngestor{gateway: svc}
 }

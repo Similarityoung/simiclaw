@@ -1,4 +1,4 @@
-package httpapi
+package query
 
 import (
 	"encoding/base64"
@@ -36,7 +36,7 @@ func decodeCursor(raw string, dst any) *gateway.APIError {
 	if raw == "" {
 		return nil
 	}
-	b, err := base64.StdEncoding.DecodeString(raw)
+	body, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
 		return &gateway.APIError{
 			StatusCode: http.StatusBadRequest,
@@ -45,7 +45,7 @@ func decodeCursor(raw string, dst any) *gateway.APIError {
 			Details:    map[string]any{"field": "cursor"},
 		}
 	}
-	if err := json.Unmarshal(b, dst); err != nil {
+	if err := json.Unmarshal(body, dst); err != nil {
 		return &gateway.APIError{
 			StatusCode: http.StatusBadRequest,
 			Code:       model.ErrorCodeInvalidArgument,
@@ -57,9 +57,9 @@ func decodeCursor(raw string, dst any) *gateway.APIError {
 }
 
 func encodeCursor(v any) string {
-	b, err := json.Marshal(v)
+	body, err := json.Marshal(v)
 	if err != nil {
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString(b)
+	return base64.StdEncoding.EncodeToString(body)
 }

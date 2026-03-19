@@ -8,13 +8,15 @@ import (
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
-	"github.com/similarityyoung/simiclaw/internal/httpapi"
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
+	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
+	httpserver "github.com/similarityyoung/simiclaw/internal/http"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime"
+	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
@@ -49,21 +51,22 @@ func NewApp(cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	streamHub := streaming.NewHub()
-	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers)
+	payloads := runtimepayload.NewBuiltinRegistry()
+	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers, payloads)
 	runtimeRepo := storetx.NewRuntimeRepository(db)
 	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds, streamHub)
 	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, runtime.NewHubRuntimeEventSink(streamHub, runtimeRepo), cfg.EventQueueCapacity)
-	ingestService := ingest.NewService(
+	gatewayService := gateway.NewService(
 		cfg.TenantID,
 		runtimeRepo,
 		eventLoop,
-		ingest.NewScopeResolver(cfg.TenantID, runtimeRepo),
+		gatewaybindings.NewResolver(cfg.TenantID, runtimeRepo),
+		gatewayrouting.NewService(payloads),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,
 		cfg.RateLimitSessionBurst,
 	)
-	gatewayService := gateway.NewService(ingestService)
 	queryService := querysvc.NewService(db)
 
 	var telegramRuntime *telegramchannel.Runtime
@@ -76,8 +79,8 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, ingestService, eventLoop, sender)
-	server := httpapi.New(cfg, gatewayService, queryService, supervisor, streamHub)
+	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
+	server := httpserver.New(cfg, gatewayService, queryService, supervisor, streamHub)
 	return &App{
 		Cfg:        cfg,
 		DB:         db,

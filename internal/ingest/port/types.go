@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -28,12 +29,7 @@ type PersistResult struct {
 	ExistingEventID string
 }
 
-type SessionScopeRecord struct {
-	ConversationID string
-	ChannelType    string
-	ParticipantID  string
-	DMScope        string
-}
+type SessionScopeRecord = bindings.SessionScopeRecord
 
 type Repository interface {
 	PersistEvent(ctx context.Context, tenantID, sessionKey string, req PersistRequest, payloadHash string, now time.Time) (PersistResult, error)

@@ -5,9 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest"
+	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
+	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -15,6 +17,10 @@ type fakeRepo struct {
 	result     port.PersistResult
 	err        error
 	markQueued int
+	scope      string
+	scopeOK    bool
+	hint       bindings.SessionScopeRecord
+	hintOK     bool
 }
 
 func (r *fakeRepo) PersistEvent(context.Context, string, string, port.PersistRequest, string, time.Time) (port.PersistResult, error) {
@@ -26,18 +32,17 @@ func (r *fakeRepo) MarkEventQueued(context.Context, string, time.Time) error {
 	return nil
 }
 
+func (r *fakeRepo) GetConversationDMScope(context.Context, string, model.Conversation) (string, bool, error) {
+	return r.scope, r.scopeOK, nil
+}
+
+func (r *fakeRepo) GetScopeSession(context.Context, string) (bindings.SessionScopeRecord, bool, error) {
+	return r.hint, r.hintOK, nil
+}
+
 type fakeQueue struct{}
 
 func (fakeQueue) TryEnqueue(string) bool { return true }
-
-type fakeResolver struct{}
-
-func (fakeResolver) Resolve(_ context.Context, req api.IngestRequest) (api.IngestRequest, string, *ingest.Error) {
-	if req.DMScope == "" {
-		req.DMScope = "default"
-	}
-	return req, req.DMScope, nil
-}
 
 func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
@@ -51,9 +56,9 @@ func TestAcceptReturnsDuplicateAck(t *testing.T) {
 			Duplicate:   true,
 		},
 	}
-	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	accepted, apiErr := svc.Accept(context.Background(), validGatewayRequest(now))
+	accepted, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
 	if apiErr != nil {
 		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
@@ -63,10 +68,11 @@ func TestAcceptReturnsDuplicateAck(t *testing.T) {
 }
 
 func TestAcceptMapsConflictError(t *testing.T) {
+	now := time.Now().UTC()
 	repo := &fakeRepo{err: port.ErrIdempotencyConflict}
-	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	_, apiErr := svc.Accept(context.Background(), validGatewayRequest(time.Now().UTC()))
+	_, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
 	if apiErr == nil {
 		t.Fatalf("expected api error")
 	}
@@ -86,9 +92,9 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 			PayloadHash: "sha256:test",
 		},
 	}
-	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	accepted, apiErr := svc.Accept(context.Background(), validGatewayRequest(now))
+	accepted, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
 	if apiErr != nil {
 		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
@@ -100,25 +106,31 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	}
 }
 
-func TestIngestWrapsAccept(t *testing.T) {
+func TestAcceptUsesNewSessionPayloadOverride(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
 		result: port.PersistResult{
-			EventID:     "evt_ok",
-			SessionKey:  "local:dm:u1",
-			SessionID:   "ses_ok",
+			EventID:     "evt_new",
+			SessionKey:  "sk:new",
+			SessionID:   "ses_new",
 			ReceivedAt:  now,
-			PayloadHash: "sha256:test",
+			PayloadHash: "sha256:new",
 		},
 	}
-	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
+	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	resp, status, apiErr := svc.Ingest(context.Background(), validGatewayRequest(now))
+	accepted, apiErr := svc.Accept(context.Background(), gatewaymodel.NormalizedIngress{
+		Source:         "cli",
+		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
+		IdempotencyKey: "cli:conv:1",
+		Timestamp:      now,
+		Payload:        model.EventPayload{Type: "message", Text: "/new"},
+	})
 	if apiErr != nil {
-		t.Fatalf("Ingest apiErr=%+v", apiErr)
+		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
-	if status != 202 || resp.EventID != "evt_ok" {
-		t.Fatalf("unexpected ingest response status=%d resp=%+v", status, resp)
+	if accepted.StatusCode != 202 {
+		t.Fatalf("expected accepted response, got %+v", accepted)
 	}
 }
 
@@ -129,41 +141,28 @@ func TestAPIErrorErrorReturnsMessage(t *testing.T) {
 	}
 }
 
-func TestMapIngestErrorStatusMappings(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		err    *ingest.Error
-		status int
-	}{
-		{name: "invalid", err: &ingest.Error{Code: model.ErrorCodeInvalidArgument, Message: "bad"}, status: 400},
-		{name: "rate", err: &ingest.Error{Code: model.ErrorCodeRateLimited, Message: "slow"}, status: 429},
-		{name: "internal", err: &ingest.Error{Code: model.ErrorCodeInternal, Message: "boom"}, status: 500},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			apiErr := mapIngestError(tc.err)
-			if apiErr == nil || apiErr.StatusCode != tc.status {
-				t.Fatalf("unexpected mapping: %+v", apiErr)
-			}
-		})
-	}
+func newGatewayServiceForTest(repo *fakeRepo, queue Enqueuer, now time.Time) *Service {
+	svc := NewService(
+		"local",
+		repo,
+		queue,
+		bindings.NewResolver("local", repo),
+		routing.NewService(runtimepayload.NewBuiltinRegistry()),
+		100,
+		100,
+		100,
+		100,
+	)
+	svc.SetClock(func() time.Time { return now })
+	return svc
 }
 
-func TestIngestReturnsAPIError(t *testing.T) {
-	repo := &fakeRepo{err: port.ErrIdempotencyConflict}
-	svc := NewService(ingest.NewService("local", repo, fakeQueue{}, fakeResolver{}, 100, 100, 100, 100))
-
-	_, _, apiErr := svc.Ingest(context.Background(), validGatewayRequest(time.Now().UTC()))
-	if apiErr == nil || apiErr.StatusCode != 409 {
-		t.Fatalf("expected conflict api error, got %+v", apiErr)
-	}
-}
-
-func validGatewayRequest(now time.Time) api.IngestRequest {
-	return api.IngestRequest{
+func validGatewayIngress(now time.Time) gatewaymodel.NormalizedIngress {
+	return gatewaymodel.NormalizedIngress{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "conv", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:conv:1",
-		Timestamp:      now.Format(time.RFC3339Nano),
+		Timestamp:      now,
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
 	}
 }

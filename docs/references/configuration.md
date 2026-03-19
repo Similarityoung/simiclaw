@@ -74,7 +74,7 @@
 
 - 配置模型与默认值: `internal/config/config.go`
 - `serve` 加载顺序: `cmd/simiclaw/internal/gateway/command.go`
-- HTTP 鉴权: `internal/httpapi/middleware_auth.go`
+- HTTP 鉴权: `internal/http/middleware/api_key.go`
 - CLI 运行参数: `cmd/simiclaw/internal/common/cli.go`
 
 ## Related Docs

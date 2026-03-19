@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
@@ -32,7 +32,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	defer db.Close()
 
 	conversation := model.Conversation{ConversationID: "panic", ChannelType: "dm", ParticipantID: "u1"}
-	sessionKey, err := session.ComputeKey(cfg.TenantID, conversation, "default")
+	sessionKey, err := gatewaybindings.ComputeKey(cfg.TenantID, conversation, "default")
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 	defer db.Close()
 
 	conversation := model.Conversation{ConversationID: "tg_chat_42", ChannelType: "dm", ParticipantID: "1001"}
-	sessionKey, err := session.ComputeKey(cfg.TenantID, conversation, "default")
+	sessionKey, err := gatewaybindings.ComputeKey(cfg.TenantID, conversation, "default")
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}

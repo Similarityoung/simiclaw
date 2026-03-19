@@ -1,11 +1,11 @@
-package session
+package bindings
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 )
 
 const DefaultScope = "default"
@@ -32,6 +32,6 @@ func NewScopeFromID(idempotencyKey string) string {
 	return "scope_" + hex.EncodeToString(sum[:8])
 }
 
-func ScopeFromRequest(req api.IngestRequest) string {
-	return NormalizeScope(req.DMScope)
+func ScopeFromIngress(in gatewaymodel.NormalizedIngress) string {
+	return NormalizeScope(in.DMScope)
 }

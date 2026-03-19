@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -63,7 +64,7 @@ type ProviderRunner struct {
 	payloads        *runtimepayload.Registry
 }
 
-func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory) *ProviderRunner {
+func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory, payloads *runtimepayload.Registry) *ProviderRunner {
 	if registry == nil {
 		registry = tools.NewRegistry()
 		tools.RegisterBuiltins(registry)
@@ -73,13 +74,12 @@ func NewProviderRunner(workspace string, historyReader HistoryReader, registry *
 		registry:  registry,
 		providers: providers,
 		writer:    memory.NewWriter(workspace),
+		payloads:  payloads,
 	}
 	runner.historyLoader = runHistoryLoader{reader: historyReader, historyLimit: 20}
 	runner.promptAssembler = llmPromptAssembler{prompts: prompts, registry: runner.registry}
 	runner.toolExecutor = llmToolExecutor{workspace: workspace, registry: runner.registry}
 	runner.traceAssembler = runTraceAssembler{}
-	runner.payloads = runtimepayload.NewRegistry()
-	runtimepayload.RegisterBuiltins(runner.payloads)
 	return runner
 }
 
@@ -95,6 +95,9 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 			StartedAt:  start,
 		}
 		return runNewSession(event, start, &trace), nil
+	}
+	if r.payloads == nil {
+		return RunOutput{}, errors.New("payload registry unavailable")
 	}
 	plan := r.payloads.Resolve(event.Payload.Type)
 	trace := api.RunTrace{

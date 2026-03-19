@@ -5,17 +5,29 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 const delayedPollTick = time.Second
 
 type EventIngestor interface {
-	Ingest(ctx context.Context, cmd ingest.Command) (ingest.Result, *ingest.Error)
+	Ingest(ctx context.Context, req IngestRequest) (IngestResult, error)
+}
+
+type IngestRequest struct {
+	Source         string
+	Conversation   model.Conversation
+	IdempotencyKey string
+	Timestamp      time.Time
+	Payload        model.EventPayload
+}
+
+type IngestResult struct {
+	EventID   string
+	Duplicate bool
+	Enqueued  bool
 }
 
 type ScheduledJobRepository interface {
@@ -103,26 +115,26 @@ func RunScheduledKind(ctx context.Context, repo ScheduledJobRepository, ingestor
 	if err != nil || !ok {
 		return
 	}
-	req := api.IngestRequest{
+	req := IngestRequest{
 		Source:         job.Payload.Source,
 		Conversation:   job.Payload.Conversation,
 		IdempotencyKey: fmt.Sprintf("%s:%d", job.JobID, now.Unix()),
-		Timestamp:      now.Format(time.RFC3339Nano),
+		Timestamp:      now,
 		Payload:        job.Payload.Payload,
 	}
 	if ingestor == nil {
 		_ = repo.FailScheduledJob(ctx, job.JobID, "ingest service unavailable", now.Add(30*time.Second), now)
 		return
 	}
-	result, ingestErr := ingestor.Ingest(ctx, ingest.Command{Request: req, ReceivedAt: now})
-	if ingestErr != nil {
-		_ = repo.FailScheduledJob(ctx, job.JobID, ingestErr.Error(), now.Add(30*time.Second), now)
+	accepted, err := ingestor.Ingest(ctx, req)
+	if err != nil {
+		_ = repo.FailScheduledJob(ctx, job.JobID, err.Error(), now.Add(30*time.Second), now)
 		return
 	}
 	_ = repo.CompleteRuntimeScheduledJob(ctx, job, now)
-	if !result.Duplicate && !result.Enqueued && queue != nil {
-		if err := repo.MarkEventQueued(ctx, result.EventID, now); err == nil {
-			queue.TryEnqueue(result.EventID)
+	if !accepted.Duplicate && !accepted.Enqueued && queue != nil {
+		if err := repo.MarkEventQueued(ctx, accepted.EventID, now); err == nil {
+			queue.TryEnqueue(accepted.EventID)
 		}
 	}
 	_ = repo.BeatHeartbeat(ctx, string(kind), now)

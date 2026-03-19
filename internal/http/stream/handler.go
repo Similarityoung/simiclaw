@@ -1,4 +1,4 @@
-package httpapi
+package stream
 
 import (
 	"bufio"
@@ -9,34 +9,61 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
+	httpingest "github.com/similarityyoung/simiclaw/internal/http/ingest"
+	httpquery "github.com/similarityyoung/simiclaw/internal/http/query"
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
+	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 const streamKeepaliveInterval = 15 * time.Second
 
-func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
+type Gateway interface {
+	Accept(ctx context.Context, in gatewaymodel.NormalizedIngress) (gateway.AcceptedIngest, *gateway.APIError)
+}
+
+type Query interface {
+	GetEvent(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error)
+}
+
+type Handlers struct {
+	gateway Gateway
+	query   Query
+	hub     *streaming.Hub
+}
+
+func NewHandlers(gateway Gateway, query Query, hub *streaming.Hub) *Handlers {
+	return &Handlers{gateway: gateway, query: query, hub: hub}
+}
+
+func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	var req api.IngestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
+		httpingest.WriteAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
 		return
 	}
-
-	sub := s.streamHub.Reserve(req.IdempotencyKey)
-	defer s.streamHub.Release(sub)
-
-	accepted, apiErr := s.gateway.Accept(r.Context(), req)
+	normalized, apiErr := httpingest.NormalizeAPIRequest(req)
 	if apiErr != nil {
-		writeAPIError(w, apiErr)
+		httpingest.WriteAPIError(w, apiErr)
 		return
 	}
-	terminal := s.streamHub.Attach(sub, accepted.Result.EventID)
+
+	sub := h.hub.Reserve(req.IdempotencyKey)
+	defer h.hub.Release(sub)
+
+	accepted, apiErr := h.gateway.Accept(r.Context(), normalized)
+	if apiErr != nil {
+		httpingest.WriteAPIError(w, apiErr)
+		return
+	}
+	terminal := h.hub.Attach(sub, accepted.Result.EventID)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "streaming unsupported"})
+		httpingest.WriteAPIError(w, &gateway.APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "streaming unsupported"})
 		return
 	}
 	initSSEHeaders(w)
@@ -55,9 +82,9 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		_ = writeSSEEvent(w, flusher, *terminal)
 		return
 	}
-	if eventRec, ok, err := s.query.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
+	if eventRec, ok, err := h.query.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
 		if terminalEvent := terminalEventFromRecord(eventRec); terminalEvent != nil {
-			s.streamHub.PublishTerminal(accepted.Result.EventID, *terminalEvent)
+			h.hub.PublishTerminal(accepted.Result.EventID, *terminalEvent)
 		}
 	}
 
@@ -97,14 +124,14 @@ func initSSEHeaders(w http.ResponseWriter) {
 }
 
 func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event api.ChatStreamEvent) error {
-	b, err := json.Marshal(event)
+	body, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "event: %s\n", event.Type); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", body); err != nil {
 		return err
 	}
 	flusher.Flush()
@@ -120,7 +147,7 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 }
 
 func terminalEventFromRecord(rec querymodel.EventRecord) *api.ChatStreamEvent {
-	apiRec := toAPIEventRecord(rec)
+	apiRec := httpquery.ToAPIEventRecord(rec)
 	switch rec.Status {
 	case model.EventStatusFailed:
 		return &api.ChatStreamEvent{

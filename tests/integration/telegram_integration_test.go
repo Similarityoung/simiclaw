@@ -17,8 +17,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	telegramchannel "github.com/similarityyoung/simiclaw/internal/channels/telegram"
 	"github.com/similarityyoung/simiclaw/internal/config"
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	ingestport "github.com/similarityyoung/simiclaw/internal/ingest/port"
-	"github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	apitypes "github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -152,7 +152,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 		t.Fatalf("Open DB: %v", err)
 	}
 	conversation := model.Conversation{ConversationID: "tg_chat_3003", ChannelType: "dm", ParticipantID: "1001"}
-	sessionKey, err := session.ComputeKey(cfg.TenantID, conversation, "default")
+	sessionKey, err := gatewaybindings.ComputeKey(cfg.TenantID, conversation, "default")
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}

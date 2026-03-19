@@ -6,35 +6,35 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/pkg/api"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"
 )
 
-func NormalizeTextUpdate(update tele.Update, receivedAt time.Time) (api.IngestRequest, error) {
+func NormalizeTextUpdate(update tele.Update, receivedAt time.Time) (gatewaymodel.NormalizedIngress, error) {
 	if update.ID == 0 {
-		return api.IngestRequest{}, fmt.Errorf("update_id is required")
+		return gatewaymodel.NormalizedIngress{}, fmt.Errorf("update_id is required")
 	}
 	if update.Message == nil {
-		return api.IngestRequest{}, fmt.Errorf("telegram text update requires message")
+		return gatewaymodel.NormalizedIngress{}, fmt.Errorf("telegram text update requires message")
 	}
 	msg := update.Message
 	if msg.Chat == nil {
-		return api.IngestRequest{}, fmt.Errorf("telegram message chat is required")
+		return gatewaymodel.NormalizedIngress{}, fmt.Errorf("telegram message chat is required")
 	}
 	if msg.Sender == nil {
-		return api.IngestRequest{}, fmt.Errorf("telegram message sender is required")
+		return gatewaymodel.NormalizedIngress{}, fmt.Errorf("telegram message sender is required")
 	}
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
-		return api.IngestRequest{}, fmt.Errorf("telegram message text is required")
+		return gatewaymodel.NormalizedIngress{}, fmt.Errorf("telegram message text is required")
 	}
 	native, err := json.Marshal(update)
 	if err != nil {
-		return api.IngestRequest{}, err
+		return gatewaymodel.NormalizedIngress{}, err
 	}
 	receivedAt = receivedAt.UTC()
-	return api.IngestRequest{
+	return gatewaymodel.NormalizedIngress{
 		Source: "telegram",
 		Conversation: model.Conversation{
 			ConversationID: fmt.Sprintf("tg_chat_%d", msg.Chat.ID),
@@ -42,7 +42,7 @@ func NormalizeTextUpdate(update tele.Update, receivedAt time.Time) (api.IngestRe
 			ParticipantID:  fmt.Sprintf("%d", msg.Sender.ID),
 		},
 		IdempotencyKey: fmt.Sprintf("telegram:update:%d", update.ID),
-		Timestamp:      receivedAt.Format(time.RFC3339Nano),
+		Timestamp:      receivedAt,
 		Payload: model.EventPayload{
 			Type:   "message",
 			Text:   text,

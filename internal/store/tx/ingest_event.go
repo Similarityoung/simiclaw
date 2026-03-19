@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -20,15 +21,16 @@ func (r *RuntimeRepository) GetConversationDMScope(ctx context.Context, tenantID
 	return r.db.GetConversationDMScope(ctx, tenantID, conv)
 }
 
-func (r *RuntimeRepository) GetScopeSession(ctx context.Context, sessionKey string) (port.SessionScopeRecord, bool, error) {
+func (r *RuntimeRepository) GetScopeSession(ctx context.Context, sessionKey string) (bindings.SessionScopeRecord, bool, error) {
 	rec, ok, err := r.db.GetSession(ctx, sessionKey)
 	if err != nil || !ok {
-		return port.SessionScopeRecord{}, ok, err
+		return bindings.SessionScopeRecord{}, ok, err
 	}
-	return port.SessionScopeRecord{
+	return bindings.SessionScopeRecord{
 		ConversationID: rec.ConversationID,
 		ChannelType:    rec.ChannelType,
 		ParticipantID:  rec.ParticipantID,
 		DMScope:        rec.DMScope,
+		SessionID:      rec.ActiveSessionID,
 	}, true, nil
 }

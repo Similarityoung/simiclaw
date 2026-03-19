@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
-	"github.com/similarityyoung/simiclaw/internal/ingest"
 	"github.com/similarityyoung/simiclaw/internal/outbound"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
@@ -21,16 +20,12 @@ type Supervisor struct {
 	cfg        config.Config
 	workers    WorkerRepository
 	readiness  ReadinessRepository
-	ingest     EventIngestor
+	ingest     runtimeworkers.EventIngestor
 	loop       *EventLoop
 	background []kernel.Worker
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
-}
-
-type EventIngestor interface {
-	Ingest(ctx context.Context, cmd ingest.Command) (ingest.Result, *ingest.Error)
 }
 
 type WorkerRepository interface {
@@ -52,27 +47,31 @@ type ReadinessRepository interface {
 	HeartbeatAt(ctx context.Context, workerName string) (time.Time, bool, error)
 }
 
-func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
+func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor runtimeworkers.EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
 	var enqueuer runtimeworkers.EventEnqueuer
 	if loop != nil {
 		enqueuer = loop
 	}
+	registry := runtimeworkers.NewRegistry()
+	runtimeworkers.RegisterBuiltins(registry, runtimeworkers.Builtins{
+		Heartbeat:  workers,
+		Processing: workers,
+		Delivery:   workers,
+		Scheduled:  workers,
+		Ingest:     ingestor,
+		Queue:      enqueuer,
+		Sender:     sender,
+	})
 	return &Supervisor{
-		cfg:       cfg,
-		workers:   workers,
-		readiness: readiness,
-		ingest:    ingestor,
-		loop:      loop,
-		background: []kernel.Worker{
-			runtimeworkers.NewHeartbeatWorker(workers),
-			runtimeworkers.NewProcessingRecoveryWorker(workers, enqueuer),
-			runtimeworkers.NewDeliveryPollWorker(workers, sender),
-			runtimeworkers.NewDelayedJobsWorker(workers, ingestor, enqueuer),
-			runtimeworkers.NewCronWorker(workers, ingestor, enqueuer),
-		},
-		ctx:    ctx,
-		cancel: cancel,
+		cfg:        cfg,
+		workers:    workers,
+		readiness:  readiness,
+		ingest:     ingestor,
+		loop:       loop,
+		background: registry.All(),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 

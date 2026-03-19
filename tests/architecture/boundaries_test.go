@@ -17,8 +17,6 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	root := repoRoot(t)
 	files := goFilesUnder(t, root, "cmd", "internal")
 	allowed := map[string]struct{}{
-		"internal/ingest/service.go":      {},
-		"internal/ingeststore/adapter.go": {},
 		"internal/store/tx/ingest_event.go": {},
 	}
 	var violations []string
@@ -52,10 +50,6 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 	}
 	slices.Sort(violations)
 	t.Fatalf("found direct IngestEvent calls outside allowed ingest entrypoints:\n%s", strings.Join(violations, "\n"))
-}
-
-func TestHTTPAPIProductionCodeDoesNotImportStore(t *testing.T) {
-	assertNoPackageImport(t, storeImportPath, "internal/httpapi")
 }
 
 func TestIngestProductionCodeDoesNotImportStore(t *testing.T) {

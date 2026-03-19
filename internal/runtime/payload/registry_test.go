@@ -119,3 +119,26 @@ func TestRegistryResolveClonesMutableFields(t *testing.T) {
 		t.Fatalf("expected message meta clone, got %#v", second.MessageMeta)
 	}
 }
+
+func TestRegistryRegisterCustomHandler(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(customHandler{})
+
+	plan := registry.Resolve("custom")
+	if plan.Kind != ExecutionKindSuppressedLLM || plan.RunMode != model.RunModeNoReply {
+		t.Fatalf("expected custom handler plan to be returned, got %+v", plan)
+	}
+}
+
+type customHandler struct{}
+
+func (customHandler) PayloadType() string { return "custom" }
+
+func (customHandler) Plan() Plan {
+	return Plan{
+		RunMode:        model.RunModeNoReply,
+		Kind:           ExecutionKindSuppressedLLM,
+		SuppressOutput: true,
+		SuppressStream: true,
+	}
+}

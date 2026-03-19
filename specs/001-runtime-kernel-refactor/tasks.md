@@ -74,20 +74,20 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] 在 `internal/runtime/payload/registry_test.go` 与 `internal/runtime/workers/registry_test.go` 中验证 handler/worker 注册机制
-- [ ] T021 [P] [US2] 在 `tests/integration/http_ingress_integration_test.go` 中验证 HTTP ingress 统一进入 gateway
-- [ ] T022 [P] [US2] 在 `tests/integration/telegram_integration_test.go` 与 `tests/integration/cli_integration_test.go` 中验证 channel 输入归一化与 gateway 接入
+- [X] T020 [P] [US2] 在 `internal/runtime/payload/registry_test.go` 与 `internal/runtime/workers/registry_test.go` 中验证 handler/worker 注册机制
+- [X] T021 [P] [US2] 在 `tests/integration/http_ingress_integration_test.go` 中验证 HTTP ingress 统一进入 gateway
+- [X] T022 [P] [US2] 在 `tests/integration/telegram_integration_test.go` 与 `tests/integration/cli_integration_test.go` 中验证 channel 输入归一化与 gateway 接入
 
 ### Implementation for User Story 2
 
-- [ ] T023 [US2] 将 session key/scope/binding 规则从 `internal/session/{key.go,scope.go}` 与 `internal/ingest/resolver.go` 收拢到 `internal/gateway/bindings/{key.go,scope.go,hints.go,resolver.go}`
-- [ ] T024 [US2] 构建 gateway 主入口与路由决策：`internal/gateway/service.go`、`internal/gateway/routing/{service.go,decision.go}`
-- [ ] T025 [P] [US2] 将 `internal/httpapi/` 迁移为 `internal/http/{ingest,query,stream,middleware}/`，分离写入口、读接口、SSE/watch 与 middleware
-- [ ] T026 [P] [US2] 更新 `internal/channels/{cli,telegram}/`，让各边界在自身完成 normalize，并只向 gateway 发送统一 ingress
-- [ ] T027 [P] [US2] 显式化 payload 与 worker 注册入口：`internal/runtime/payload/registry.go`、`internal/runtime/workers/registry.go`
-- [ ] T028 [US2] 清理外部边界对旧入口的直接依赖，禁止 `http/channels/gateway` 继续穿透 `internal/store`
-- [ ] T029 [US2] 下线或删除已被替代的旧入口路径：`internal/session/`、`internal/ingeststore/`、被新 gateway/http 流程替代的旧 `internal/ingest` 入口
-- [ ] T030 [US2] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、与 HTTP/channel 相关的 targeted integration tests
+- [X] T023 [US2] 将 session key/scope/binding 规则从 `internal/session/{key.go,scope.go}` 与 `internal/ingest/resolver.go` 收拢到 `internal/gateway/bindings/{key.go,scope.go,hints.go,resolver.go}`
+- [X] T024 [US2] 构建 gateway 主入口与路由决策：`internal/gateway/service.go`、`internal/gateway/routing/{service.go,decision.go}`
+- [X] T025 [P] [US2] 将 `internal/httpapi/` 迁移为 `internal/http/{ingest,query,stream,middleware}/`，分离写入口、读接口、SSE/watch 与 middleware
+- [X] T026 [P] [US2] 更新 `internal/channels/{cli,telegram}/`，让各边界在自身完成 normalize，并只向 gateway 发送统一 ingress
+- [X] T027 [P] [US2] 显式化 payload 与 worker 注册入口：`internal/runtime/payload/registry.go`、`internal/runtime/workers/registry.go`
+- [X] T028 [US2] 清理外部边界对旧入口的直接依赖，禁止 `http/channels/gateway` 继续穿透 `internal/store`
+- [X] T029 [US2] 下线或删除已被替代的旧入口路径：`internal/session/`、`internal/ingeststore/`、被新 gateway/http 流程替代的旧 `internal/ingest` 入口
+- [X] T030 [US2] 运行并记录最小验证：`go test ./tests/architecture/... -v`、`make test-unit`、与 HTTP/channel 相关的 targeted integration tests
 
 **Checkpoint**: User Story 2 完成后，新增 HTTP/channel/payload/worker 能力已经有明确接入点，不再依赖中心分支文件
 

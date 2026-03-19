@@ -1,4 +1,4 @@
-package httpapi
+package query
 
 import (
 	"net/http"
@@ -25,13 +25,25 @@ type eventListItem struct {
 	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
-func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleGetEvent(w http.ResponseWriter, r *http.Request) {
+	rec, ok, err := h.query.GetEvent(r.Context(), r.PathValue("event_id"))
+	if err != nil {
+		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
+		return
+	}
+	if !ok {
+		writeAPIError(w, &gateway.APIError{StatusCode: 404, Code: model.ErrorCodeNotFound, Message: "event not found"})
+		return
+	}
+	WriteJSON(w, 200, ToAPIEventRecord(rec))
+}
+
+func (h *Handlers) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 	limit, apiErr := parsePageLimit(r.URL.Query().Get("limit"))
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
 	}
-
 	var cur eventCursor
 	if apiErr := decodeCursor(r.URL.Query().Get("cursor"), &cur); apiErr != nil {
 		writeAPIError(w, apiErr)
@@ -42,18 +54,12 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	if hasCursor {
 		t, err := time.Parse(time.RFC3339Nano, cur.LastCreatedAt)
 		if err != nil {
-			writeAPIError(w, &gateway.APIError{
-				StatusCode: http.StatusBadRequest,
-				Code:       model.ErrorCodeInvalidArgument,
-				Message:    "invalid cursor",
-				Details:    map[string]any{"field": "cursor"},
-			})
+			writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid cursor", Details: map[string]any{"field": "cursor"}})
 			return
 		}
 		cursorTime = t
 	}
-
-	page, err := s.query.ListEvents(r.Context(), querymodel.EventFilter{
+	page, err := h.query.ListEvents(r.Context(), querymodel.EventFilter{
 		SessionKey: r.URL.Query().Get("session_key"),
 		Status:     model.EventStatus(r.URL.Query().Get("status")),
 		Limit:      limit,
@@ -80,43 +86,29 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:    rec.UpdatedAt,
 		})
 	}
-
 	resp := map[string]any{"items": items}
 	if page.Next != nil {
-		resp["next_cursor"] = encodeCursor(eventCursor{
-			V:             1,
-			LastCreatedAt: page.Next.CreatedAt.Format(time.RFC3339Nano),
-			LastEventID:   page.Next.EventID,
-		})
+		resp["next_cursor"] = encodeCursor(eventCursor{V: 1, LastCreatedAt: page.Next.CreatedAt.Format(time.RFC3339Nano), LastEventID: page.Next.EventID})
 	}
-	writeJSON(w, http.StatusOK, resp)
+	WriteJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleLookupEvent(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleLookupEvent(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey := r.URL.Query().Get("idempotency_key")
 	if idempotencyKey == "" {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusBadRequest,
-			Code:       model.ErrorCodeInvalidArgument,
-			Message:    "idempotency_key is required",
-			Details:    map[string]any{"field": "idempotency_key"},
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "idempotency_key is required", Details: map[string]any{"field": "idempotency_key"}})
 		return
 	}
-	row, ok, err := s.query.LookupEvent(r.Context(), idempotencyKey)
+	row, ok, err := h.query.LookupEvent(r.Context(), idempotencyKey)
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 	if !ok {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusNotFound,
-			Code:       model.ErrorCodeNotFound,
-			Message:    "idempotency key not found",
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusNotFound, Code: model.ErrorCodeNotFound, Message: "idempotency key not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	WriteJSON(w, http.StatusOK, map[string]any{
 		"event_id":     row.EventID,
 		"payload_hash": row.PayloadHash,
 		"received_at":  row.ReceivedAt,

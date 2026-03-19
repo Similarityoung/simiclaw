@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	"github.com/similarityyoung/simiclaw/internal/ingest/port"
 	"github.com/similarityyoung/simiclaw/internal/readmodel"
-	sessionpkg "github.com/similarityyoung/simiclaw/internal/session"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -46,7 +46,7 @@ func (db *DB) IngestEvent(ctx context.Context, tenantID, sessionKey string, req 
 			return err
 		}
 
-		dmScope := sessionpkg.NormalizeScope(req.DMScope)
+		dmScope := gatewaybindings.NormalizeScope(req.DMScope)
 		if req.DMScope != "" {
 			if err := upsertConversationDMScopeTx(ctx, tx, tenantID, req.Conversation, dmScope, now); err != nil {
 				return err

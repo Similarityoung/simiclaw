@@ -1,4 +1,4 @@
-package httpapi
+package query
 
 import (
 	"net/http"
@@ -28,7 +28,7 @@ type runSummary struct {
 	EndedAt    time.Time       `json:"ended_at"`
 }
 
-func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleListRuns(w http.ResponseWriter, r *http.Request) {
 	limit, apiErr := parsePageLimit(r.URL.Query().Get("limit"))
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
@@ -44,17 +44,12 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	if hasCursor {
 		t, err := time.Parse(time.RFC3339Nano, cur.LastStartedAt)
 		if err != nil {
-			writeAPIError(w, &gateway.APIError{
-				StatusCode: http.StatusBadRequest,
-				Code:       model.ErrorCodeInvalidArgument,
-				Message:    "invalid cursor",
-				Details:    map[string]any{"field": "cursor"},
-			})
+			writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid cursor", Details: map[string]any{"field": "cursor"}})
 			return
 		}
 		curTime = t
 	}
-	page, err := s.query.ListRuns(r.Context(), querymodel.RunFilter{
+	page, err := h.query.ListRuns(r.Context(), querymodel.RunFilter{
 		SessionKey: r.URL.Query().Get("session_key"),
 		SessionID:  r.URL.Query().Get("session_id"),
 		Limit:      limit,
@@ -75,46 +70,32 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := map[string]any{"items": items}
 	if page.Next != nil {
-		resp["next_cursor"] = encodeCursor(runCursor{
-			V:             1,
-			LastStartedAt: page.Next.StartedAt.Format(time.RFC3339Nano),
-			LastRunID:     page.Next.RunID,
-		})
+		resp["next_cursor"] = encodeCursor(runCursor{V: 1, LastStartedAt: page.Next.StartedAt.Format(time.RFC3339Nano), LastRunID: page.Next.RunID})
 	}
-	writeJSON(w, http.StatusOK, resp)
+	WriteJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("run_id")
-	trace, ok, err := s.query.GetRun(r.Context(), runID)
+func (h *Handlers) HandleGetRun(w http.ResponseWriter, r *http.Request) {
+	trace, ok, err := h.query.GetRun(r.Context(), r.PathValue("run_id"))
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 	if !ok {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusNotFound,
-			Code:       model.ErrorCodeNotFound,
-			Message:    "run not found",
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusNotFound, Code: model.ErrorCodeNotFound, Message: "run not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, toRunSummary(trace))
+	WriteJSON(w, http.StatusOK, toRunSummary(trace))
 }
 
-func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("run_id")
-	trace, ok, err := s.query.GetRun(r.Context(), runID)
+func (h *Handlers) HandleGetRunTrace(w http.ResponseWriter, r *http.Request) {
+	trace, ok, err := h.query.GetRun(r.Context(), r.PathValue("run_id"))
 	if err != nil {
 		writeAPIError(w, &gateway.APIError{StatusCode: 500, Code: model.ErrorCodeInternal, Message: err.Error()})
 		return
 	}
 	if !ok {
-		writeAPIError(w, &gateway.APIError{
-			StatusCode: http.StatusNotFound,
-			Code:       model.ErrorCodeNotFound,
-			Message:    "run not found",
-		})
+		writeAPIError(w, &gateway.APIError{StatusCode: http.StatusNotFound, Code: model.ErrorCodeNotFound, Message: "run not found"})
 		return
 	}
 	view := strings.TrimSpace(r.URL.Query().Get("view"))
@@ -122,21 +103,16 @@ func (s *Server) handleGetRunTrace(w http.ResponseWriter, r *http.Request) {
 		view = "full"
 	}
 	if view == "summary" {
-		writeJSON(w, http.StatusOK, toRunSummary(trace))
+		WriteJSON(w, http.StatusOK, toRunSummary(trace))
 		return
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("redact")); raw != "" {
 		if _, err := strconv.ParseBool(raw); err != nil {
-			writeAPIError(w, &gateway.APIError{
-				StatusCode: http.StatusBadRequest,
-				Code:       model.ErrorCodeInvalidArgument,
-				Message:    "invalid redact",
-				Details:    map[string]any{"field": "redact"},
-			})
+			writeAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid redact", Details: map[string]any{"field": "redact"}})
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, toAPIRunTrace(trace))
+	WriteJSON(w, http.StatusOK, toAPIRunTrace(trace))
 }
 
 func toRunSummary(trace querymodel.RunTrace) runSummary {
