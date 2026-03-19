@@ -14,6 +14,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/bootstrap"
 	"github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/internal/config"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -42,7 +43,7 @@ func runSmokeV1(t *testing.T) {
 	}
 	defer app.Stop()
 
-	req := cli.BuildIngestRequest("smoke-v1", "u1", 1, "hello v1")
+	req := ingestRequestFromNormalized(cli.NormalizeMessage("smoke-v1", "u1", 1, "hello v1", time.Now().UTC()))
 	resp := ingest(t, app, req)
 	event := pollEvent(t, app, resp.EventID)
 	if event.Status != model.EventStatusProcessed || event.OutboxStatus != model.OutboxStatusSent {
@@ -65,6 +66,18 @@ func ingest(t *testing.T, app *bootstrap.App, req api.IngestRequest) api.IngestR
 		t.Fatalf("decode ingest response: %v", err)
 	}
 	return resp
+}
+
+func ingestRequestFromNormalized(in gatewaymodel.NormalizedIngress) api.IngestRequest {
+	return api.IngestRequest{
+		Source:         in.Source,
+		Conversation:   in.Conversation,
+		DMScope:        in.DMScope,
+		SessionKeyHint: in.SessionKeyHint,
+		IdempotencyKey: in.IdempotencyKey,
+		Timestamp:      in.Timestamp.UTC().Format(time.RFC3339Nano),
+		Payload:        in.Payload,
+	}
 }
 
 func pollEvent(t *testing.T, app *bootstrap.App, eventID string) api.EventRecord {

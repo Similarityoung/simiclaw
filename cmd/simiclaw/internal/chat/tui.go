@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/client"
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/common"
-	clichannel "github.com/similarityyoung/simiclaw/internal/channels/cli"
 	"github.com/similarityyoung/simiclaw/internal/ui/messages"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -395,7 +394,7 @@ func (m *modelState) startSend(text string) tea.Cmd {
 		conversation = defaultConversationID()
 		m.conversation = conversation
 	}
-	req := clichannel.BuildIngestRequest(conversation, fixedParticipantID, m.seq, text)
+	req := buildCLIIngestRequest(conversation, fixedParticipantID, m.seq, text)
 	m.seq++
 	return startSendCmd(m.client, req, m.opts.NoStream)
 }

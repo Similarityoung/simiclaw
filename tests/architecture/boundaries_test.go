@@ -120,6 +120,10 @@ func TestQueryModelProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/query/model")
 }
 
+func TestChannelsProductionCodeDoesNotImportAPI(t *testing.T) {
+	assertNoPackageImport(t, apiImportPath, "internal/channels")
+}
+
 func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {
 	assertNoPackageImport(t, "net/http", "cmd/simiclaw/internal/chat")
 }
