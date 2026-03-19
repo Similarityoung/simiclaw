@@ -38,12 +38,38 @@
 
 ## Current Phase
 
-当前已落地第一批基础骨架：
+当前已完成 US4 的迁移收口，现状如下：
 
 - `internal/runtime/{kernel,payload,workers,lanes}`
 - `internal/gateway/{bindings,model,routing}`
 - `internal/http/{ingest,query,stream,middleware}`
 - `internal/store/{tx,projections,queries}`
 - `internal/runner/context`
+- `internal/readmodel/` 已删除，read/query DTO 统一收敛到 `internal/query/model`
+- `internal/bootstrap/app.go` 只装配 `storetx.RuntimeRepository` 与 `storequeries.Repository`
 
-后续将按 `tasks.md` 的阶段顺序推进具体迁移。
+## US4 Ownership Result
+
+- 写事务 owner: `internal/store/tx`
+- session derived projection owner: `internal/store/projections`
+- 读查询 owner: `internal/store/queries`
+- runner 上下文组装 owner: `internal/runner/context`
+- lane-ready hooks owner: `internal/runtime/lanes`
+
+这意味着后续新增 concurrency、delivery、channel 变更时，不需要再回到旧 `internal/store/*.go` 扁平入口做顶层重写。
+
+## US4 Rollback / Validation Checkpoints
+
+- Checkpoint A: 新 repo 形状先接管 bootstrap、query service、runner context。
+- Checkpoint B: 删除旧 `internal/store` 扁平实现与 `internal/readmodel/`，生产代码不再保留双路径。
+- Checkpoint C: 跑完 `architecture -> unit -> race-core -> targeted integration -> accept-current`，确认 lane hooks 没有破坏两阶段 runtime 生命周期。
+
+推荐验证命令：
+
+```bash
+go test ./tests/architecture/... -v
+make test-unit
+make test-unit-race-core
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane|TestTelegramStartupRecoversPendingOutbox' -v
+make accept-current
+```

@@ -68,6 +68,32 @@ make test-unit-race-core
 make accept-current
 ```
 
+## US4 Lane-Ready Slice Checkpoints
+
+本阶段的迁移收口以“新目录先接管，再删除旧路径”为准，检查点如下：
+
+1. Checkpoint A: `internal/store/{tx,queries,projections}` 与 `internal/runner/context` 已经接管生产装配，`bootstrap` 只向外暴露新 repo 形状。
+2. Checkpoint B: 旧 `internal/store/{events,runs,sessions,outbox,history,list_queries,query_models,repo_types,runner_models}.go` 与 `internal/readmodel/` 已删除；同包 `store` 测试只允许通过 `_test.go` 兼容层保留旧断言，不得回流到生产代码。
+3. Checkpoint C: lane hooks 仍保持当前单 consumer、两阶段 `claim -> execute -> finalize` 语义；session lane key 已可被 runtime events 和后续并发调度复用。
+
+## US4 Rollback Rule
+
+- 若失败发生在 Checkpoint A 之前，只回退调用点和装配，不保留双路径并存状态。
+- 若失败发生在 Checkpoint B 之后，回滚必须恢复整组旧文件与旧装配，不能只恢复单个旧 helper。
+- 任何回滚都必须再次通过下方最小验证，确认没有把 `PersistEvent`、`Finalize`、outbox 或 query path 留在半迁移状态。
+
+## US4 Minimum Validation
+
+完成本 slice 后，至少按顺序执行：
+
+```bash
+go test ./tests/architecture/... -v
+make test-unit
+make test-unit-race-core
+go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane|TestTelegramStartupRecoversPendingOutbox' -v
+make accept-current
+```
+
 ## Done Criteria for a Migration Slice
 
 一个 slice 只有在满足以下条件后才算完成：

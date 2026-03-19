@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
+	"github.com/similarityyoung/simiclaw/internal/runtime/lanes"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 type EventLoop struct {
 	facts     kernel.Facts
 	processor *kernel.Service
-	queue     chan string
+	queue     chan runtimemodel.WorkItem
+	scheduler *lanes.Scheduler
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -26,10 +29,11 @@ func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.Ev
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	loop := &EventLoop{
-		facts:  facts,
-		queue:  make(chan string, queueCap),
-		ctx:    ctx,
-		cancel: cancel,
+		facts:     facts,
+		queue:     make(chan runtimemodel.WorkItem, queueCap),
+		scheduler: lanes.NewScheduler(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 	processor := kernel.NewService(facts, executor, events)
 	processor.SetClock(func() time.Time { return time.Now().UTC() })
@@ -56,8 +60,12 @@ func (l *EventLoop) IsAlive() bool {
 }
 
 func (l *EventLoop) TryEnqueue(eventID string) bool {
+	return l.tryEnqueueWork(newEventWorkItem(eventID))
+}
+
+func (l *EventLoop) tryEnqueueWork(work runtimemodel.WorkItem) bool {
 	select {
-	case l.queue <- eventID:
+	case l.queue <- normalizeWorkItem(work):
 		return true
 	default:
 		return false
@@ -74,8 +82,8 @@ func (l *EventLoop) consumeLoop() {
 		select {
 		case <-l.ctx.Done():
 			return
-		case eventID := <-l.queue:
-			l.processEvent(eventID)
+		case work := <-l.queue:
+			l.processWork(work)
 		}
 	}
 }
@@ -99,16 +107,7 @@ func (l *EventLoop) repumpLoop() {
 				continue
 			}
 			for _, work := range items {
-				eventID := work.EventID
-				if eventID == "" {
-					eventID = work.Identity
-				}
-				if eventID == "" {
-					continue
-				}
-				select {
-				case l.queue <- eventID:
-				default:
+				if !l.tryEnqueueWork(work) {
 					break
 				}
 			}
@@ -116,8 +115,54 @@ func (l *EventLoop) repumpLoop() {
 	}
 }
 
-func (l *EventLoop) processEvent(eventID string) {
+func (l *EventLoop) processWork(work runtimemodel.WorkItem) {
 	ctx, cancel := context.WithTimeout(l.ctx, 2*time.Minute)
 	defer cancel()
-	_ = l.processor.Process(ctx, newEventWorkItem(eventID))
+	work = l.prepareWorkForScheduling(ctx, normalizeWorkItem(work))
+
+	if l.scheduler != nil {
+		lease, err := l.scheduler.Acquire(ctx, work)
+		if err != nil {
+			return
+		}
+		defer lease.Release()
+	}
+
+	_ = l.processor.Process(ctx, work)
+}
+
+func normalizeWorkItem(work runtimemodel.WorkItem) runtimemodel.WorkItem {
+	if work.Kind == "" {
+		work.Kind = runtimemodel.WorkKindEvent
+	}
+	if work.Identity == "" {
+		switch work.Kind {
+		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
+			work.Identity = work.EventID
+		case runtimemodel.WorkKindOutbox:
+			work.Identity = work.OutboxID
+		case runtimemodel.WorkKindScheduledJob:
+			work.Identity = work.JobID
+		}
+	}
+	return work
+}
+
+func (l *EventLoop) prepareWorkForScheduling(ctx context.Context, work runtimemodel.WorkItem) runtimemodel.WorkItem {
+	if work.SessionKey == "" && l.facts != nil {
+		switch work.Kind {
+		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
+			eventID := work.EventID
+			if eventID == "" {
+				eventID = work.Identity
+			}
+			if rec, ok, err := l.facts.GetEventRecord(ctx, eventID); err == nil && ok {
+				work.SessionKey = rec.SessionKey
+			}
+		}
+	}
+	if work.LaneKey == "" {
+		work.LaneKey = string(lanes.Resolve(work))
+	}
+	return work
 }

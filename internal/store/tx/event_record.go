@@ -3,14 +3,22 @@ package tx
 import (
 	"context"
 
+	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 func (r *RuntimeRepository) GetEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error) {
-	rec, ok, err := r.db.GetEvent(ctx, eventID)
+	if r.query == nil {
+		return runtimemodel.EventRecord{}, false, nil
+	}
+	rec, ok, err := r.query.GetEventRecord(ctx, eventID)
 	if err != nil || !ok {
 		return runtimemodel.EventRecord{}, ok, err
 	}
+	return toRuntimeEventRecord(rec), true, nil
+}
+
+func toRuntimeEventRecord(rec querymodel.EventRecord) runtimemodel.EventRecord {
 	return runtimemodel.EventRecord{
 		EventID:           rec.EventID,
 		Status:            rec.Status,
@@ -30,5 +38,5 @@ func (r *RuntimeRepository) GetEventRecord(ctx context.Context, eventID string) 
 		Model:             rec.Model,
 		ProviderRequestID: rec.ProviderRequestID,
 		Error:             rec.Error,
-	}, true, nil
+	}
 }

@@ -1,4 +1,4 @@
-package store
+package store_test
 
 import (
 	"context"
@@ -10,48 +10,6 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
-
-func TestSchemaHelpersEdgeCases(t *testing.T) {
-	workspace := t.TempDir()
-	if _, err := Open(workspace, DefaultBusyTimeout()); err == nil {
-		t.Fatalf("expected Open to fail when database is missing")
-	}
-
-	db, err := openSQLite(DBPath(workspace), DefaultBusyTimeout())
-	if err != nil {
-		t.Fatalf("openSQLite: %v", err)
-	}
-	defer db.Close()
-
-	if err := validateSchemaVersion(db); err == nil {
-		t.Fatalf("expected validateSchemaVersion to reject version 0")
-	}
-	if err := validateSchemaStructure(db); err == nil {
-		t.Fatalf("expected validateSchemaStructure to reject empty schema")
-	}
-	if err := migrateSchema(db, 99); err == nil {
-		t.Fatalf("expected migrateSchema to reject unsupported version")
-	}
-
-	exists, err := tableExists(db, "missing_table")
-	if err != nil {
-		t.Fatalf("tableExists: %v", err)
-	}
-	if exists {
-		t.Fatalf("expected missing table to report false")
-	}
-
-	if _, err := db.Exec(`CREATE TABLE demo (id TEXT PRIMARY KEY)`); err != nil {
-		t.Fatalf("create demo table: %v", err)
-	}
-	hasColumn, err := tableColumnExists(db, "demo", "missing_column")
-	if err != nil {
-		t.Fatalf("tableColumnExists: %v", err)
-	}
-	if hasColumn {
-		t.Fatalf("expected missing column to report false")
-	}
-}
 
 func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 	ctx := context.Background()
@@ -78,12 +36,15 @@ func TestIngestEventDuplicateConflictAndConversationScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first IngestEvent: %v", err)
 	}
-	duplicate, err := db.IngestEvent(ctx, "local", "local:dm:u1", persistRequest(req), "sha256:dup", now.Add(time.Second))
+	duplicate, err := db.IngestEvent(ctx, "local", "local:dm:u1:changed", persistRequest(req), "sha256:dup", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("duplicate IngestEvent: %v", err)
 	}
 	if !duplicate.Duplicate || duplicate.EventID != first.EventID || duplicate.ExistingEventID != first.EventID {
 		t.Fatalf("expected duplicate ingest to reuse first event, first=%+v duplicate=%+v", first, duplicate)
+	}
+	if duplicate.SessionKey != first.SessionKey || duplicate.SessionID != first.SessionID {
+		t.Fatalf("expected duplicate ingest to return stored session binding, first=%+v duplicate=%+v", first, duplicate)
 	}
 
 	scope, ok, err := db.GetConversationDMScope(ctx, "local", req.Conversation)

@@ -124,18 +124,18 @@
 
 ### Tests for User Story 4
 
-- [ ] T038 [P] [US4] 在 `internal/runtime/lanes/{key_test.go,scheduler_test.go}` 中补充 lane key 与串行化策略测试
-- [ ] T039 [P] [US4] 在 `tests/integration/runtime_lanes_test.go` 中验证 lane hooks 不破坏现有两阶段运行语义
+- [X] T038 [P] [US4] 在 `internal/runtime/lanes/{key_test.go,scheduler_test.go}` 中补充 lane key 与串行化策略测试
+- [X] T039 [P] [US4] 在 `tests/integration/runtime_lanes_test.go` 中验证 lane hooks 不破坏现有两阶段运行语义
 
 ### Implementation for User Story 4
 
-- [ ] T040 [US4] 引入 lane key 与调度 hooks：`internal/runtime/lanes/{key.go,scheduler.go}`
-- [ ] T041 [US4] 将 `internal/store/{events.go,runs.go,sessions.go,outbox.go,history.go,list_queries.go,query_models.go}` 按职责迁到 `internal/store/{tx,projections,queries}/`
-- [ ] T042 [US4] 将 runner 上下文组装重构到 `internal/runner/context/{history.go,memory.go,assembler.go}`，并明确与 `internal/memory/` 的长期记忆边界
-- [ ] T043 [US4] 将 `internal/readmodel/` 彻底并入 `internal/query/`，并删除旧 readmodel 兼容路径
-- [ ] T044 [US4] 删除已不再使用的旧实现与兼容 wiring，确保 bootstrap 只装配新目录体系
-- [ ] T045 [US4] 更新 `specs/001-runtime-kernel-refactor/quickstart.md` 与迁移设计文档，补上 slice rollback / validation checkpoints
-- [ ] T046 [US4] 运行全量验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、`make accept-current`、targeted integration tests
+- [X] T040 [US4] 引入 lane key 与调度 hooks：`internal/runtime/lanes/{key.go,scheduler.go}`
+- [X] T041 [US4] 将 `internal/store/{events.go,runs.go,sessions.go,outbox.go,history.go,list_queries.go,query_models.go}` 按职责迁到 `internal/store/{tx,projections,queries}/`
+- [X] T042 [US4] 将 runner 上下文组装重构到 `internal/runner/context/{history.go,memory.go,assembler.go}`，并明确与 `internal/memory/` 的长期记忆边界
+- [X] T043 [US4] 将 `internal/readmodel/` 彻底并入 `internal/query/`，并删除旧 readmodel 兼容路径
+- [X] T044 [US4] 删除已不再使用的旧实现与兼容 wiring，确保 bootstrap 只装配新目录体系
+- [X] T045 [US4] 更新 `specs/001-runtime-kernel-refactor/quickstart.md` 与迁移设计文档，补上 slice rollback / validation checkpoints
+- [X] T046 [US4] 运行全量验证：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、`make accept-current`、targeted integration tests
 
 **Checkpoint**: 所有目标目录与核心职责已经迁到新形状，后续新增 concurrency/delivery/channel 能力无需再做顶层重写
 

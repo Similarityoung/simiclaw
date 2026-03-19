@@ -1,4 +1,4 @@
-package store
+package store_test
 
 import (
 	"context"
@@ -126,7 +126,7 @@ func TestListSessionsPageFiltersAndCursor(t *testing.T) {
 	}
 }
 
-func insertEventRow(t *testing.T, db *DB, eventID, sessionKey, sessionID string, status model.EventStatus, createdAt, updatedAt time.Time) {
+func insertEventRow(t *testing.T, db *runtimeDB, eventID, sessionKey, sessionID string, status model.EventStatus, createdAt, updatedAt time.Time) {
 	t.Helper()
 	if _, err := db.Writer().ExecContext(
 		context.Background(),
@@ -156,7 +156,7 @@ func insertEventRow(t *testing.T, db *DB, eventID, sessionKey, sessionID string,
 	}
 }
 
-func insertRunRow(t *testing.T, db *DB, runID, eventID, sessionKey, sessionID string, startedAt time.Time) {
+func insertRunRow(t *testing.T, db *runtimeDB, runID, eventID, sessionKey, sessionID string, startedAt time.Time) {
 	t.Helper()
 	if _, err := db.Writer().ExecContext(
 		context.Background(),
@@ -176,7 +176,7 @@ func insertRunRow(t *testing.T, db *DB, runID, eventID, sessionKey, sessionID st
 	}
 }
 
-func insertSessionRow(t *testing.T, db *DB, sessionKey, sessionID, conversationID string, lastActivity time.Time) {
+func insertSessionRow(t *testing.T, db *runtimeDB, sessionKey, sessionID, conversationID string, lastActivity time.Time) {
 	t.Helper()
 	if _, err := db.Writer().ExecContext(
 		context.Background(),

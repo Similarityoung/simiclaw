@@ -19,7 +19,10 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/config"
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	ingestport "github.com/similarityyoung/simiclaw/internal/ingest/port"
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
+	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	apitypes "github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 	tele "gopkg.in/telebot.v4"
@@ -156,6 +159,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeKey: %v", err)
 	}
+	repo := storetx.NewRuntimeRepository(db)
 	now := time.Now().UTC()
 	req := apitypes.IngestRequest{
 		Source:         "telegram",
@@ -173,7 +177,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 			},
 		},
 	}
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, ingestport.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, ingestport.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,
@@ -181,16 +185,20 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 		DMScope:        req.DMScope,
 	}, fmt.Sprintf("seed:%d", now.UnixNano()), now)
 	if err != nil {
-		t.Fatalf("IngestEvent: %v", err)
+		t.Fatalf("PersistEvent: %v", err)
 	}
-	if err := db.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
+	if err := repo.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
-	claimed, ok, err := db.ClaimEvent(context.Background(), result.EventID, "run_seed_1", now)
+	claimed, ok, err := repo.ClaimWork(context.Background(), runtimemodel.WorkItem{
+		Kind:     runtimemodel.WorkKindEvent,
+		Identity: result.EventID,
+		EventID:  result.EventID,
+	}, "run_seed_1", now)
 	if err != nil || !ok {
-		t.Fatalf("ClaimEvent ok=%v err=%v", ok, err)
+		t.Fatalf("ClaimWork ok=%v err=%v", ok, err)
 	}
-	if err := db.FinalizeRun(context.Background(), store.RunFinalize{
+	if err := repo.Finalize(context.Background(), runtimemodel.RunFinalize{
 		RunID:          claimed.RunID,
 		EventID:        claimed.Event.EventID,
 		SessionKey:     claimed.Event.SessionKey,
@@ -204,7 +212,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 		OutboxBody:     "queued telegram reply",
 		Now:            now,
 	}); err != nil {
-		t.Fatalf("FinalizeRun: %v", err)
+		t.Fatalf("Finalize: %v", err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("Close DB: %v", err)
@@ -412,11 +420,12 @@ func waitReadyzTelegram(t *testing.T, app *bootstrap.App) {
 
 func waitTelegramEventID(t *testing.T, app *bootstrap.App, key string) string {
 	t.Helper()
+	queryRepo := storequeries.NewRepository(app.DB)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		lookup, ok, err := app.DB.LookupInbound(context.Background(), key)
+		lookup, ok, err := queryRepo.LookupEvent(context.Background(), key)
 		if err != nil {
-			t.Fatalf("LookupInbound: %v", err)
+			t.Fatalf("LookupEvent: %v", err)
 		}
 		if ok {
 			return lookup.EventID
@@ -429,11 +438,12 @@ func waitTelegramEventID(t *testing.T, app *bootstrap.App, key string) string {
 
 func waitNoTelegramEvent(t *testing.T, app *bootstrap.App, key string) {
 	t.Helper()
+	queryRepo := storequeries.NewRepository(app.DB)
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		_, ok, err := app.DB.LookupInbound(context.Background(), key)
+		_, ok, err := queryRepo.LookupEvent(context.Background(), key)
 		if err != nil {
-			t.Fatalf("LookupInbound: %v", err)
+			t.Fatalf("LookupEvent: %v", err)
 		}
 		if ok {
 			t.Fatalf("unexpected telegram event for %s", key)

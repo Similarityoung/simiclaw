@@ -13,6 +13,7 @@ import (
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -704,7 +705,7 @@ func newTestRunnerAtWorkspace(t *testing.T, workspace string, llm config.LLMConf
 	if err != nil {
 		t.Fatalf("NewFactory: %v", err)
 	}
-	return NewProviderRunner(workspace, db, registry, providers, runtimepayload.NewBuiltinRegistry())
+	return NewProviderRunner(workspace, storequeries.NewRepository(db), registry, providers, runtimepayload.NewBuiltinRegistry())
 }
 
 func testEvent(text string) model.InternalEvent {

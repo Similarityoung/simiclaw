@@ -12,6 +12,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/api"
@@ -30,6 +31,8 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("Open DB: %v", err)
 	}
 	defer db.Close()
+	repo := storetx.NewRuntimeRepository(db)
+	queryRepo := storequeries.NewRepository(db)
 
 	conversation := model.Conversation{ConversationID: "panic", ChannelType: "dm", ParticipantID: "u1"}
 	sessionKey, err := gatewaybindings.ComputeKey(cfg.TenantID, conversation, "default")
@@ -43,7 +46,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
 		Payload:        model.EventPayload{Type: "message", Text: "hello"},
 	}
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
 		Source:         req.Source,
 		Conversation:   req.Conversation,
 		Payload:        req.Payload,
@@ -51,9 +54,9 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		DMScope:        req.DMScope,
 	}, "payload-hash", time.Now().UTC())
 	if err != nil {
-		t.Fatalf("IngestEvent: %v", err)
+		t.Fatalf("PersistEvent: %v", err)
 	}
-	if err := db.MarkEventQueued(context.Background(), result.EventID, time.Now().UTC()); err != nil {
+	if err := repo.MarkEventQueued(context.Background(), result.EventID, time.Now().UTC()); err != nil {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 
@@ -64,7 +67,6 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("unexpected replay before processing: %+v", replay)
 	}
 
-	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
 	loop.Start()
 	defer loop.Stop()
@@ -89,9 +91,9 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("expected terminal error, got %+v", terminal)
 	}
 
-	eventRecord, ok, err := db.GetEvent(context.Background(), result.EventID)
+	eventRecord, ok, err := queryRepo.GetEventRecord(context.Background(), result.EventID)
 	if err != nil {
-		t.Fatalf("GetEvent: %v", err)
+		t.Fatalf("GetEventRecord: %v", err)
 	}
 	if !ok {
 		t.Fatalf("event not found")
@@ -128,6 +130,8 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("Open DB: %v", err)
 	}
 	defer db.Close()
+	repo := storetx.NewRuntimeRepository(db)
+	queryRepo := storequeries.NewRepository(db)
 
 	conversation := model.Conversation{ConversationID: "tg_chat_42", ChannelType: "dm", ParticipantID: "1001"}
 	sessionKey, err := gatewaybindings.ComputeKey(cfg.TenantID, conversation, "default")
@@ -135,7 +139,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		t.Fatalf("ComputeKey: %v", err)
 	}
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, sessionKey, port.PersistRequest{
 		Source:         "telegram",
 		Conversation:   conversation,
 		IdempotencyKey: "telegram:update:1",
@@ -146,14 +150,13 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 		},
 	}, "payload-hash", now)
 	if err != nil {
-		t.Fatalf("IngestEvent: %v", err)
+		t.Fatalf("PersistEvent: %v", err)
 	}
-	if err := db.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
+	if err := repo.MarkEventQueued(context.Background(), result.EventID, now); err != nil {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 
 	hub := streaming.NewHub()
-	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
 	loop.Start()
 	defer loop.Stop()
@@ -163,9 +166,9 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		rec, ok, err := db.GetEvent(context.Background(), result.EventID)
+		rec, ok, err := queryRepo.GetEventRecord(context.Background(), result.EventID)
 		if err != nil {
-			t.Fatalf("GetEvent: %v", err)
+			t.Fatalf("GetEventRecord: %v", err)
 		}
 		if !ok {
 			t.Fatal("event not found")
@@ -240,6 +243,24 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 	}
 }
 
+func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
+	repo := &laneHydrationFacts{}
+	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
+
+	loop.processWork(runtimemodel.WorkItem{
+		Kind:     runtimemodel.WorkKindEvent,
+		EventID:  "evt_lane",
+		Identity: "evt_lane",
+	})
+
+	if repo.claimedWork.SessionKey != "local:dm:u1" {
+		t.Fatalf("expected session key to be hydrated before claim, got %+v", repo.claimedWork)
+	}
+	if repo.claimedWork.LaneKey != "session:local:dm:u1" {
+		t.Fatalf("expected session lane before claim, got %+v", repo.claimedWork)
+	}
+}
+
 type stopAwareRunner struct {
 	once     sync.Once
 	started  chan struct{}
@@ -296,4 +317,43 @@ func (r *stopPathFacts) Finalize(_ context.Context, finalize runtimemodel.Finali
 
 func (r *stopPathFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
 	return runtimemodel.EventRecord{}, false, nil
+}
+
+type laneHydrationFacts struct {
+	claimedWork runtimemodel.WorkItem
+}
+
+func (r *laneHydrationFacts) ListRunnable(context.Context, int) ([]runtimemodel.WorkItem, error) {
+	return nil, nil
+}
+
+func (r *laneHydrationFacts) ClaimWork(_ context.Context, work runtimemodel.WorkItem, runID string, _ time.Time) (runtimemodel.ClaimContext, bool, error) {
+	r.claimedWork = work
+	return runtimemodel.ClaimContext{
+		Work: work,
+		Event: model.InternalEvent{
+			EventID:         work.EventID,
+			Source:          "cli",
+			TenantID:        "local",
+			SessionKey:      work.SessionKey,
+			ActiveSessionID: "ses_lane",
+			Payload:         model.EventPayload{Type: "message", Text: "lane"},
+		},
+		RunID:      runID,
+		RunMode:    model.RunModeNormal,
+		SessionKey: work.SessionKey,
+		SessionID:  "ses_lane",
+		Source:     "cli",
+	}, true, nil
+}
+
+func (r *laneHydrationFacts) Finalize(context.Context, runtimemodel.FinalizeCommand) error {
+	return nil
+}
+
+func (r *laneHydrationFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
+	return runtimemodel.EventRecord{
+		EventID:    "evt_lane",
+		SessionKey: "local:dm:u1",
+	}, true, nil
 }

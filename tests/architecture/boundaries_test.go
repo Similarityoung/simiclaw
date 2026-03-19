@@ -13,11 +13,11 @@ import (
 	"testing"
 )
 
-func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
+func TestOnlyGatewayServiceCallsPersistEventOutsideTests(t *testing.T) {
 	root := repoRoot(t)
 	files := goFilesUnder(t, root, "cmd", "internal")
 	allowed := map[string]struct{}{
-		"internal/store/tx/ingest_event.go": {},
+		"internal/gateway/service.go": {},
 	}
 	var violations []string
 
@@ -36,7 +36,7 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel == nil || selector.Sel.Name != "IngestEvent" {
+			if !ok || selector.Sel == nil || selector.Sel.Name != "PersistEvent" {
 				return true
 			}
 			pos := fset.Position(selector.Sel.Pos())
@@ -49,7 +49,7 @@ func TestOnlyIngestServiceCallsIngestEventOutsideTests(t *testing.T) {
 		return
 	}
 	slices.Sort(violations)
-	t.Fatalf("found direct IngestEvent calls outside allowed ingest entrypoints:\n%s", strings.Join(violations, "\n"))
+	t.Fatalf("found direct PersistEvent calls outside allowed gateway entrypoints:\n%s", strings.Join(violations, "\n"))
 }
 
 func TestIngestProductionCodeDoesNotImportStore(t *testing.T) {
@@ -104,22 +104,16 @@ func TestRuntimeExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
 	assertNoExportedImportSelectors(t, storeImportPath, "internal/runtime")
 }
 
-func TestNonStoreProductionCodeDoesNotImportReadModel(t *testing.T) {
-	root := repoRoot(t)
-	files := goFilesUnder(t, root, "cmd", "internal", "pkg")
-	var violations []string
-	for _, rel := range files {
-		if rel == "internal/readmodel/types.go" || strings.HasPrefix(rel, "internal/store/") {
-			continue
-		}
-		if fileImportsPath(t, filepath.Join(root, rel), readmodelImportPath) {
-			violations = append(violations, rel)
-		}
-	}
-	if len(violations) > 0 {
-		slices.Sort(violations)
-		t.Fatalf("production code outside internal/store must not import %s:\n%s", readmodelImportPath, strings.Join(violations, "\n"))
-	}
+func TestOnlyBootstrapImportsStoreQueriesOutsideStore(t *testing.T) {
+	assertOnlyAllowedProductionFilesImport(t, storeQueriesImportPath, map[string]struct{}{
+		"internal/bootstrap/app.go": {},
+	})
+}
+
+func TestOnlyBootstrapImportsStoreTxOutsideStore(t *testing.T) {
+	assertOnlyAllowedProductionFilesImport(t, storeTxImportPath, map[string]struct{}{
+		"internal/bootstrap/app.go": {},
+	})
 }
 
 func TestStoreProductionCodeDoesNotImportAPI(t *testing.T) {
@@ -161,12 +155,13 @@ func TestCommandPackagesDoNotImportStdlibFlag(t *testing.T) {
 }
 
 const (
-	storeImportPath     = "github.com/similarityyoung/simiclaw/internal/store"
-	ingestImportPath    = "github.com/similarityyoung/simiclaw/internal/ingest"
-	readmodelImportPath = "github.com/similarityyoung/simiclaw/internal/readmodel"
-	apiImportPath       = "github.com/similarityyoung/simiclaw/pkg/api"
-	runtimeImportPath   = "github.com/similarityyoung/simiclaw/internal/runtime"
-	runtimeModelPath    = "github.com/similarityyoung/simiclaw/internal/runtime/model"
+	storeImportPath        = "github.com/similarityyoung/simiclaw/internal/store"
+	ingestImportPath       = "github.com/similarityyoung/simiclaw/internal/ingest"
+	storeQueriesImportPath = "github.com/similarityyoung/simiclaw/internal/store/queries"
+	storeTxImportPath      = "github.com/similarityyoung/simiclaw/internal/store/tx"
+	apiImportPath          = "github.com/similarityyoung/simiclaw/pkg/api"
+	runtimeImportPath      = "github.com/similarityyoung/simiclaw/internal/runtime"
+	runtimeModelPath       = "github.com/similarityyoung/simiclaw/internal/runtime/model"
 )
 
 func repoRoot(t *testing.T) string {
@@ -298,6 +293,29 @@ func assertNoPackageImport(t *testing.T, importPath string, dir string) {
 	if len(violations) > 0 {
 		slices.Sort(violations)
 		t.Fatalf("%s production code must not import %s:\n%s", dir, importPath, strings.Join(violations, "\n"))
+	}
+}
+
+func assertOnlyAllowedProductionFilesImport(t *testing.T, importPath string, allowed map[string]struct{}) {
+	t.Helper()
+	root := repoRoot(t)
+	files := goFilesUnder(t, root, "cmd", "internal", "pkg")
+
+	var violations []string
+	for _, rel := range files {
+		if strings.HasPrefix(rel, "internal/store/") {
+			continue
+		}
+		if _, ok := allowed[rel]; ok {
+			continue
+		}
+		if fileImportsPath(t, filepath.Join(root, rel), importPath) {
+			violations = append(violations, rel)
+		}
+	}
+	if len(violations) > 0 {
+		slices.Sort(violations)
+		t.Fatalf("production code outside allowed files must not import %s:\n%s", importPath, strings.Join(violations, "\n"))
 	}
 }
 

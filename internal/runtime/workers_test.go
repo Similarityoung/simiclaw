@@ -17,6 +17,7 @@ import (
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -56,6 +57,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer db.Close()
+	queryRepo := storequeries.NewRepository(db)
 
 	now := time.Date(2026, 3, 10, 15, 0, 0, 0, time.UTC)
 	conv := model.Conversation{ConversationID: "cron-conv", ChannelType: "dm", ParticipantID: "u1"}
@@ -118,9 +120,9 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	if len(queue.eventIDs) != 1 {
 		t.Fatalf("expected one enqueued event, got %+v", queue.eventIDs)
 	}
-	event, ok, err := db.GetEvent(context.Background(), queue.eventIDs[0])
+	event, ok, err := queryRepo.GetEventRecord(context.Background(), queue.eventIDs[0])
 	if err != nil {
-		t.Fatalf("GetEvent: %v", err)
+		t.Fatalf("GetEventRecord: %v", err)
 	}
 	if !ok {
 		t.Fatalf("scheduled event not found")
@@ -172,6 +174,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 
 	hub := streaming.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
+	queryRepo := storequeries.NewRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
 	ingestService := newGatewayIngestor("local", repo, &rejectEnqueuer{})
 	ingestService.SetClock(func() time.Time { return now })
@@ -187,19 +190,25 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	if got := loop.InboundDepth(); got != 1 {
 		t.Fatalf("expected one event queued into fallback loop, got depth=%d", got)
 	}
-	ids, err := db.ListRunnableEventIDs(context.Background(), 10)
+	items, err := repo.ListRunnable(context.Background(), 10)
 	if err != nil {
-		t.Fatalf("ListRunnableEventIDs: %v", err)
+		t.Fatalf("ListRunnable: %v", err)
 	}
-	if len(ids) != 1 {
-		t.Fatalf("expected one runnable event after fallback mark-queued, got %+v", ids)
+	if len(items) != 1 {
+		t.Fatalf("expected one runnable event after fallback mark-queued, got %+v", items)
 	}
-	event, ok, err := db.GetEvent(context.Background(), ids[0])
+	event, ok, err := queryRepo.GetEventRecord(context.Background(), items[0].EventID)
 	if err != nil {
-		t.Fatalf("GetEvent: %v", err)
+		t.Fatalf("GetEventRecord: %v", err)
 	}
 	if !ok {
 		t.Fatalf("fallback event not found")
+	}
+	if items[0].SessionKey != event.SessionKey {
+		t.Fatalf("expected runnable work to carry session key %q, got %+v", event.SessionKey, items[0])
+	}
+	if items[0].LaneKey != "session:"+event.SessionKey {
+		t.Fatalf("expected runnable work to expose session lane, got %+v", items[0])
 	}
 	if event.Status != model.EventStatusQueued {
 		t.Fatalf("expected fallback event to be queued, got %+v", event)
@@ -261,20 +270,26 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	result, err := db.IngestEvent(context.Background(), cfg.TenantID, "local:dm:u1", port.PersistRequest{
+	repo := storetx.NewRuntimeRepository(db)
+	queryRepo := storequeries.NewRepository(db)
+	result, err := repo.PersistEvent(context.Background(), cfg.TenantID, "local:dm:u1", port.PersistRequest{
 		Source:         "cli",
 		Conversation:   model.Conversation{ConversationID: "stale", ChannelType: "dm", ParticipantID: "u1"},
 		IdempotencyKey: "cli:stale:1",
 		Payload:        model.EventPayload{Type: "message", Text: "stale"},
 	}, "sha256:stale", now.Add(-5*time.Minute))
 	if err != nil {
-		t.Fatalf("IngestEvent stale: %v", err)
+		t.Fatalf("PersistEvent stale: %v", err)
 	}
-	if err := db.MarkEventQueued(context.Background(), result.EventID, now.Add(-5*time.Minute)); err != nil {
+	if err := repo.MarkEventQueued(context.Background(), result.EventID, now.Add(-5*time.Minute)); err != nil {
 		t.Fatalf("MarkEventQueued stale: %v", err)
 	}
-	if _, ok, err := db.ClaimEvent(context.Background(), result.EventID, "run_stale", now.Add(-5*time.Minute)); err != nil || !ok {
-		t.Fatalf("ClaimEvent stale ok=%v err=%v", ok, err)
+	if _, ok, err := repo.ClaimWork(context.Background(), runtimemodel.WorkItem{
+		Kind:     runtimemodel.WorkKindEvent,
+		Identity: result.EventID,
+		EventID:  result.EventID,
+	}, "run_stale", now.Add(-5*time.Minute)); err != nil || !ok {
+		t.Fatalf("ClaimWork stale ok=%v err=%v", ok, err)
 	}
 	if _, err := db.Writer().ExecContext(
 		context.Background(),
@@ -324,7 +339,6 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	}
 
 	hub := streaming.NewHub()
-	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 8)
 	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
 	ingestService.SetClock(func() time.Time { return now })
@@ -351,11 +365,11 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 			t.Fatalf("expected worker %s alive, got %+v", worker, state)
 		}
 	}
-	staleEvent, ok, err := db.GetEvent(context.Background(), result.EventID)
+	staleEvent, ok, err := queryRepo.GetEventRecord(context.Background(), result.EventID)
 	if err != nil || !ok || staleEvent.Status == model.EventStatusProcessing {
 		t.Fatalf("expected stale event to be recovered, ok=%v err=%v event=%+v", ok, err, staleEvent)
 	}
-	sentEvent, ok, err := db.GetEvent(context.Background(), "evt_outbox")
+	sentEvent, ok, err := queryRepo.GetEventRecord(context.Background(), "evt_outbox")
 	if err != nil || !ok || sentEvent.OutboxStatus != model.OutboxStatusSent {
 		t.Fatalf("expected outbox worker to send message, ok=%v err=%v event=%+v sender=%+v", ok, err, sentEvent, sender.messages)
 	}

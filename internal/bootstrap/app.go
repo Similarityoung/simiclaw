@@ -18,6 +18,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runtime"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/store"
+	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/streaming"
 	"github.com/similarityyoung/simiclaw/internal/tools"
@@ -52,7 +53,8 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 	streamHub := streaming.NewHub()
 	payloads := runtimepayload.NewBuiltinRegistry()
-	run := runner.NewProviderRunner(cfg.Workspace, db, registry, providers, payloads)
+	queryRepo := storequeries.NewRepository(db)
+	run := runner.NewProviderRunner(cfg.Workspace, queryRepo, registry, providers, payloads)
 	runtimeRepo := storetx.NewRuntimeRepository(db)
 	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
 	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, streamHub, cfg.EventQueueCapacity)
@@ -67,7 +69,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		cfg.RateLimitSessionRPS,
 		cfg.RateLimitSessionBurst,
 	)
-	queryService := querysvc.NewService(db)
+	queryService := querysvc.NewService(queryRepo)
 
 	var telegramRuntime *telegramchannel.Runtime
 	if cfg.Channels.Telegram.Enabled {

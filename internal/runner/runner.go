@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/memory"
 	"github.com/similarityyoung/simiclaw/internal/prompt"
 	"github.com/similarityyoung/simiclaw/internal/provider"
+	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/tools"
@@ -56,8 +56,8 @@ type HistoryReader interface {
 type ProviderRunner struct {
 	registry        *tools.Registry
 	providers       *provider.Factory
-	writer          *memory.Writer
-	historyLoader   runHistoryLoader
+	memoryWriter    runnercontext.MemoryWriter
+	contextBuilder  runnercontext.Assembler
 	promptAssembler llmPromptAssembler
 	toolExecutor    llmToolExecutor
 	traceAssembler  runTraceAssembler
@@ -71,12 +71,12 @@ func NewProviderRunner(workspace string, historyReader HistoryReader, registry *
 	}
 	prompts := prompt.NewBuilder(workspace)
 	runner := &ProviderRunner{
-		registry:  registry,
-		providers: providers,
-		writer:    memory.NewWriter(workspace),
-		payloads:  payloads,
+		registry:     registry,
+		providers:    providers,
+		memoryWriter: runnercontext.NewMemoryWriter(workspace),
+		payloads:     payloads,
 	}
-	runner.historyLoader = runHistoryLoader{reader: historyReader, historyLimit: 20}
+	runner.contextBuilder = runnercontext.NewAssembler(historyReader)
 	runner.promptAssembler = llmPromptAssembler{prompts: prompts, registry: runner.registry}
 	runner.toolExecutor = llmToolExecutor{workspace: workspace, registry: runner.registry}
 	runner.traceAssembler = runTraceAssembler{}
@@ -137,12 +137,11 @@ func (r *ProviderRunner) runMemoryWrite(event model.InternalEvent, now time.Time
 	if note == "" {
 		note = event.Payload.Type
 	}
-	visibility := memory.VisibilityForChannel(event.Conversation.ChannelType)
 	switch plan.MemoryWriteTarget {
 	case runtimepayload.MemoryWriteTargetDaily:
-		_, _ = r.writer.WriteDaily("system:"+event.Payload.Type, note, now, visibility)
+		_ = r.memoryWriter.WriteDaily("system:"+event.Payload.Type, note, now, event.Conversation.ChannelType)
 	case runtimepayload.MemoryWriteTargetCurated:
-		_, _ = r.writer.WriteCurated(note, now, visibility)
+		_ = r.memoryWriter.WriteCurated(note, now, event.Conversation.ChannelType)
 	}
 	trace.OutputText = note
 	trace.FinishedAt = time.Now().UTC()
@@ -179,7 +178,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
-	history, err := r.historyLoader.Load(ctx, event.ActiveSessionID, event.Payload.Text)
+	history, err := r.contextBuilder.Load(ctx, event.ActiveSessionID, event.Payload.Text)
 	if err != nil {
 		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
@@ -192,7 +191,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		Visible: opts.userVisible,
 		Meta:    cloneMap(opts.messageMeta),
 	}}
-	assembly := r.promptAssembler.Assemble(event, now, history.history, opts.allowedTools)
+	assembly := r.promptAssembler.Assemble(event, now, history.History, opts.allowedTools)
 	chatMessages := assembly.chatMessages
 	toolDefs := assembly.toolDefs
 

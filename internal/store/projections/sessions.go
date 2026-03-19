@@ -1,4 +1,4 @@
-package store
+package projections
 
 import (
 	"context"
@@ -7,27 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/readmodel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func (db *DB) GetSession(ctx context.Context, sessionKey string) (readmodel.SessionRecord, bool, error) {
-	rows, err := db.reader.QueryContext(ctx, sessionSelectSQL+` WHERE session_key = ?`, sessionKey)
-	if err != nil {
-		return readmodel.SessionRecord{}, false, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return readmodel.SessionRecord{}, false, rows.Err()
-	}
-	rec, err := scanSession(rows)
-	if err != nil {
-		return readmodel.SessionRecord{}, false, err
-	}
-	return rec, true, rows.Err()
-}
-
-func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv model.Conversation, dmScope string, now time.Time) (string, error) {
+func ResolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv model.Conversation, dmScope string, now time.Time) (string, error) {
 	var sessionID string
 	err := tx.QueryRowContext(ctx, `SELECT active_session_id FROM sessions WHERE session_key = ?`, sessionKey).Scan(&sessionID)
 	if err == nil {
@@ -36,6 +19,7 @@ func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv m
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
+
 	sessionID = fmt.Sprintf("ses_%d", now.UnixNano())
 	nowText := timeText(now)
 	_, err = tx.ExecContext(
@@ -57,7 +41,7 @@ func resolveSessionTx(ctx context.Context, tx *sql.Tx, sessionKey string, conv m
 	return sessionID, err
 }
 
-func recomputeSessionAggregateTx(ctx context.Context, tx *sql.Tx, sessionKey string, now time.Time) error {
+func RecomputeSessionAggregateTx(ctx context.Context, tx *sql.Tx, sessionKey string, now time.Time) error {
 	var (
 		messageCount    int
 		promptTotal     int
@@ -98,6 +82,7 @@ func recomputeSessionAggregateTx(ctx context.Context, tx *sql.Tx, sessionKey str
 	).Scan(&lastModel, &lastRunID, &lastActivity); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+
 	lastActivityAt := timeText(now)
 	if lastActivity.Valid {
 		lastActivityAt = lastActivity.String
@@ -121,40 +106,6 @@ func recomputeSessionAggregateTx(ctx context.Context, tx *sql.Tx, sessionKey str
 	return err
 }
 
-func scanSession(rows *sql.Rows) (readmodel.SessionRecord, error) {
-	var (
-		rec            readmodel.SessionRecord
-		lastActivityAt string
-		createdAt      string
-		updatedAt      string
-	)
-	if err := rows.Scan(
-		&rec.SessionKey,
-		&rec.ActiveSessionID,
-		&rec.ConversationID,
-		&rec.ChannelType,
-		&rec.ParticipantID,
-		&rec.DMScope,
-		&rec.MessageCount,
-		&rec.PromptTokensTotal,
-		&rec.CompletionTokensTotal,
-		&rec.TotalTokensTotal,
-		&rec.LastModel,
-		&rec.LastRunID,
-		&lastActivityAt,
-		&createdAt,
-		&updatedAt,
-	); err != nil {
-		return readmodel.SessionRecord{}, err
-	}
-	rec.LastActivityAt = mustParseTime(lastActivityAt)
-	rec.CreatedAt = mustParseTime(createdAt)
-	rec.UpdatedAt = mustParseTime(updatedAt)
-	return rec, nil
+func timeText(t time.Time) string {
+	return t.UTC().Format(time.RFC3339Nano)
 }
-
-const sessionSelectSQL = `
-SELECT session_key, active_session_id, conversation_id, channel_type, participant_id, dm_scope,
-       message_count, prompt_tokens_total, completion_tokens_total, total_tokens_total,
-       last_model, last_run_id, last_activity_at, created_at, updated_at
-FROM sessions`
