@@ -11,7 +11,7 @@ import (
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
 	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	httpserver "github.com/similarityyoung/simiclaw/internal/http"
-	"github.com/similarityyoung/simiclaw/internal/outbound"
+	outboundsender "github.com/similarityyoung/simiclaw/internal/outbound/sender"
 	"github.com/similarityyoung/simiclaw/internal/provider"
 	querysvc "github.com/similarityyoung/simiclaw/internal/query"
 	"github.com/similarityyoung/simiclaw/internal/runner"
@@ -80,7 +80,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		}
 	}
 
-	sender := outbound.NewRouterSender(outbound.StdoutSender{}, telegramRuntime)
+	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
 	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
 	server := httpserver.New(cfg, gatewayService, queryService, supervisor, streamHub)
 	return &App{

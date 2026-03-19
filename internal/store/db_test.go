@@ -530,6 +530,13 @@ func TestRecoverExpiredProcessingAndOutboxLease(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("claim outbox ok=%v err=%v", ok, err)
 	}
+	eventRec, ok, err = db.GetEvent(ctx, result.EventID)
+	if err != nil || !ok {
+		t.Fatalf("get event after outbox claim ok=%v err=%v", ok, err)
+	}
+	if eventRec.OutboxStatus != model.OutboxStatusSending {
+		t.Fatalf("expected sending after outbox claim, got %s for outbox %s", eventRec.OutboxStatus, outbox.OutboxID)
+	}
 	if err := db.RecoverExpiredSending(ctx, now.Add(5*time.Second), now.Add(6*time.Second)); err != nil {
 		t.Fatalf("recover expired sending: %v", err)
 	}

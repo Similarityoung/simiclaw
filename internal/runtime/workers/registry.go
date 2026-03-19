@@ -10,11 +10,9 @@ type Registry struct {
 type Builtins struct {
 	Heartbeat  HeartbeatRepository
 	Processing ProcessingRecoveryRepository
-	Delivery   DeliveryPollRepository
 	Scheduled  ScheduledJobRepository
 	Ingest     EventIngestor
 	Queue      EventEnqueuer
-	Sender     Sender
 }
 
 func NewRegistry() *Registry {
@@ -49,7 +47,6 @@ func RegisterBuiltins(r *Registry, builtins Builtins) {
 	}
 	r.Register(NewHeartbeatWorker(builtins.Heartbeat))
 	r.Register(NewProcessingRecoveryWorker(builtins.Processing, builtins.Queue))
-	r.Register(NewDeliveryPollWorker(builtins.Delivery, builtins.Sender))
 	r.Register(NewDelayedJobsWorker(builtins.Scheduled, builtins.Ingest, builtins.Queue))
 	r.Register(NewCronWorker(builtins.Scheduled, builtins.Ingest, builtins.Queue))
 }

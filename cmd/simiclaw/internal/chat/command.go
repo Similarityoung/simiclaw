@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	defaultBaseURL     = "http://127.0.0.1:8080"
 	fixedParticipantID = "local_user"
 )
 

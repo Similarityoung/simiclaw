@@ -42,13 +42,12 @@ func TestRegisterBuiltinsAddsNamedWorkers(t *testing.T) {
 	RegisterBuiltins(registry, Builtins{})
 
 	workers := registry.All()
-	if len(workers) != 5 {
-		t.Fatalf("expected 5 builtin workers, got %d", len(workers))
+	if len(workers) != 4 {
+		t.Fatalf("expected 4 builtin workers, got %d", len(workers))
 	}
 	want := []string{
 		"heartbeat",
 		"processing_recovery",
-		"delivery_poll",
 		"scheduled_jobs_delayed",
 		"scheduled_jobs_cron",
 	}
@@ -75,12 +74,6 @@ func TestRegisterBuiltinsExposeRoleMetadata(t *testing.T) {
 			HeartbeatName: "processing_sweeper",
 			PollCadence:   processingSweepTick,
 			FailurePolicy: "continue on recover errors and requeue best-effort",
-		},
-		"delivery_poll": {
-			Name:          "delivery_poll",
-			HeartbeatName: "outbox_retry",
-			PollCadence:   outboxPollTick,
-			FailurePolicy: "retry with bounded backoff and dead-letter after max attempts",
 		},
 		"scheduled_jobs_delayed": {
 			Name:          "scheduled_jobs_delayed",

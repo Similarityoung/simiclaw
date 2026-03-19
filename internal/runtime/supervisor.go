@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
-	"github.com/similarityyoung/simiclaw/internal/outbound"
+	outbounddelivery "github.com/similarityyoung/simiclaw/internal/outbound/delivery"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
@@ -47,7 +47,7 @@ type ReadinessRepository interface {
 	HeartbeatAt(ctx context.Context, workerName string) (time.Time, bool, error)
 }
 
-func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor runtimeworkers.EventIngestor, loop *EventLoop, sender outbound.Sender) *Supervisor {
+func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness ReadinessRepository, ingestor runtimeworkers.EventIngestor, loop *EventLoop, sender outbounddelivery.Sender) *Supervisor {
 	var enqueuer runtimeworkers.EventEnqueuer
 	if loop != nil {
 		enqueuer = loop
@@ -56,12 +56,11 @@ func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness Readin
 	runtimeworkers.RegisterBuiltins(registry, runtimeworkers.Builtins{
 		Heartbeat:  workers,
 		Processing: workers,
-		Delivery:   workers,
 		Scheduled:  workers,
 		Ingest:     ingestor,
 		Queue:      enqueuer,
-		Sender:     sender,
 	})
+	registry.Register(outbounddelivery.NewWorker(workers, sender))
 	return &Supervisor{
 		cfg:        cfg,
 		workers:    workers,

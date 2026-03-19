@@ -1,4 +1,4 @@
-package outbound
+package sender
 
 import (
 	"context"
@@ -29,10 +29,10 @@ func (s *captureTelegramSender) SendTextMessage(_ context.Context, chatID int64,
 	return s.err
 }
 
-func TestRouterSenderRoutesTelegram(t *testing.T) {
+func TestRouterRoutesTelegram(t *testing.T) {
 	stdout := &captureSender{}
 	telegram := &captureTelegramSender{}
-	router := NewRouterSender(stdout, telegram)
+	router := NewRouter(stdout, telegram)
 	err := router.Send(context.Background(), model.OutboxMessage{Channel: "telegram", TargetID: "12345", Body: "hi"})
 	if err != nil {
 		t.Fatalf("send: %v", err)
@@ -45,9 +45,9 @@ func TestRouterSenderRoutesTelegram(t *testing.T) {
 	}
 }
 
-func TestRouterSenderFallsBackToStdout(t *testing.T) {
+func TestRouterFallsBackToStdout(t *testing.T) {
 	stdout := &captureSender{}
-	router := NewRouterSender(stdout, nil)
+	router := NewRouter(stdout, nil)
 	msg := model.OutboxMessage{Channel: "", Body: "hello stdout"}
 	if err := router.Send(context.Background(), msg); err != nil {
 		t.Fatalf("send: %v", err)
@@ -57,16 +57,23 @@ func TestRouterSenderFallsBackToStdout(t *testing.T) {
 	}
 }
 
-func TestRouterSenderRejectsBadTelegramTarget(t *testing.T) {
-	router := NewRouterSender(&captureSender{}, &captureTelegramSender{})
+func TestRouterRejectsBadTelegramTarget(t *testing.T) {
+	router := NewRouter(&captureSender{}, &captureTelegramSender{})
 	if err := router.Send(context.Background(), model.OutboxMessage{Channel: "telegram", TargetID: "oops", Body: "hi"}); err == nil {
 		t.Fatal("expected invalid target id error")
 	}
 }
 
-func TestStdoutSenderStillSimulatesFailure(t *testing.T) {
-	err := StdoutSender{}.Send(context.Background(), model.OutboxMessage{Body: "[fail_outbound]"})
+func TestStdoutStillSimulatesFailure(t *testing.T) {
+	err := Stdout{}.Send(context.Background(), model.OutboxMessage{Body: "[fail_outbound]"})
 	if err == nil {
 		t.Fatal("expected simulated outbound failure")
+	}
+}
+
+func TestRegistryRejectsUnknownChannel(t *testing.T) {
+	router := NewRegistry(&captureSender{}, nil)
+	if err := router.Send(context.Background(), model.OutboxMessage{Channel: "slack", Body: "hello"}); err == nil {
+		t.Fatal("expected unsupported channel error")
 	}
 }

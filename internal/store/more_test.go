@@ -134,6 +134,10 @@ func TestListMessagesAndOutboxTransitions(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ClaimOutbox ok=%v err=%v", ok, err)
 	}
+	event, ok, err := db.GetEvent(ctx, outbox.EventID)
+	if err != nil || !ok || event.OutboxStatus != model.OutboxStatusSending {
+		t.Fatalf("expected sending after claim, ok=%v err=%v event=%+v", ok, err, event)
+	}
 	if err := db.FailOutboxSend(ctx, outbox.OutboxID, outbox.EventID, "retry", false, now, now); err != nil {
 		t.Fatalf("FailOutboxSend: %v", err)
 	}
@@ -144,7 +148,7 @@ func TestListMessagesAndOutboxTransitions(t *testing.T) {
 	if err := db.CompleteOutboxSend(ctx, reclaimed.OutboxID, reclaimed.EventID, now); err != nil {
 		t.Fatalf("CompleteOutboxSend: %v", err)
 	}
-	event, ok, err := db.GetEvent(ctx, reclaimed.EventID)
+	event, ok, err = db.GetEvent(ctx, reclaimed.EventID)
 	if err != nil || !ok || event.OutboxStatus != model.OutboxStatusSent {
 		t.Fatalf("GetEvent ok=%v err=%v event=%+v", ok, err, event)
 	}

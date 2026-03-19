@@ -67,39 +67,56 @@ func (r *RuntimeRepository) RecoverExpiredSending(ctx context.Context, cutoff, n
 }
 
 func (r *RuntimeRepository) ClaimRuntimeOutbox(ctx context.Context, owner string, now time.Time) (runtimemodel.ClaimedOutbox, bool, error) {
-	row := r.db.Writer().QueryRowContext(
-		ctx,
-		`UPDATE outbox
-		 SET status = ?, locked_at = ?, lock_owner = ?, updated_at = ?
-		 WHERE outbox_id = (
-		     SELECT outbox_id FROM outbox
-		     WHERE status IN (?, ?)
-		       AND next_attempt_at <= ?
-		     ORDER BY next_attempt_at ASC, outbox_id ASC
-		     LIMIT 1
-		 )
-		 RETURNING outbox_id, event_id, session_key, channel, target_id, body, attempt_count, created_at`,
-		string(model.OutboxStatusSending),
-		timeText(now),
-		owner,
-		timeText(now),
-		string(model.OutboxStatusPending),
-		string(model.OutboxStatusRetryWait),
-		timeText(now),
-	)
 	var (
-		msg       runtimemodel.ClaimedOutbox
-		createdAt string
+		msg runtimemodel.ClaimedOutbox
+		ok  bool
 	)
-	err := row.Scan(&msg.OutboxID, &msg.EventID, &msg.SessionKey, &msg.Channel, &msg.TargetID, &msg.Body, &msg.AttemptCount, &createdAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return runtimemodel.ClaimedOutbox{}, false, nil
-	}
+	err := r.db.WithWriterTx(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(
+			ctx,
+			`UPDATE outbox
+			 SET status = ?, locked_at = ?, lock_owner = ?, updated_at = ?
+			 WHERE outbox_id = (
+			     SELECT outbox_id FROM outbox
+			     WHERE status IN (?, ?)
+			       AND next_attempt_at <= ?
+			     ORDER BY next_attempt_at ASC, outbox_id ASC
+			     LIMIT 1
+			 )
+			 RETURNING outbox_id, event_id, session_key, channel, target_id, body, attempt_count, created_at`,
+			string(model.OutboxStatusSending),
+			timeText(now),
+			owner,
+			timeText(now),
+			string(model.OutboxStatusPending),
+			string(model.OutboxStatusRetryWait),
+			timeText(now),
+		)
+		var createdAt string
+		err := row.Scan(&msg.OutboxID, &msg.EventID, &msg.SessionKey, &msg.Channel, &msg.TargetID, &msg.Body, &msg.AttemptCount, &createdAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE events SET outbox_status = ?, updated_at = ? WHERE event_id = ?`,
+			string(model.OutboxStatusSending),
+			timeText(now),
+			msg.EventID,
+		); err != nil {
+			return err
+		}
+		msg.CreatedAt = mustParseTime(createdAt)
+		ok = true
+		return nil
+	})
 	if err != nil {
 		return runtimemodel.ClaimedOutbox{}, false, err
 	}
-	msg.CreatedAt = mustParseTime(createdAt)
-	return msg, true, nil
+	return msg, ok, nil
 }
 
 func (r *RuntimeRepository) FailOutboxSend(ctx context.Context, outboxID, eventID, message string, dead bool, nextAttemptAt, now time.Time) error {

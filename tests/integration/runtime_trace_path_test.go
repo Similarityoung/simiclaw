@@ -84,6 +84,7 @@ complete:
 	}
 	if done.EventRecord.OutboxStatus != "" &&
 		done.EventRecord.OutboxStatus != model.OutboxStatusPending &&
+		done.EventRecord.OutboxStatus != model.OutboxStatusSending &&
 		done.EventRecord.OutboxStatus != model.OutboxStatusSent {
 		t.Fatalf("unexpected terminal outbox status: %+v", done.EventRecord)
 	}
