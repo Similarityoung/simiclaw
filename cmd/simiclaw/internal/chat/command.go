@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,7 +36,7 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 			if err != nil {
 				return common.WrapExit(2, err)
 			}
-			return runTUI(streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
+			return runTUI(cmd.Context(), streams, sharedclient.New(runtimeOpts.BaseURL, runtimeOpts.APIKey, runtimeOpts.Timeout), opts)
 		},
 	}
 	cmd.Flags().StringVar(&opts.Conversation, "conversation", "", messages.Flag.ConversationID)
@@ -46,8 +47,8 @@ func NewCommand(streams common.IOStreams, globals *common.RuntimeFlagValues) *co
 	return cmd
 }
 
-func runTUI(streams common.IOStreams, cli *sharedclient.Client, opts Options) error {
-	model := newModel(streams, cli, opts)
+func runTUI(ctx context.Context, streams common.IOStreams, cli *sharedclient.Client, opts Options) error {
+	model := newModel(ctx, streams, cli, opts)
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	finalModel, err := program.Run()
 	if err != nil {

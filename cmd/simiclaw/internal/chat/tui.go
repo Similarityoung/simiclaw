@@ -31,6 +31,7 @@ type chatMessage struct {
 }
 
 type modelState struct {
+	ctx          context.Context
 	streams      common.IOStreams
 	client       *client.Client
 	opts         Options
@@ -91,7 +92,7 @@ type streamErrorMsg struct {
 	Err error
 }
 
-func newModel(streams common.IOStreams, cli *client.Client, opts Options) *modelState {
+func newModel(ctx context.Context, streams common.IOStreams, cli *client.Client, opts Options) *modelState {
 	input := textarea.New()
 	input.Placeholder = messages.Chat.InputPlaceholder
 	input.ShowLineNumbers = false
@@ -108,6 +109,7 @@ func newModel(streams common.IOStreams, cli *client.Client, opts Options) *model
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := &modelState{
+		ctx:          ctx,
 		streams:      streams,
 		client:       cli,
 		opts:         opts,
@@ -135,7 +137,7 @@ func (m *modelState) Init() tea.Cmd {
 		if m.conversation != "" {
 			m.loading = true
 			m.status = messages.Chat.StatusCheckingConversation
-			return checkConversationAvailableCmd(m.client, m.conversation)
+			return checkConversationAvailableCmd(m.ctx, m.client, m.conversation)
 		}
 		m.syncViewport()
 		return nil
@@ -143,15 +145,15 @@ func (m *modelState) Init() tea.Cmd {
 	if m.sessionKey != "" {
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return openSessionCmd(m.client, m.sessionKey, m.opts.HistoryLimit)
+		return openSessionCmd(m.ctx, m.client, m.sessionKey, m.opts.HistoryLimit)
 	}
 	if m.conversation != "" {
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return openConversationCmd(m.client, m.conversation, m.opts.HistoryLimit)
+		return openConversationCmd(m.ctx, m.client, m.conversation, m.opts.HistoryLimit)
 	}
 	m.selectorBusy = true
-	return loadSessionsCmd(m.client)
+	return loadSessionsCmd(m.ctx, m.client)
 }
 
 func (m *modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -305,14 +307,14 @@ func (m *modelState) handleSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.selectorBusy = true
 		m.status = messages.Chat.StatusRefreshingSessions
-		return m, loadSessionsCmd(m.client)
+		return m, loadSessionsCmd(m.ctx, m.client)
 	case "enter":
 		if len(m.sessions) == 0 {
 			return m, nil
 		}
 		m.loading = true
 		m.status = messages.Chat.StatusLoadingHistory
-		return m, openSessionCmd(m.client, m.sessions[m.selectorIdx].SessionKey, m.opts.HistoryLimit)
+		return m, openSessionCmd(m.ctx, m.client, m.sessions[m.selectorIdx].SessionKey, m.opts.HistoryLimit)
 	}
 	return m, nil
 }
@@ -335,7 +337,7 @@ func (m *modelState) handleNamingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		m.lastError = ""
 		m.status = messages.Chat.StatusCheckingConversation
-		return m, checkConversationAvailableCmd(m.client, conversation)
+		return m, checkConversationAvailableCmd(m.ctx, m.client, conversation)
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
@@ -354,7 +356,7 @@ func (m *modelState) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeSelector
 		m.selectorBusy = true
 		m.status = messages.Chat.StatusLoadingSessionList
-		return m, loadSessionsCmd(m.client)
+		return m, loadSessionsCmd(m.ctx, m.client)
 	case "ctrl+n":
 		if m.sending {
 			return m, nil
@@ -395,7 +397,7 @@ func (m *modelState) startSend(text string) tea.Cmd {
 	}
 	req := buildCLIIngestRequest(conversation, fixedParticipantID, m.seq, text)
 	m.seq++
-	return startSendCmd(m.client, req, m.opts.NoStream)
+	return startSendCmd(m.ctx, m.client, req, m.opts.NoStream)
 }
 
 func (m *modelState) applyStreamFrame(frame api.ChatStreamEvent) {

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func TestModelInitWithConversationLoadsExistingHistory(t *testing.T) {
 		},
 	})
 
-	m := newModel(common.IOStreams{}, cli, Options{Conversation: "conv-existing", HistoryLimit: 20})
+	m := newModel(context.Background(), common.IOStreams{}, cli, Options{Conversation: "conv-existing", HistoryLimit: 20})
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected init command to load conversation history")
@@ -84,7 +85,7 @@ func TestHandleNamingKeyRejectsExistingConversationID(t *testing.T) {
 		},
 	}, nil)
 
-	m := newModel(common.IOStreams{}, cli, Options{})
+	m := newModel(context.Background(), common.IOStreams{}, cli, Options{})
 	m.mode = modeNaming
 	m.nameInput.SetValue("dup-conversation")
 
@@ -124,7 +125,7 @@ func TestModelInitWithNewConversationRejectsExistingConversationID(t *testing.T)
 		},
 	}, nil)
 
-	m := newModel(common.IOStreams{}, cli, Options{NewSession: true, Conversation: "dup-conversation"})
+	m := newModel(context.Background(), common.IOStreams{}, cli, Options{NewSession: true, Conversation: "dup-conversation"})
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected init command to validate new conversation")

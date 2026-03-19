@@ -12,9 +12,9 @@ import (
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
-func loadSessionsCmd(cli *client.Client) tea.Cmd {
+func loadSessionsCmd(parent context.Context, cli *client.Client) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 		defer cancel()
 		page, err := cli.ListSessions(ctx, "", "", "", 30)
 		if err != nil {
@@ -24,9 +24,9 @@ func loadSessionsCmd(cli *client.Client) tea.Cmd {
 	}
 }
 
-func openSessionCmd(cli *client.Client, sessionKey string, historyLimit int) tea.Cmd {
+func openSessionCmd(parent context.Context, cli *client.Client, sessionKey string, historyLimit int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 		defer cancel()
 		session, err := cli.GetSession(ctx, sessionKey)
 		if err != nil {
@@ -40,9 +40,9 @@ func openSessionCmd(cli *client.Client, sessionKey string, historyLimit int) tea
 	}
 }
 
-func openConversationCmd(cli *client.Client, conversation string, historyLimit int) tea.Cmd {
+func openConversationCmd(parent context.Context, cli *client.Client, conversation string, historyLimit int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 		defer cancel()
 		session, err := findConversationSession(ctx, cli, conversation)
 		if err != nil {
@@ -59,9 +59,9 @@ func openConversationCmd(cli *client.Client, conversation string, historyLimit i
 	}
 }
 
-func checkConversationAvailableCmd(cli *client.Client, conversation string) tea.Cmd {
+func checkConversationAvailableCmd(parent context.Context, cli *client.Client, conversation string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 		defer cancel()
 		session, err := findConversationSession(ctx, cli, conversation)
 		if err != nil {
@@ -100,10 +100,10 @@ func findConversationSession(ctx context.Context, cli *client.Client, conversati
 	}
 }
 
-func startSendCmd(cli *client.Client, req api.IngestRequest, noStream bool) tea.Cmd {
+func startSendCmd(parent context.Context, cli *client.Client, req api.IngestRequest, noStream bool) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan tea.Msg, 64)
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(parent)
 		go func() {
 			defer close(updates)
 			emit := func(event api.ChatStreamEvent) error {
