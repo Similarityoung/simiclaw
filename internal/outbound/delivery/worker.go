@@ -114,17 +114,25 @@ func (w *Worker) tick(ctx context.Context) {
 		logging.String("target_id", msg.TargetID),
 		logging.Int("attempt_count", msg.AttemptCount),
 	)
+	logger.Info("send started")
 	if err := w.send(ctx, msg); err != nil {
 		decision := w.retryPolicy.Next(msg.AttemptCount, now)
 		if recordErr := w.repo.FailOutboxSend(ctx, msg.OutboxID, msg.EventID, err.Error(), decision.Dead, decision.NextAttemptAt, now); recordErr != nil {
 			logger.Error("failed to record outbound send failure", logging.Error(recordErr), logging.NamedError("send_error", err))
 			return
 		}
-		logger.Warn("send failed",
-			logging.Error(err),
-			logging.Bool("dead", decision.Dead),
-			logging.Any("next_attempt_at", decision.NextAttemptAt),
-		)
+		if decision.Dead {
+			logger.Error("dead-lettered",
+				logging.Error(err),
+				logging.Bool("dead", true),
+			)
+		} else {
+			logger.Warn("retry scheduled",
+				logging.Error(err),
+				logging.Bool("dead", false),
+				logging.Any("next_attempt_at", decision.NextAttemptAt),
+			)
+		}
 		return
 	}
 

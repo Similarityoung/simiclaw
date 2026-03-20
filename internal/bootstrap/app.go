@@ -22,6 +22,7 @@ import (
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
 	"github.com/similarityyoung/simiclaw/internal/tools"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 type App struct {
@@ -36,10 +37,16 @@ type App struct {
 }
 
 func NewApp(cfg config.Config) (*App, error) {
+	logger := logging.L("bootstrap").With(
+		logging.String("workspace", cfg.Workspace),
+		logging.String("addr", cfg.ListenAddr),
+	)
 	db, err := store.Open(cfg.Workspace, cfg.DBBusyTimeout.Duration)
 	if err != nil {
+		logger.Error("open database failed", logging.Error(err))
 		return nil, err
 	}
+	logger.Info("database opened")
 	registry := tools.NewRegistry()
 	tools.RegisterBuiltins(registry)
 	tools.RegisterWebSearch(registry, tools.WebSearchOptions{
@@ -48,6 +55,7 @@ func NewApp(cfg config.Config) (*App, error) {
 	})
 	providers, err := provider.NewFactory(cfg.LLM)
 	if err != nil {
+		logger.Error("provider factory failed", logging.Error(err))
 		_ = db.Close()
 		return nil, err
 	}
@@ -75,14 +83,17 @@ func NewApp(cfg config.Config) (*App, error) {
 	if cfg.Channels.Telegram.Enabled {
 		telegramRuntime, err = telegramchannel.NewRuntime(cfg.Channels.Telegram, db, gatewayService)
 		if err != nil {
+			logger.Error("telegram runtime init failed", logging.Error(err))
 			_ = db.Close()
 			return nil, err
 		}
+		logger.Info("telegram runtime configured")
 	}
 
 	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
 	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
 	server := httpserver.New(cfg, gatewayService, queryService, supervisor, streamHub)
+	logger.Info("application assembled")
 	return &App{
 		Cfg:        cfg,
 		DB:         db,
@@ -96,20 +107,38 @@ func NewApp(cfg config.Config) (*App, error) {
 }
 
 func (a *App) Start(ctx context.Context) error {
+	logger := logging.L("bootstrap").With(
+		logging.String("workspace", a.Cfg.Workspace),
+		logging.String("addr", a.Cfg.ListenAddr),
+	)
 	if a.Telegram != nil {
+		logger.Info("telegram runtime starting")
 		if err := a.Telegram.Start(); err != nil {
+			logger.Error("telegram runtime start failed", logging.Error(err))
 			return err
 		}
+		logger.Info("telegram runtime started")
 	}
-	return a.Supervisor.Start(ctx)
+	if err := a.Supervisor.Start(ctx); err != nil {
+		logger.Error("runtime supervisor start failed", logging.Error(err))
+		return err
+	}
+	logger.Info("runtime supervisor started")
+	return nil
 }
 
 func (a *App) Stop() {
+	logger := logging.L("bootstrap").With(
+		logging.String("workspace", a.Cfg.Workspace),
+		logging.String("addr", a.Cfg.ListenAddr),
+	)
+	logger.Info("application stopping")
 	a.Supervisor.Stop()
 	if a.Telegram != nil {
 		a.Telegram.Stop()
 	}
 	_ = a.DB.Close()
+	logger.Info("application stopped")
 }
 
 func (a *App) RunHTTPServer(ctx context.Context) error {

@@ -60,6 +60,7 @@ func run(opts Options) error {
 	if err := common.SetupLogger(cfg.LogLevel); err != nil {
 		return err
 	}
+	logger := logging.L("cmd")
 
 	app, err := bootstrap.NewApp(cfg)
 	if err != nil {
@@ -69,10 +70,15 @@ func run(opts Options) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logging.L("cmd").Info("simiclaw serving", logging.String("addr", cfg.ListenAddr), logging.String("workspace", cfg.Workspace))
+	logger.Info("simiclaw serving", logging.String("addr", cfg.ListenAddr), logging.String("workspace", cfg.Workspace))
 	err = app.RunHTTPServer(ctx)
 	if err != nil && (errors.Is(err, context.Canceled) || err.Error() == "http: Server closed") {
+		logger.Info("simiclaw stopped")
 		return nil
 	}
+	if err != nil {
+		return err
+	}
+	logger.Info("simiclaw stopped")
 	return err
 }

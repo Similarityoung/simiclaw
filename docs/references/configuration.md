@@ -34,6 +34,14 @@
 | `channels.telegram` | Telegram long polling 配置 | 启用时必须提供 token |
 | `cron_jobs[]` | 后台定时 fire 配置 | `name`、`interval`、`conversation_id`、`channel_type`、`payload_type` 必填 |
 
+## 日志行为
+
+- 运行日志默认输出到 stdout/stderr，格式为单行可读文本，而不是 JSON-like 字段块。
+- 每条日志保留时间、级别、caller 和 `[module] message` 前缀；附加上下文字段使用稳定的 `key=value` 形式，优先把 `event_id`、`run_id`、`session_key`、`session_id` 等关联字段排在前面。
+- `log_level=info` 主要用于启动、ingest、runtime、finalize、outbound 等里程碑日志；`debug` 才允许暴露更高频的内部调度细节。
+- HTTP 鉴权失败、参数校验失败、rate limit、duplicate、queue 未入队等拒绝或降级路径会按语义落到 `warn` 或 `info`，不会统一抬升成 `error`。
+- 日志不会直接打印 API key、Bearer token、Telegram token；大型或复杂字段会被转成可读摘要或转义后的单值。
+
 ## 服务端环境变量
 
 | 环境变量 | 作用 |

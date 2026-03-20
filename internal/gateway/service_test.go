@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -93,7 +96,15 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	}
 	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	accepted, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
+	var accepted AcceptedIngest
+	var apiErr *APIError
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		accepted, apiErr = svc.Accept(context.Background(), validGatewayIngress(now))
+		_ = logging.Sync()
+	})
 	if apiErr != nil {
 		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
@@ -103,6 +114,19 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	if repo.markQueued != 1 {
 		t.Fatalf("expected MarkEventQueued to run once, got %d", repo.markQueued)
 	}
+	line := logcapture.FirstNonEmptyLine(t, out)
+	if !strings.Contains(line, "[gateway] ingest accepted") {
+		t.Fatalf("unexpected log line: %q", line)
+	}
+	logcapture.AssertContainsInOrder(t, line,
+		"event_id=evt_ok",
+		"session_key=local:dm:u1",
+		"session_id=ses_ok",
+		"payload_type=message",
+		"channel=dm",
+		"duplicate=false",
+		"enqueued=true",
+	)
 }
 
 func TestAcceptUsesNewSessionPayloadOverride(t *testing.T) {

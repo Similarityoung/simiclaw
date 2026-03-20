@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
 )
 
 func TestRunReturnsConfigErrorWithoutConfigFile(t *testing.T) {
@@ -33,11 +35,17 @@ func TestRunReturnsConfigErrorWithoutConfigFile(t *testing.T) {
 		t.Fatalf("write .env: %v", err)
 	}
 
-	err = run(Options{Workspace: filepath.Join(dir, "workspace")})
+	var out string
+	out = logcapture.CaptureStdout(t, func() {
+		err = run(Options{Workspace: filepath.Join(dir, "workspace")})
+	})
 	if err == nil {
 		t.Fatal("expected config error")
 	}
 	if !strings.Contains(err.Error(), "provider/model format") {
 		t.Fatalf("expected provider/model format error, got %v", err)
+	}
+	if strings.Contains(out, "[cmd] bootstrap failed") {
+		t.Fatalf("unexpected duplicate cmd log: %q", out)
 	}
 }

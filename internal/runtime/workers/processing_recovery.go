@@ -12,15 +12,18 @@ const (
 	processingSweepTick = 10 * time.Second
 )
 
+// EventEnqueuer 定义了一个接口，用于尝试将事件重新加入处理队列。实现者可以根据实际情况决定是否成功入队。
 type EventEnqueuer interface {
 	TryEnqueue(eventID string) bool
 }
 
+// ProcessingRecoveryRepository 定义了处理恢复所需的存储接口，包括心跳更新和过期处理恢复。
 type ProcessingRecoveryRepository interface {
 	BeatHeartbeat(ctx context.Context, workerName string, now time.Time) error
 	RecoverExpiredProcessing(ctx context.Context, cutoff, now time.Time) ([]string, error)
 }
 
+// ProcessingRecoveryWorker 定义了一个工作者，用于定期检查和恢复过期的处理事件。它依赖于一个存储库来管理心跳和恢复逻辑，以及一个事件入队器来重新加入处理队列。
 type ProcessingRecoveryWorker struct {
 	repo  ProcessingRecoveryRepository
 	queue EventEnqueuer

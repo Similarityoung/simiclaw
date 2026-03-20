@@ -16,6 +16,7 @@ import (
 	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -33,21 +34,41 @@ type Handlers struct {
 	gateway Gateway
 	query   Query
 	hub     *runtimeevents.Hub
+	logger  *logging.Logger
 }
 
 func NewHandlers(gateway Gateway, query Query, hub *runtimeevents.Hub) *Handlers {
-	return &Handlers{gateway: gateway, query: query, hub: hub}
+	return &Handlers{
+		gateway: gateway,
+		query:   query,
+		hub:     hub,
+		logger:  logging.L("http.stream"),
+	}
 }
 
 func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	var req api.IngestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Warn("stream decode failed",
+			logging.String("method", r.Method),
+			logging.String("path", r.URL.Path),
+			logging.String("error_code", model.ErrorCodeInvalidArgument),
+			logging.Int("status_code", http.StatusBadRequest),
+			logging.Error(err),
+		)
 		httpingest.WriteAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
 		return
 	}
 	normalized, apiErr := httpingest.NormalizeAPIRequest(req)
 	if apiErr != nil {
+		h.logger.Warn("stream normalize failed",
+			logging.String("method", r.Method),
+			logging.String("path", r.URL.Path),
+			logging.String("error_code", apiErr.Code),
+			logging.Int("status_code", apiErr.StatusCode),
+			logging.String("message", apiErr.Message),
+		)
 		httpingest.WriteAPIError(w, apiErr)
 		return
 	}
@@ -64,9 +85,23 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		h.logger.Error("streaming unsupported",
+			logging.String("method", r.Method),
+			logging.String("path", r.URL.Path),
+			logging.String("event_id", accepted.Result.EventID),
+			logging.String("session_key", accepted.Result.SessionKey),
+			logging.String("session_id", accepted.Result.SessionID),
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Int("status_code", http.StatusInternalServerError),
+		)
 		httpingest.WriteAPIError(w, &gateway.APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "streaming unsupported"})
 		return
 	}
+	h.logger.Info("stream attached",
+		logging.String("event_id", accepted.Result.EventID),
+		logging.String("session_key", accepted.Result.SessionKey),
+		logging.String("session_id", accepted.Result.SessionID),
+	)
 	initSSEHeaders(w)
 	acceptedEvent := api.ChatStreamEvent{
 		Type:                  api.ChatStreamEventAccepted,

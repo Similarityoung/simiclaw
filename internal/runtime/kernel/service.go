@@ -47,15 +47,26 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		return nil
 	}
 	claim, claimedAt, ok, err := s.claim(ctx, work)
-	if err != nil || !ok {
+	if err != nil {
+		logging.L("runtime.kernel").Error("claim failed",
+			logging.String("event_id", work.EventID),
+			logging.String("job_id", work.JobID),
+			logging.String("outbox_id", work.OutboxID),
+			logging.Error(err),
+		)
+		return err
+	}
+	if !ok {
 		return err
 	}
 	logger := logging.L("runtime.kernel").With(
 		logging.String("event_id", claim.Event.EventID),
+		logging.String("payload_type", claim.Event.Payload.Type),
 		logging.String("session_key", claim.SessionKey),
 		logging.String("session_id", claim.SessionID),
 		logging.String("run_id", claim.RunID),
 	)
+	logger.Info("claim succeeded", logging.String("run_mode", string(claim.RunMode)))
 
 	s.publish(ctx, runtimemodel.RuntimeEvent{
 		Kind:       runtimemodel.RuntimeEventClaimed,
@@ -79,6 +90,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		Message:    "running",
 		OccurredAt: claimedAt,
 	})
+	logger.Info("execution started", logging.String("run_mode", string(claim.RunMode)))
 
 	result, runErr := s.execute(ctx, claim)
 	finalize := s.buildFinalize(claim, result, runErr)
@@ -93,6 +105,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		Message:    "finalizing",
 		OccurredAt: finalize.Now,
 	})
+	logger.Info("finalize started", logging.String("status", "processing"))
 	if err := s.facts.Finalize(ctx, finalize); err != nil {
 		logger.Error("finalize failed",
 			logging.String("status", "failed"),
