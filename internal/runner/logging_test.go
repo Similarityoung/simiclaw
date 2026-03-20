@@ -141,3 +141,9 @@ func TestProviderRunnerLogsToolRoundsExhausted(t *testing.T) {
 		t.Fatalf("expected max_tool_rounds field, got %q", out)
 	}
 }
+
+func TestWithRunIDNilContextReturnsNil(t *testing.T) {
+	if got := WithRunID(nil, "run_nil"); got != nil {
+		t.Fatalf("WithRunID(nil, run_nil)=%v want nil", got)
+	}
+}

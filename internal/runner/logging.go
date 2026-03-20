@@ -14,11 +14,8 @@ type runIDContextKey struct{}
 
 func WithRunID(ctx context.Context, runID string) context.Context {
 	runID = strings.TrimSpace(runID)
-	if runID == "" {
+	if runID == "" || ctx == nil {
 		return ctx
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	return context.WithValue(ctx, runIDContextKey{}, runID)
 }
