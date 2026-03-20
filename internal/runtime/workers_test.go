@@ -19,6 +19,8 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -113,7 +115,13 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 		ingest:  ingestService,
 	}
 
-	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		_ = logging.Sync()
+	})
 
 	if len(queue.eventIDs) != 1 {
 		t.Fatalf("expected one enqueued event, got %+v", queue.eventIDs)
@@ -137,6 +145,12 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	}
 	if event.Status != model.EventStatusQueued {
 		t.Fatalf("expected queued event, got %+v", event)
+	}
+	if !strings.Contains(out, "[runtime.worker] job claimed") || !strings.Contains(out, `"job_id": "cron:nightly"`) {
+		t.Fatalf("missing scheduled-job claim log in %q", out)
+	}
+	if !strings.Contains(out, "[runtime.worker] job enqueued") || !strings.Contains(out, `"event_id": "`+queue.eventIDs[0]+`"`) {
+		t.Fatalf("missing scheduled-job enqueue log in %q", out)
 	}
 }
 
@@ -182,7 +196,13 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 		loop:    loop,
 	}
 
-	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		_ = logging.Sync()
+	})
 
 	if got := loop.InboundDepth(); got != 1 {
 		t.Fatalf("expected one event queued into fallback loop, got depth=%d", got)
@@ -209,6 +229,9 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	}
 	if event.Status != model.EventStatusQueued {
 		t.Fatalf("expected fallback event to be queued, got %+v", event)
+	}
+	if !strings.Contains(out, "[runtime.worker] job fallback enqueued") {
+		t.Fatalf("expected fallback enqueue log, got %q", out)
 	}
 }
 
@@ -340,55 +363,67 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
 	ingestService.SetClock(func() time.Time { return now })
 	sender := &captureSender{}
-	supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
-	if err := supervisor.Start(context.Background()); err != nil {
-		t.Fatalf("Start supervisor: %v", err)
-	}
-
-	deadline := time.Now().Add(12 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok, _ := db.HeartbeatAt(context.Background(), "heartbeat"); ok && len(sender.messages) == 1 {
-			break
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if !supervisor.EventLoopAlive() || !loop.IsAlive() || loop.InboundDepth() != 0 {
-		t.Fatalf("expected running event loop")
-	}
-	state, err := supervisor.ReadyState(context.Background())
-	if err != nil {
-		t.Fatalf("ReadyState: %v state=%+v", err, state)
-	}
-	for _, worker := range []string{"heartbeat", "processing_sweeper", "outbox_retry", "delayed_jobs", "cron"} {
-		if state[worker] != "alive" {
-			t.Fatalf("expected worker %s alive, got %+v", worker, state)
+		supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
+		if err := supervisor.Start(context.Background()); err != nil {
+			t.Fatalf("Start supervisor: %v", err)
 		}
-	}
-	staleEvent, ok, err := queryRepo.GetEventRecord(context.Background(), result.EventID)
-	if err != nil || !ok || staleEvent.Status == model.EventStatusProcessing {
-		t.Fatalf("expected stale event to be recovered, ok=%v err=%v event=%+v", ok, err, staleEvent)
-	}
-	sentEvent, ok, err := queryRepo.GetEventRecord(context.Background(), "evt_outbox")
-	if err != nil || !ok || sentEvent.OutboxStatus != model.OutboxStatusSent {
-		t.Fatalf("expected outbox worker to send message, ok=%v err=%v event=%+v sender=%+v", ok, err, sentEvent, sender.messages)
-	}
 
-	stopDone := make(chan struct{})
-	go func() {
-		supervisor.Stop()
-		close(stopDone)
-	}()
-	select {
-	case <-stopDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for supervisor stop")
+		deadline := time.Now().Add(12 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, ok, _ := db.HeartbeatAt(context.Background(), "heartbeat"); ok && len(sender.messages) == 1 {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if !supervisor.EventLoopAlive() || !loop.IsAlive() || loop.InboundDepth() != 0 {
+			t.Fatalf("expected running event loop")
+		}
+		state, err := supervisor.ReadyState(context.Background())
+		if err != nil {
+			t.Fatalf("ReadyState: %v state=%+v", err, state)
+		}
+		for _, worker := range []string{"heartbeat", "processing_sweeper", "outbox_retry", "delayed_jobs", "cron"} {
+			if state[worker] != "alive" {
+				t.Fatalf("expected worker %s alive, got %+v", worker, state)
+			}
+		}
+		staleEvent, ok, err := queryRepo.GetEventRecord(context.Background(), result.EventID)
+		if err != nil || !ok || staleEvent.Status == model.EventStatusProcessing {
+			t.Fatalf("expected stale event to be recovered, ok=%v err=%v event=%+v", ok, err, staleEvent)
+		}
+		sentEvent, ok, err := queryRepo.GetEventRecord(context.Background(), "evt_outbox")
+		if err != nil || !ok || sentEvent.OutboxStatus != model.OutboxStatusSent {
+			t.Fatalf("expected outbox worker to send message, ok=%v err=%v event=%+v sender=%+v", ok, err, sentEvent, sender.messages)
+		}
+
+		stopDone := make(chan struct{})
+		go func() {
+			supervisor.Stop()
+			close(stopDone)
+		}()
+		select {
+		case <-stopDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for supervisor stop")
+		}
+		if supervisor.EventLoopAlive() || loop.IsAlive() {
+			t.Fatalf("expected event loop to be down after supervisor stop")
+		}
+		state, err = supervisor.ReadyState(context.Background())
+		if err == nil || state["event_loop"] != "down" {
+			t.Fatalf("expected loop-down readiness failure after stop, err=%v state=%+v", err, state)
+		}
+		_ = logging.Sync()
+	})
+	if !strings.Contains(out, "[runtime.worker] processing recovered") || !strings.Contains(out, `"count": 1`) {
+		t.Fatalf("missing processing recovery summary in %q", out)
 	}
-	if supervisor.EventLoopAlive() || loop.IsAlive() {
-		t.Fatalf("expected event loop to be down after supervisor stop")
-	}
-	state, err = supervisor.ReadyState(context.Background())
-	if err == nil || state["event_loop"] != "down" {
-		t.Fatalf("expected loop-down readiness failure after stop, err=%v state=%+v", err, state)
+	if !strings.Contains(out, "[outbound.delivery] send started") || !strings.Contains(out, `"outbox_id": "out_1"`) || !strings.Contains(out, "[outbound.delivery] sent") {
+		t.Fatalf("missing delivery summary in %q", out)
 	}
 }
 
@@ -461,7 +496,13 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 
 	repo := storetx.NewRuntimeRepository(db)
 	supervisor := &Supervisor{workers: repo}
-	supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		_ = logging.Sync()
+	})
 
 	var lastError string
 	if err := db.Reader().QueryRow(`SELECT last_error FROM scheduled_jobs WHERE job_id = 'cron:broken'`).Scan(&lastError); err != nil {
@@ -469,6 +510,9 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 	}
 	if lastError == "" {
 		t.Fatalf("expected scheduled job failure to be recorded")
+	}
+	if !strings.Contains(out, "[runtime.worker] job ingest unavailable") || !strings.Contains(out, `"job_id": "cron:broken"`) {
+		t.Fatalf("expected scheduled job failure summary, got %q", out)
 	}
 }
 

@@ -47,28 +47,30 @@ func TestInitAndConsoleOutput(t *testing.T) {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		logging.L("gateway").Info("ingest accepted", logging.String("key", "value"))
+		logging.L("gateway").Info(
+			"ingest accepted",
+			logging.String("model", "gpt-5.4"),
+			logging.String("session_key", "cli:conv:1"),
+			logging.String("event_id", "evt_123"),
+			logging.String("run_id", "run_456"),
+			logging.String("detail", "hello world"),
+		)
 		logging.Sync()
 	})
 
-	parts := splitConsoleLine(t, out, 5)
-	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$`).MatchString(parts[0]); !matched {
-		t.Fatalf("unexpected timestamp: %q", parts[0])
+	line := firstNonEmptyLine(out)
+	if matched := regexp.MustCompile(`^[^\t]+\tINFO\t.*logger_test\.go:\d+\t\[gateway\] ingest accepted\t\{.*\}$`).MatchString(line); !matched {
+		t.Fatalf("unexpected line=%q", line)
 	}
-	if parts[1] != "INFO" {
-		t.Fatalf("level=%q", parts[1])
-	}
-	if !strings.Contains(parts[2], "logger_test.go") {
-		t.Fatalf("caller=%q", parts[2])
-	}
-	if parts[3] != "[gateway] ingest accepted" {
-		t.Fatalf("msg=%q", parts[3])
-	}
-	if !strings.Contains(parts[4], `"key": "value"`) {
-		t.Fatalf("key fields=%q", parts[4])
-	}
-	if strings.Contains(parts[4], `"module"`) {
-		t.Fatalf("unexpected module field=%q", parts[4])
+	assertContainsAll(t, line, []string{
+		`"event_id": "evt_123"`,
+		`"run_id": "run_456"`,
+		`"session_key": "cli:conv:1"`,
+		`"model": "gpt-5.4"`,
+		`"detail": "hello world"`,
+	})
+	if strings.Contains(line, `"module"`) {
+		t.Fatalf("unexpected module field=%q", line)
 	}
 }
 
@@ -81,10 +83,50 @@ func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
 		logging.Sync()
 	})
 
-	parts := splitConsoleLine(t, out, 4)
-	if parts[3] != "plain message" {
-		t.Fatalf("msg=%q", parts[3])
+	line := firstNonEmptyLine(out)
+	if !strings.Contains(line, "plain message") {
+		t.Fatalf("msg=%q", line)
 	}
+}
+
+func TestCorrelationFieldsAppearInConsoleContext(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		logging.L("runtime.kernel").Info(
+			"completed",
+			logging.String("model", "gpt-5.4"),
+			logging.String("tool_name", "web_search"),
+			logging.String("event_id", "evt_123"),
+			logging.String("provider", "openai"),
+			logging.String("session_key", "cli:conv:1"),
+			logging.String("run_id", "run_456"),
+			logging.String("payload_type", "message"),
+			logging.String("outbox_id", "out_789"),
+			logging.String("tool_call_id", "call_321"),
+			logging.String("worker", "delivery_poll"),
+			logging.String("session_id", "ses_999"),
+			logging.String("job_id", "job_654"),
+		)
+		logging.Sync()
+	})
+
+	line := firstNonEmptyLine(out)
+	assertContainsAll(t, line, []string{
+		`"event_id": "evt_123"`,
+		`"run_id": "run_456"`,
+		`"session_key": "cli:conv:1"`,
+		`"session_id": "ses_999"`,
+		`"payload_type": "message"`,
+		`"outbox_id": "out_789"`,
+		`"job_id": "job_654"`,
+		`"worker": "delivery_poll"`,
+		`"tool_call_id": "call_321"`,
+		`"tool_name": "web_search"`,
+		`"provider": "openai"`,
+		`"model": "gpt-5.4"`,
+	})
 }
 
 func TestNilLoggerWithDoesNotPanic(t *testing.T) {
@@ -97,12 +139,12 @@ func TestNilLoggerWithDoesNotPanic(t *testing.T) {
 		logging.Sync()
 	})
 
-	parts := splitConsoleLine(t, out, 5)
-	if parts[3] != "plain message" {
-		t.Fatalf("msg=%q", parts[3])
+	line := firstNonEmptyLine(out)
+	if !strings.Contains(line, "plain message") {
+		t.Fatalf("msg=%q", line)
 	}
-	if !strings.Contains(parts[4], `"key": "value"`) {
-		t.Fatalf("key fields=%q", parts[4])
+	if !strings.Contains(line, `"key": "value"`) {
+		t.Fatalf("key fields=%q", line)
 	}
 }
 
@@ -139,18 +181,14 @@ func captureStdout(t *testing.T, fn func()) string {
 	return out
 }
 
-func splitConsoleLine(t *testing.T, out string, minParts int) []string {
+func assertContainsAll(t *testing.T, line string, fields []string) {
 	t.Helper()
 
-	line := firstNonEmptyLine(out)
-	if line == "" {
-		t.Fatal("expected log output")
+	for _, field := range fields {
+		if !strings.Contains(line, field) {
+			t.Fatalf("missing field %q in %q", field, line)
+		}
 	}
-	parts := strings.Split(line, "\t")
-	if len(parts) < minParts {
-		t.Fatalf("unexpected console output parts=%d want>=%d: %q", len(parts), minParts, line)
-	}
-	return parts
 }
 
 func firstNonEmptyLine(out string) string {

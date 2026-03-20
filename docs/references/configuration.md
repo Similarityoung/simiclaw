@@ -34,6 +34,18 @@
 | `channels.telegram` | Telegram long polling 配置 | 启用时必须提供 token |
 | `cron_jobs[]` | 后台定时 fire 配置 | `name`、`interval`、`conversation_id`、`channel_type`、`payload_type` 必填 |
 
+## 日志行为
+
+- 运行日志默认输出到 stdout/stderr，底层采用 zap console / development 风格的单行文本格式。
+- 每条日志保留时间、级别、caller 和 `[module] message` 前缀；附加上下文字段显示在行尾结构化对象中，而不是仓库自定义的 `key=value` 文本字段区。
+- 当 stdout 或 stderr 是交互式终端时，级别会带 development 风格颜色；重定向到文件、pipe 或测试捕获时默认不输出 ANSI 颜色。
+- JetBrains/GoLand 的 `#gosetup` 临时运行二进制会被视为支持 ANSI 颜色，因此从 IDE 的 Run Console 直接启动服务时也会显示彩色级别。
+- 可通过 `SIMICLAW_FORCE_COLOR=1` 强制开启颜色，通过 `SIMICLAW_NO_COLOR=1` 显式关闭颜色。
+- `log_level=info` 主要用于启动、ingest、runtime、finalize、outbound 等里程碑日志；`debug` 才允许暴露更高频的内部调度细节。
+- HTTP 鉴权失败、参数校验失败、rate limit、duplicate、queue 未入队等拒绝或降级路径会按语义落到 `warn` 或 `info`，不会统一抬升成 `error`。
+- 日志不会直接打印 API key、Bearer token、Telegram token；大型或复杂字段会被转成可读摘要或转义后的单值。
+- `runner` / `runner.tool` / `runtime.worker` 等 owner 会补充 `provider`、`model`、`tool_name`、`worker` 等上下文；tool 参数与结果默认只输出摘要字段，不直接打印原始大对象。
+
 ## 服务端环境变量
 
 | 环境变量 | 作用 |

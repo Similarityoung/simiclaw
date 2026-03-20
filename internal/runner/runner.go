@@ -13,6 +13,7 @@ import (
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -85,7 +86,9 @@ func NewProviderRunner(workspace string, historyReader HistoryReader, registry *
 
 func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int, sink StreamSink) (RunOutput, error) {
 	start := time.Now().UTC()
+	logger := runLogger(ctx, "runner", event)
 	if event.Payload.Type == payloadTypeNewSession {
+		logger.Info("new session shortcut", logging.String("run_mode", string(model.RunModeNormal)))
 		trace := api.RunTrace{
 			EventID:    event.EventID,
 			SessionKey: event.SessionKey,
@@ -97,9 +100,21 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 		return runNewSession(event, start, &trace), nil
 	}
 	if r.payloads == nil {
+		logger.Error("payload registry unavailable")
 		return RunOutput{}, errors.New("payload registry unavailable")
 	}
 	plan := r.payloads.Resolve(event.Payload.Type)
+	planLogger := logger.With(
+		logging.String("run_mode", string(plan.RunMode)),
+		logging.String("execution_kind", string(plan.Kind)),
+		logging.Bool("suppress_output", plan.SuppressOutput),
+		logging.Bool("suppress_stream", plan.SuppressStream),
+		logging.Int("allowed_tool_count", len(plan.AllowedTools)),
+	)
+	if plan.MemoryWriteTarget != "" {
+		planLogger = planLogger.With(logging.String("memory_write_target", string(plan.MemoryWriteTarget)))
+	}
+	planLogger.Info("payload plan selected")
 	trace := api.RunTrace{
 		EventID:    event.EventID,
 		SessionKey: event.SessionKey,
@@ -114,7 +129,7 @@ func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, max
 func (r *ProviderRunner) runWithPlan(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink, plan runtimepayload.Plan) (RunOutput, error) {
 	switch plan.Kind {
 	case runtimepayload.ExecutionKindMemoryWrite:
-		return r.runMemoryWrite(event, now, trace, plan)
+		return r.runMemoryWrite(ctx, event, now, trace, plan)
 	default:
 		streamSink := sink
 		if plan.SuppressStream {
@@ -132,7 +147,7 @@ func (r *ProviderRunner) runWithPlan(ctx context.Context, event model.InternalEv
 	}
 }
 
-func (r *ProviderRunner) runMemoryWrite(event model.InternalEvent, now time.Time, trace *api.RunTrace, plan runtimepayload.Plan) (RunOutput, error) {
+func (r *ProviderRunner) runMemoryWrite(ctx context.Context, event model.InternalEvent, now time.Time, trace *api.RunTrace, plan runtimepayload.Plan) (RunOutput, error) {
 	note := strings.TrimSpace(event.Payload.Text)
 	if note == "" {
 		note = event.Payload.Type
@@ -146,6 +161,12 @@ func (r *ProviderRunner) runMemoryWrite(event model.InternalEvent, now time.Time
 	trace.OutputText = note
 	trace.FinishedAt = time.Now().UTC()
 	trace.LatencyMS = time.Since(now).Milliseconds()
+	runLogger(ctx, "runner", event).Info(
+		"memory write completed",
+		logging.String("run_mode", string(plan.RunMode)),
+		logging.String("memory_write_target", string(plan.MemoryWriteTarget)),
+		logging.Int64("latency_ms", trace.LatencyMS),
+	)
 	return RunOutput{
 		RunMode: plan.RunMode,
 		Messages: []OutputMessage{{
@@ -172,14 +193,22 @@ type llmRunOptions struct {
 
 func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, maxToolRounds int, now time.Time, trace *api.RunTrace, sink StreamSink, opts llmRunOptions) (RunOutput, error) {
 	defaultModel := r.providers.DefaultModel()
+	logger := runLogger(ctx, "runner", event).With(logging.String("run_mode", string(opts.runMode)))
+	providerLabel := providerName(defaultModel)
 	llmProvider, actualModel, err := r.providers.Resolve(defaultModel)
 	if err != nil {
+		errFields := []logging.Field{logging.Error(err)}
+		if providerLabel != "" {
+			errFields = append(errFields, logging.String("provider", providerLabel))
+		}
+		logger.Error("provider resolve failed", errFields...)
 		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
 
 	history, err := r.contextBuilder.Load(ctx, event.ActiveSessionID, event.Payload.Text)
 	if err != nil {
+		logger.Error("context load failed", logging.Error(err))
 		r.traceAssembler.Fail(trace, now, err)
 		return RunOutput{RunMode: opts.runMode, Trace: *trace}, err
 	}
@@ -200,14 +229,30 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 		reply         string
 		last          provider.ChatResult
 		toolUseCounts = map[string]int{}
+		toolRounds    int
 	)
 	for round := 0; round <= maxToolRounds; round++ {
+		callStartedAt := time.Now().UTC()
+		providerLogger := logger.With(
+			logging.String("provider", providerLabel),
+			logging.String("model", actualModel),
+			logging.Int("tool_round", round),
+			logging.Int("message_count", len(chatMessages)),
+			logging.Int("tool_definition_count", len(toolDefs)),
+		)
+		providerLogger.Info("provider started")
 		last, err = llmProvider.StreamChat(ctx, provider.ChatRequest{
 			Model:    actualModel,
 			Messages: chatMessages,
 			Tools:    toolDefs,
 		}, providerStreamSink{sink: sink})
 		if err != nil {
+			providerLogger.Error(
+				"provider failed",
+				logging.String("error_kind", providerErrorKind(err)),
+				logging.Int64("latency_ms", time.Since(callStartedAt).Milliseconds()),
+				logging.Error(err),
+			)
 			r.traceAssembler.Fail(trace, now, err)
 			return RunOutput{
 				RunMode:  opts.runMode,
@@ -215,6 +260,18 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 				Trace:    *trace,
 			}, err
 		}
+		providerFields := []logging.Field{
+			logging.String("finish_reason", last.FinishReason),
+			logging.Int("tool_call_count", len(last.ToolCalls)),
+			logging.Int("prompt_tokens", last.Usage.PromptTokens),
+			logging.Int("completion_tokens", last.Usage.CompletionTokens),
+			logging.Int("total_tokens", last.Usage.TotalTokens),
+			logging.Int64("latency_ms", time.Since(callStartedAt).Milliseconds()),
+		}
+		if last.ProviderRequestID != "" {
+			providerFields = append(providerFields, logging.String("provider_request_id", last.ProviderRequestID))
+		}
+		providerLogger.Info("provider completed", providerFields...)
 		totalUsage.PromptTokens += last.Usage.PromptTokens
 		totalUsage.CompletionTokens += last.Usage.CompletionTokens
 		totalUsage.TotalTokens += last.Usage.TotalTokens
@@ -223,6 +280,13 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			break
 		}
 		if round == maxToolRounds {
+			logger.Warn(
+				"tool rounds exhausted",
+				logging.String("provider", providerLabel),
+				logging.String("model", actualModel),
+				logging.Int("max_tool_rounds", maxToolRounds),
+				logging.Int("tool_call_count", len(last.ToolCalls)),
+			)
 			reply = maxToolRoundsReply(last)
 			break
 		}
@@ -234,6 +298,7 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 			ToolCalls: cloneToolCalls(last.ToolCalls),
 			Meta:      cloneMap(opts.messageMeta),
 		}
+		toolRounds++
 		messages = append(messages, assistantToolMessage)
 		chatMessages = append(chatMessages, provider.ChatMessage{
 			Role:      "assistant",
@@ -266,6 +331,25 @@ func (r *ProviderRunner) runLLM(ctx context.Context, event model.InternalEvent, 
 	}
 
 	r.traceAssembler.Complete(trace, now, totalUsage, last, reply)
+	runFields := []logging.Field{
+		logging.String("provider", last.Provider),
+		logging.String("model", last.Model),
+		logging.String("finish_reason", last.FinishReason),
+		logging.Int("tool_rounds", toolRounds),
+		logging.Int("prompt_tokens", totalUsage.PromptTokens),
+		logging.Int("completion_tokens", totalUsage.CompletionTokens),
+		logging.Int("total_tokens", totalUsage.TotalTokens),
+		logging.Int64("latency_ms", trace.LatencyMS),
+		logging.Bool("suppress_output", opts.suppressOutput),
+	}
+	if last.ProviderRequestID != "" {
+		runFields = append(runFields, logging.String("provider_request_id", last.ProviderRequestID))
+	}
+	if opts.suppressOutput {
+		logger.Info("run suppressed", runFields...)
+	} else {
+		logger.Info("run completed", runFields...)
+	}
 
 	assistantReply := reply
 	if opts.suppressOutput {

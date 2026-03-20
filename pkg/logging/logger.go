@@ -1,14 +1,16 @@
 package logging
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/term"
 )
 
 const (
@@ -69,7 +71,7 @@ func ParseLevel(raw string) (zapcore.Level, error) {
 	}
 }
 
-// Init 初始化全局 logger，输出固定为 console 文本到 stdout。
+// Init 初始化全局 logger，输出为 zap console/development 风格文本到 stdout。
 func Init(level string) error {
 	if strings.TrimSpace(level) == "" {
 		level = defaultLogLevel
@@ -128,25 +130,12 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "ts",
-		LevelKey:       "level",
-		NameKey:        "",
-		CallerKey:      "caller",
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     encodeOffsetTime,
-		EncodeDuration: zapcore.StringDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
+	encoderConfig := zap.NewDevelopmentEncoderConfig()
+	if shouldColorizeConsole() {
+		encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	}
 	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), sink, parsed)
 	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
-}
-
-func encodeOffsetTime(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(t.Local().Format("2006-01-02T15:04:05.000-0700"))
 }
 
 func (l *Logger) unwrap() *zap.Logger {
@@ -204,7 +193,6 @@ func collectLeafErrors(err error) []error {
 	for len(stack) > 0 {
 		processed++
 		if processed > maxTraverseNodes {
-			// Traversal guard for malformed cyclic error chains.
 			return nil
 		}
 
@@ -272,4 +260,64 @@ func isIgnorableSyncErrorMessage(err error) bool {
 	return strings.Contains(msg, "invalid argument") ||
 		strings.Contains(msg, "inappropriate ioctl for device") ||
 		strings.Contains(msg, "bad file descriptor")
+}
+
+func shouldColorizeConsole() bool {
+	executablePath, _ := os.Executable()
+	inputs := colorizeConsoleInputs{
+		forceColor:         envBool("SIMICLAW_FORCE_COLOR"),
+		noColor:            envBool("SIMICLAW_NO_COLOR"),
+		stdoutTTY:          term.IsTerminal(int(os.Stdout.Fd())),
+		stderrTTY:          term.IsTerminal(int(os.Stderr.Fd())),
+		jetbrainsRunBinary: looksLikeJetBrainsRunBinary(executablePath),
+		runningTests:       flag.Lookup("test.v") != nil,
+	}
+	return shouldColorizeConsoleFor(inputs)
+}
+
+type colorizeConsoleInputs struct {
+	forceColor         bool
+	noColor            bool
+	stdoutTTY          bool
+	stderrTTY          bool
+	jetbrainsRunBinary bool
+	runningTests       bool
+}
+
+func shouldColorizeConsoleFor(inputs colorizeConsoleInputs) bool {
+	if inputs.forceColor {
+		return true
+	}
+	if inputs.noColor {
+		return false
+	}
+	if inputs.stdoutTTY || inputs.stderrTTY {
+		return true
+	}
+	if inputs.runningTests {
+		return false
+	}
+	return inputs.jetbrainsRunBinary
+}
+
+func looksLikeJetBrainsRunBinary(executablePath string) bool {
+	normalized := strings.TrimSpace(filepath.ToSlash(executablePath))
+	if normalized == "" {
+		return false
+	}
+	return strings.Contains(normalized, "/JetBrains/") &&
+		(strings.Contains(normalized, "/tmp/GoLand/") || strings.Contains(normalized, "/tmp/IntelliJIdea/"))
+}
+
+func envBool(key string) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return false
+	}
+	switch strings.ToLower(value) {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
 }

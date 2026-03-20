@@ -4,20 +4,28 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 func TestWithAPIKeyRejectsMissingBearerToken(t *testing.T) {
-	handler := WithAPIKey("secret", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
 	req := httptest.NewRequest(http.MethodGet, "/secured", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		handler := WithAPIKey("secret", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		handler.ServeHTTP(rec, req)
+		_ = logging.Sync()
+	})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized, got %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -27,6 +35,23 @@ func TestWithAPIKeyRejectsMissingBearerToken(t *testing.T) {
 	}
 	if body.Error.Code != model.ErrorCodeUnauthorized {
 		t.Fatalf("expected unauthorized error code, got %+v", body.Error)
+	}
+	line := logcapture.FirstNonEmptyLine(t, out)
+	if !strings.Contains(line, "[http.auth] api key rejected") {
+		t.Fatalf("unexpected log line: %q", line)
+	}
+	if !strings.Contains(line, "\tWARN\t") {
+		t.Fatalf("expected WARN level log, got %q", line)
+	}
+	for _, part := range []string{
+		`"error_code": "UNAUTHORIZED"`,
+		`"method": "GET"`,
+		`"path": "/secured"`,
+		`"status_code": 401`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
 	}
 }
 

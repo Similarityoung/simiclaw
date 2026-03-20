@@ -39,6 +39,8 @@ SimiClaw 的测试分成 architecture、unit、integration、e2e 和按阶段聚
 ```bash
 go test ./internal/gateway/bindings/... -run TestComputeKeyDMThreadIgnored -v
 go test ./internal/config/... -run TestLoad -v
+go test ./pkg/logging/... ./internal/bootstrap/... ./internal/runner/... ./internal/provider/... -v
+go test ./internal/runtime/... ./internal/outbound/... ./internal/channels/telegram/... -v
 go test ./tests/integration/... -tags=integration -run TestRuntimeSQLiteLifecycle -v
 go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v
 go test ./tests/e2e/... -run SmokeV1 -v -count=1

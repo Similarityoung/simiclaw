@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -42,6 +45,10 @@ func (r *fakeRepo) GetScopeSession(context.Context, string) (bindings.SessionSco
 type fakeQueue struct{}
 
 func (fakeQueue) TryEnqueue(string) bool { return true }
+
+type rejectQueue struct{}
+
+func (rejectQueue) TryEnqueue(string) bool { return false }
 
 func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
@@ -93,7 +100,15 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	}
 	svc := newGatewayServiceForTest(repo, fakeQueue{}, now)
 
-	accepted, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
+	var accepted AcceptedIngest
+	var apiErr *APIError
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		accepted, apiErr = svc.Accept(context.Background(), validGatewayIngress(now))
+		_ = logging.Sync()
+	})
 	if apiErr != nil {
 		t.Fatalf("Accept apiErr=%+v", apiErr)
 	}
@@ -102,6 +117,55 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	}
 	if repo.markQueued != 1 {
 		t.Fatalf("expected MarkEventQueued to run once, got %d", repo.markQueued)
+	}
+	line := logcapture.FirstNonEmptyLine(t, out)
+	if !strings.Contains(line, "[gateway] ingest accepted") {
+		t.Fatalf("unexpected log line: %q", line)
+	}
+	for _, part := range []string{
+		`"event_id": "evt_ok"`,
+		`"session_key": "local:dm:u1"`,
+		`"session_id": "ses_ok"`,
+		`"payload_type": "message"`,
+		`"channel": "dm"`,
+		`"duplicate": false`,
+		`"enqueued": true`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
+}
+
+func TestAcceptLogsAcceptedButNotEnqueued(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepo{
+		result: PersistResult{
+			EventID:     "evt_deferred",
+			SessionKey:  "local:dm:u1",
+			SessionID:   "ses_deferred",
+			ReceivedAt:  now,
+			PayloadHash: "sha256:test",
+		},
+	}
+	svc := newGatewayServiceForTest(repo, rejectQueue{}, now)
+
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		_, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
+		if apiErr != nil {
+			t.Fatalf("Accept apiErr=%+v", apiErr)
+		}
+		_ = logging.Sync()
+	})
+
+	if !strings.Contains(out, "[gateway] ingest accepted but not enqueued") {
+		t.Fatalf("unexpected log output: %q", out)
+	}
+	if !strings.Contains(out, `"event_id": "evt_deferred"`) || !strings.Contains(out, `"enqueued": false`) {
+		t.Fatalf("missing enqueue summary in %q", out)
 	}
 }
 

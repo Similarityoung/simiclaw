@@ -70,6 +70,7 @@ type Attachment struct {
 	Size         int64  `json:"size,omitempty"`
 }
 
+// EventPayload represents the content of an event, including text, mentions, attachments, and any native payload from the source system.
 type EventPayload struct {
 	Type        string            `json:"type"`
 	Text        string            `json:"text,omitempty"`

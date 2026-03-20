@@ -47,6 +47,7 @@ func NewScheduler() *Scheduler {
 	}
 }
 
+// Acquire attempts to acquire a lease for the given work item. It will block until the lease is acquired or the context is canceled.
 func (s *Scheduler) Acquire(ctx context.Context, work runtimemodel.WorkItem) (*Lease, error) {
 	key := Resolve(work)
 	state := s.retain(key)
@@ -65,6 +66,7 @@ func (s *Scheduler) Acquire(ctx context.Context, work runtimemodel.WorkItem) (*L
 	}
 }
 
+// retain increments the reference count for the given key and returns the lane state. If the lane does not exist, it creates a new one.
 func (s *Scheduler) retain(key Key) *laneState {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +16,9 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/store"
 	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
 	storetx "github.com/similarityyoung/simiclaw/internal/store/tx"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -268,6 +271,29 @@ func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
 	}
 	if repo.claimedWork.LaneKey != "session:local:dm:u1" {
 		t.Fatalf("expected session lane before claim, got %+v", repo.claimedWork)
+	}
+}
+
+func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		loop := NewEventLoop(nil, nil, nil, 1)
+		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_1"}); !ok {
+			t.Fatal("expected first enqueue to succeed")
+		}
+		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_2"}); ok {
+			t.Fatal("expected second enqueue to be deferred")
+		}
+		_ = logging.Sync()
+	})
+
+	if !strings.Contains(out, "[runtime.eventloop] work deferred") {
+		t.Fatalf("expected deferred log, got %q", out)
+	}
+	if strings.Contains(out, "work dropped") {
+		t.Fatalf("unexpected dropped wording in %q", out)
 	}
 }
 

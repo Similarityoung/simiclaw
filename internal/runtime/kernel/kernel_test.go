@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -185,6 +188,49 @@ func TestServiceProcessReturnsFinalizeError(t *testing.T) {
 	}
 }
 
+func TestServiceProcessLogsLifecycleMilestones(t *testing.T) {
+	now := time.Date(2026, 3, 18, 10, 3, 0, 0, time.UTC)
+	work := runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, Identity: "evt_log", EventID: "evt_log"}
+	facts := &stubFacts{
+		claimOK: true,
+		claimCtx: runtimemodel.ClaimContext{
+			Work:       work,
+			Event:      model.InternalEvent{EventID: "evt_log", SessionKey: "session:log", ActiveSessionID: "ses_log", Payload: model.EventPayload{Type: "message"}},
+			RunMode:    model.RunModeNormal,
+			SessionKey: "session:log",
+			SessionID:  "ses_log",
+		},
+	}
+	svc := NewService(facts, &stubExecutor{result: runtimemodel.ExecutionResult{RunMode: model.RunModeNormal}}, NopEventSink{})
+	svc.SetClock(func() time.Time { return now })
+
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		if err := svc.Process(context.Background(), work); err != nil {
+			t.Fatalf("Process: %v", err)
+		}
+		_ = logging.Sync()
+	})
+
+	assertOutputContainsInOrder(t, out,
+		"[runtime.kernel] claim succeeded",
+		"[runtime.kernel] execution started",
+		"[runtime.kernel] finalize started",
+		"[runtime.kernel] completed",
+	)
+	for _, part := range []string{
+		`"event_id": "evt_log"`,
+		`"run_mode": "NORMAL"`,
+		`"status": "processed"`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+	}
+}
+
 type stubFacts struct {
 	mu           sync.Mutex
 	claimCtx     runtimemodel.ClaimContext
@@ -257,6 +303,22 @@ func (s *captureEventSink) Publish(_ context.Context, event runtimemodel.Runtime
 	defer s.mu.Unlock()
 	s.events = append(s.events, event)
 	return nil
+}
+
+func assertOutputContainsInOrder(t *testing.T, out string, parts ...string) {
+	t.Helper()
+
+	last := -1
+	for _, part := range parts {
+		idx := strings.Index(out, part)
+		if idx < 0 {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+		if idx <= last {
+			t.Fatalf("out of order %q in %q", part, out)
+		}
+		last = idx
+	}
 }
 
 func assertEventKinds(t *testing.T, events []runtimemodel.RuntimeEvent, want []runtimemodel.RuntimeEventKind) {

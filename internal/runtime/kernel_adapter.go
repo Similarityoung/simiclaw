@@ -26,6 +26,7 @@ func NewRunnerExecutor(run runner.Runner, maxRounds int) kernel.Executor {
 }
 
 func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) (runtimemodel.ExecutionResult, error) {
+	ctx = runner.WithRunID(ctx, claim.RunID)
 	output, err := e.runner.Run(ctx, claim.Event, e.maxRounds, newRuntimeEventStreamSink(ctx, claim, sink))
 	result, convErr := executionResultFromRunOutput(claim, output)
 	if err == nil && convErr != nil {

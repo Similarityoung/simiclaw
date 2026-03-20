@@ -11,6 +11,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	runtimeworkers "github.com/similarityyoung/simiclaw/internal/runtime/workers"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -23,6 +24,7 @@ type Supervisor struct {
 	ingest     runtimeworkers.EventIngestor
 	loop       *EventLoop
 	background []kernel.Worker
+	logger     *logging.Logger
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
@@ -68,6 +70,7 @@ func NewSupervisor(cfg config.Config, workers WorkerRepository, readiness Readin
 		ingest:     ingestor,
 		loop:       loop,
 		background: registry.All(),
+		logger:     logging.L("runtime.supervisor"),
 	}
 }
 
@@ -75,9 +78,11 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("runtime supervisor requires a non-nil context")
 	}
+	s.logger.Info("supervisor starting", logging.Int("worker_count", len(s.background)))
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	if s.loop != nil {
 		if err := s.loop.Start(s.ctx); err != nil {
+			s.logger.Error("event loop start failed", logging.Error(err))
 			s.cancel()
 			s.ctx = nil
 			s.cancel = nil
@@ -86,15 +91,27 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	}
 	s.wg.Add(len(s.background))
 	for _, worker := range s.background {
+		role := worker.Role()
+		s.logger.Info(
+			"worker starting",
+			logging.String("worker", role.Name),
+			logging.String("heartbeat", role.HeartbeatName),
+		)
 		go s.runWorker(worker)
 	}
 	if s.workers != nil && s.ctx != nil {
-		_ = s.workers.UpsertCronJobs(s.ctx, s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC())
+		if err := s.workers.UpsertCronJobs(s.ctx, s.cfg.TenantID, s.cfg.CronJobs, time.Now().UTC()); err != nil {
+			s.logger.Warn("cron job sync failed", logging.Error(err))
+		} else if len(s.cfg.CronJobs) > 0 {
+			s.logger.Info("cron jobs synced", logging.Int("count", len(s.cfg.CronJobs)))
+		}
 	}
+	s.logger.Info("supervisor started", logging.Int("worker_count", len(s.background)))
 	return nil
 }
 
 func (s *Supervisor) Stop() {
+	s.logger.Info("supervisor stopping", logging.Int("worker_count", len(s.background)))
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -102,6 +119,7 @@ func (s *Supervisor) Stop() {
 		s.loop.Stop()
 	}
 	s.wg.Wait()
+	s.logger.Info("supervisor stopped")
 }
 
 func (s *Supervisor) EventLoopAlive() bool {
@@ -153,7 +171,16 @@ func (s *Supervisor) ReadyState(ctx context.Context) (map[string]any, error) {
 
 func (s *Supervisor) runWorker(worker kernel.Worker) {
 	defer s.wg.Done()
-	_ = worker.Run(s.ctx)
+	role := worker.Role()
+	logger := s.logger.With(
+		logging.String("worker", role.Name),
+		logging.String("heartbeat", role.HeartbeatName),
+	)
+	if err := worker.Run(s.ctx); err != nil {
+		logger.Error("worker stopped with error", logging.Error(err))
+		return
+	}
+	logger.Info("worker stopped")
 }
 
 func (s *Supervisor) workerHeartbeatNames() []string {

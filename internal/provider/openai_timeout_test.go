@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 func TestOpenAICompatibleProviderStreamChatUsesRequestTimeout(t *testing.T) {
@@ -124,5 +127,52 @@ func TestOpenAICompatibleProviderChatStillUsesRequestTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Fatalf("expected Chat to timeout quickly, took %s", elapsed)
+	}
+}
+
+func TestOpenAICompatibleProviderErrorsDoNotEchoPromptBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(80 * time.Millisecond)
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = fmt.Fprint(w, `{"error":{"message":"upstream timeout"}}`)
+	}))
+	defer server.Close()
+
+	p, err := newOpenAICompatibleProvider("openai", config.LLMProviderConfig{
+		Type:    "openai_compatible",
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Timeout: config.Duration{Duration: 30 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatalf("newOpenAICompatibleProvider returned error: %v", err)
+	}
+
+	prompt := "super secret prompt body"
+	var out string
+	out = logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("debug"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		_, err = p.Chat(context.Background(), ChatRequest{
+			Model: "test-model",
+			Messages: []ChatMessage{{
+				Role:    "user",
+				Content: prompt,
+			}},
+		})
+		_ = logging.Sync()
+	})
+	if err == nil {
+		t.Fatal("expected Chat timeout error")
+	}
+	if strings.Contains(err.Error(), prompt) {
+		t.Fatalf("error leaked prompt body: %v", err)
+	}
+	if strings.Contains(out, prompt) {
+		t.Fatalf("debug log leaked prompt body: %q", out)
+	}
+	if !strings.Contains(out, "[provider.openai] chat transport failed") {
+		t.Fatalf("expected provider debug log, got %q", out)
 	}
 }

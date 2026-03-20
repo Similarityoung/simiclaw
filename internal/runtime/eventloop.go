@@ -10,6 +10,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/internal/runtime/lanes"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 type EventLoop struct {
@@ -17,6 +18,7 @@ type EventLoop struct {
 	processor *kernel.Service
 	queue     chan runtimemodel.WorkItem
 	scheduler *lanes.Scheduler
+	logger    *logging.Logger
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -32,6 +34,7 @@ func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.Ev
 		facts:     facts,
 		queue:     make(chan runtimemodel.WorkItem, queueCap),
 		scheduler: lanes.NewScheduler(),
+		logger:    logging.L("runtime.eventloop"),
 	}
 	processor := kernel.NewService(facts, executor, events)
 	processor.SetClock(func() time.Time { return time.Now().UTC() })
@@ -46,6 +49,7 @@ func (l *EventLoop) Start(ctx context.Context) error {
 	}
 	l.ctx, l.cancel = context.WithCancel(ctx)
 	l.alive.Store(true)
+	l.logger.Info("event loop started", logging.Int("queue_capacity", cap(l.queue)))
 	l.wg.Add(2)
 	go l.consumeLoop()
 	go l.repumpLoop()
@@ -58,6 +62,7 @@ func (l *EventLoop) Stop() {
 	}
 	l.wg.Wait()
 	l.alive.Store(false)
+	l.logger.Info("event loop stopped")
 }
 
 func (l *EventLoop) IsAlive() bool {
@@ -69,10 +74,14 @@ func (l *EventLoop) TryEnqueue(eventID string) bool {
 }
 
 func (l *EventLoop) tryEnqueueWork(work runtimemodel.WorkItem) bool {
+	work = normalizeWorkItem(work)
+	logger := l.logger.With(workLogFields(work)...)
 	select {
-	case l.queue <- normalizeWorkItem(work):
+	case l.queue <- work:
+		logger.Info("work enqueued", logging.Int("queue_depth", len(l.queue)))
 		return true
 	default:
+		logger.Warn("work deferred", logging.Int("queue_depth", len(l.queue)))
 		return false
 	}
 }
@@ -111,11 +120,21 @@ func (l *EventLoop) repumpLoop() {
 			if err != nil {
 				continue
 			}
+			if len(items) == 0 {
+				continue
+			}
+			enqueued := 0
 			for _, work := range items {
 				if !l.tryEnqueueWork(work) {
 					break
 				}
+				enqueued++
 			}
+			l.logger.Info("repump enqueued",
+				logging.Int("count", len(items)),
+				logging.Int("enqueued", enqueued),
+				logging.Int("deferred", len(items)-enqueued),
+			)
 		}
 	}
 }
@@ -134,6 +153,28 @@ func (l *EventLoop) processWork(work runtimemodel.WorkItem) {
 	}
 
 	_ = l.processor.Process(ctx, work)
+}
+
+func workLogFields(work runtimemodel.WorkItem) []logging.Field {
+	fields := []logging.Field{
+		logging.String("kind", string(work.Kind)),
+	}
+	if work.EventID != "" {
+		fields = append(fields, logging.String("event_id", work.EventID))
+	}
+	if work.SessionKey != "" {
+		fields = append(fields, logging.String("session_key", work.SessionKey))
+	}
+	if work.OutboxID != "" {
+		fields = append(fields, logging.String("outbox_id", work.OutboxID))
+	}
+	if work.JobID != "" {
+		fields = append(fields, logging.String("job_id", work.JobID))
+	}
+	if work.LaneKey != "" {
+		fields = append(fields, logging.String("lane_key", work.LaneKey))
+	}
+	return fields
 }
 
 func normalizeWorkItem(work runtimemodel.WorkItem) runtimemodel.WorkItem {

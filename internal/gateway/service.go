@@ -18,6 +18,7 @@ import (
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -111,7 +112,16 @@ func (s *Service) SetClock(now func() time.Time) {
 }
 
 func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress) (AcceptedIngest, *APIError) {
+	requestLogger := logging.L("gateway").With(
+		logging.String("source", in.Source),
+		logging.String("channel", in.Conversation.ChannelType),
+		logging.String("payload_type", in.Payload.Type),
+	)
 	if s.repo == nil {
+		requestLogger.Error("gateway repository unavailable",
+			logging.String("error_code", model.ErrorCodeInternal),
+			logging.Int("status_code", http.StatusInternalServerError),
+		)
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: "gateway repository unavailable"}
 	}
 	now := s.now().UTC()
@@ -119,22 +129,45 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 
 	ts, apiErr := validateIngress(in, now)
 	if apiErr != nil {
+		requestLogger.Warn("ingest rejected",
+			logging.String("error_code", apiErr.Code),
+			logging.Int("status_code", apiErr.StatusCode),
+			logging.String("message", apiErr.Message),
+		)
 		return AcceptedIngest{}, apiErr
 	}
 	binding, err := s.bindings.Resolve(ctx, in)
 	if err != nil {
+		requestLogger.Error("binding resolve failed", logging.Error(err))
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()}
 	}
+	logger := requestLogger.With(
+		logging.String("session_key", binding.SessionKey),
+		logging.String("session_id", binding.SessionID),
+	)
 	decision, err := s.routes.Resolve(ctx, in, binding)
 	if err != nil {
+		logger.Error("route resolve failed", logging.Error(err))
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusInternalServerError, Code: model.ErrorCodeInternal, Message: err.Error()}
+	}
+	if decision.PayloadType != "" && decision.PayloadType != in.Payload.Type {
+		logger = logger.With(logging.String("payload_type", decision.PayloadType))
 	}
 
 	sessionLimitKey, err := sessionRateLimitKey(s.tenantID, in.Conversation)
 	if err != nil {
+		logger.Warn("session limit key rejected",
+			logging.String("error_code", model.ErrorCodeInvalidArgument),
+			logging.Int("status_code", http.StatusBadRequest),
+			logging.String("message", err.Error()),
+		)
 		return AcceptedIngest{}, &APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: err.Error()}
 	}
 	if !s.tenantLimiter.Allow(s.tenantID, now) || !s.sessionLimiter.Allow(sessionLimitKey, now) {
+		logger.Warn("rate limit rejected",
+			logging.String("error_code", model.ErrorCodeRateLimited),
+			logging.Int("status_code", http.StatusTooManyRequests),
+		)
 		return AcceptedIngest{}, &APIError{
 			StatusCode: http.StatusTooManyRequests,
 			Code:       model.ErrorCodeRateLimited,
@@ -165,12 +198,17 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 	stored, err := s.repo.PersistEvent(ingestCtx, binding.TenantID, binding.SessionKey, persistReq, payloadHash, ts)
 	if err != nil {
 		if errors.Is(err, ErrIdempotencyConflict) {
+			logger.Warn("idempotency conflict",
+				logging.String("error_code", model.ErrorCodeConflict),
+				logging.Int("status_code", http.StatusConflict),
+			)
 			return AcceptedIngest{}, &APIError{
 				StatusCode: http.StatusConflict,
 				Code:       model.ErrorCodeConflict,
 				Message:    msgIdempotencyConflict,
 			}
 		}
+		logger.Error("persist event failed", logging.Error(err))
 		return AcceptedIngest{}, &APIError{
 			StatusCode: http.StatusInternalServerError,
 			Code:       model.ErrorCodeInternal,
@@ -186,9 +224,18 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 		PayloadHash: stored.PayloadHash,
 		Duplicate:   stored.Duplicate,
 	}
+	logger = logger.With(
+		logging.String("event_id", result.EventID),
+		logging.String("session_key", result.SessionKey),
+		logging.String("session_id", result.SessionID),
+	)
+
+	// 只有当事件不是重复的，并且队列可用时，才尝试入队。对于重复事件，我们假设它已经被处理过了，所以不需要再次入队。
 	if !stored.Duplicate && s.queue != nil && s.queue.TryEnqueue(stored.EventID) {
 		result.Enqueued = true
-		_ = s.repo.MarkEventQueued(ctx, stored.EventID, now)
+		if err := s.repo.MarkEventQueued(ctx, stored.EventID, now); err != nil {
+			logger.Warn("mark event queued failed", logging.Error(err))
+		}
 	}
 
 	status := ingestStatusAccepted
@@ -197,6 +244,23 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 		status = ingestStatusDuplicate
 		statusCode = http.StatusOK
 	}
+	if result.Duplicate {
+		logger.Info("ingest duplicate",
+			logging.Bool("duplicate", true),
+			logging.Bool("enqueued", result.Enqueued),
+		)
+	} else if result.Enqueued {
+		logger.Info("ingest accepted",
+			logging.Bool("duplicate", false),
+			logging.Bool("enqueued", true),
+		)
+	} else {
+		logger.Warn("ingest accepted but not enqueued",
+			logging.Bool("duplicate", false),
+			logging.Bool("enqueued", false),
+		)
+	}
+
 	return AcceptedIngest{
 		Response: api.IngestResponse{
 			EventID:         result.EventID,

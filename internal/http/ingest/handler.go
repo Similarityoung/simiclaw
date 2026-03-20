@@ -9,6 +9,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -18,21 +19,39 @@ type Gateway interface {
 
 type Handler struct {
 	gateway Gateway
+	logger  *logging.Logger
 }
 
 func NewHandler(gateway Gateway) *Handler {
-	return &Handler{gateway: gateway}
+	return &Handler{
+		gateway: gateway,
+		logger:  logging.L("http.ingest"),
+	}
 }
 
 func (h *Handler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	var req api.IngestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Warn("request decode failed",
+			logging.String("method", r.Method),
+			logging.String("path", r.URL.Path),
+			logging.String("error_code", model.ErrorCodeInvalidArgument),
+			logging.Int("status_code", http.StatusBadRequest),
+			logging.Error(err),
+		)
 		WriteAPIError(w, &gateway.APIError{StatusCode: http.StatusBadRequest, Code: model.ErrorCodeInvalidArgument, Message: "invalid json"})
 		return
 	}
 	normalized, apiErr := NormalizeAPIRequest(req)
 	if apiErr != nil {
+		h.logger.Warn("request normalize failed",
+			logging.String("method", r.Method),
+			logging.String("path", r.URL.Path),
+			logging.String("error_code", apiErr.Code),
+			logging.Int("status_code", apiErr.StatusCode),
+			logging.String("message", apiErr.Message),
+		)
 		WriteAPIError(w, apiErr)
 		return
 	}

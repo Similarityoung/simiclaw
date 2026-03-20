@@ -79,7 +79,7 @@ func (a *toolCallAccumulator) BuildToolCalls(choiceIndex int) ([]model.ToolCall,
 		args := map[string]any{}
 		if rawArgs != "" {
 			if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
-				return nil, fmt.Errorf("invalid tool arguments for %q: %w", state.name.String(), err)
+				return nil, invalidToolArgumentsError(state.name.String(), err)
 			}
 		}
 		toolCallID := state.toolCallID
@@ -125,4 +125,8 @@ func clampToolIndex(index int64) int {
 		return 0
 	}
 	return int(index)
+}
+
+func invalidToolArgumentsError(toolName string, err error) error {
+	return fmt.Errorf("invalid tool arguments for %q: %w", toolName, err)
 }

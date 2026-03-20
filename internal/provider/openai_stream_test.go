@@ -1,9 +1,19 @@
 package provider
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	openai "github.com/openai/openai-go/v3"
+
+	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 func TestToolCallAccumulatorBindsLateToolCallID(t *testing.T) {
@@ -55,6 +65,62 @@ func TestToolCallAccumulatorRejectsInvalidParallelArguments(t *testing.T) {
 
 	if _, err := acc.BuildToolCalls(0); err == nil {
 		t.Fatalf("expected invalid JSON error")
+	}
+}
+
+func TestOpenAICompatibleProviderStreamFailureDoesNotEchoPromptBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl_bad\",\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"call_1\",\"index\":0,\"type\":\"function\",\"function\":{\"name\":\"search\",\"arguments\":\"{not-json\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer server.Close()
+
+	p, err := newOpenAICompatibleProvider("openai", config.LLMProviderConfig{
+		Type:    "openai_compatible",
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Timeout: config.Duration{Duration: 200 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatalf("newOpenAICompatibleProvider returned error: %v", err)
+	}
+
+	prompt := "stream prompt body"
+	var out string
+	out = logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("debug"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		_, err = p.StreamChat(context.Background(), ChatRequest{
+			Model: "test-model",
+			Messages: []ChatMessage{{
+				Role:    "user",
+				Content: prompt,
+			}},
+		}, nil)
+		_ = logging.Sync()
+	})
+	if err == nil {
+		t.Fatal("expected StreamChat error")
+	}
+	if !strings.Contains(err.Error(), `invalid tool arguments for "search"`) {
+		t.Fatalf("unexpected stream error: %v", err)
+	}
+	if strings.Contains(err.Error(), prompt) {
+		t.Fatalf("stream error leaked prompt body: %v", err)
+	}
+	if strings.Contains(out, prompt) {
+		t.Fatalf("stream debug log leaked prompt body: %q", out)
+	}
+	if !strings.Contains(out, "[provider.openai] stream accumulator failed") {
+		t.Fatalf("expected provider debug log, got %q", out)
 	}
 }
 

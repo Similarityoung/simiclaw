@@ -8,6 +8,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/api"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -30,8 +31,14 @@ type llmToolExecutor struct {
 }
 
 func (e llmToolExecutor) Execute(ctx context.Context, event model.InternalEvent, call model.ToolCall, opts llmRunOptions, counts map[string]int, sink StreamSink, actionIndex int, now time.Time) executedToolStep {
+	startedAt := time.Now().UTC()
 	displayArgs, argsTruncated := sanitizeDisplayMap(call.Args)
 	sink.OnToolStart(call.ToolCallID, call.Name, displayArgs, argsTruncated)
+	logger := runLogger(ctx, "runner.tool", event).With(
+		logging.String("tool_call_id", call.ToolCallID),
+		logging.String("tool_name", call.Name),
+	)
+	logger.Info("tool started", mapSummaryFields("args", displayArgs, argsTruncated)...)
 
 	res := e.call(ctx, event, call, opts.allowedTools, counts)
 	exec := api.ToolExecution{
@@ -56,6 +63,25 @@ func (e llmToolExecutor) Execute(ctx context.Context, event model.InternalEvent,
 	}
 	displayResult, resultTruncated := sanitizeDisplayMap(payload)
 	sink.OnToolResult(call.ToolCallID, call.Name, displayResult, resultTruncated, res.Error)
+	if res.Error != nil {
+		fields := []logging.Field{
+			logging.String("error_code", res.Error.Code),
+			logging.Int64("latency_ms", time.Since(startedAt).Milliseconds()),
+		}
+		fields = append(fields, mapSummaryFields("result", displayResult, resultTruncated)...)
+		if res.Error.Code == model.ErrorCodeForbidden {
+			logger.Warn("tool denied", fields...)
+		} else {
+			fields = append(fields, logging.String("message", res.Error.Message))
+			logger.Warn("tool failed", fields...)
+		}
+	} else {
+		fields := []logging.Field{
+			logging.Int64("latency_ms", time.Since(startedAt).Milliseconds()),
+		}
+		fields = append(fields, mapSummaryFields("result", displayResult, resultTruncated)...)
+		logger.Info("tool finished", fields...)
+	}
 	content := toolResultString(res.Output, res.Error)
 
 	return executedToolStep{
