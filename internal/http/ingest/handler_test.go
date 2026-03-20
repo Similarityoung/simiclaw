@@ -30,15 +30,19 @@ func TestHandleIngestLogsDecodeFailure(t *testing.T) {
 	if !strings.Contains(line, "[http.ingest] request decode failed") {
 		t.Fatalf("unexpected log line: %q", line)
 	}
-	if !strings.Contains(line, " WARN ") {
+	if !strings.Contains(line, "\tWARN\t") {
 		t.Fatalf("expected WARN level log, got %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"error_code=INVALID_ARGUMENT",
-		"method=POST",
-		"path=/v1/events:ingest",
-		"status_code=400",
-	)
+	for _, part := range []string{
+		`"error_code": "INVALID_ARGUMENT"`,
+		`"method": "POST"`,
+		`"path": "/v1/events:ingest"`,
+		`"status_code": 400`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestHandleIngestLogsNormalizeFailure(t *testing.T) {
@@ -61,14 +65,18 @@ func TestHandleIngestLogsNormalizeFailure(t *testing.T) {
 	if !strings.Contains(line, "[http.ingest] request normalize failed") {
 		t.Fatalf("unexpected log line: %q", line)
 	}
-	if !strings.Contains(line, " WARN ") {
+	if !strings.Contains(line, "\tWARN\t") {
 		t.Fatalf("expected WARN level log, got %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"error_code=INVALID_ARGUMENT",
-		`message="field timestamp is required"`,
-		"method=POST",
-		"path=/v1/events:ingest",
-		"status_code=400",
-	)
+	for _, part := range []string{
+		`"error_code": "INVALID_ARGUMENT"`,
+		`"message": "field timestamp is required"`,
+		`"method": "POST"`,
+		`"path": "/v1/events:ingest"`,
+		`"status_code": 400`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }

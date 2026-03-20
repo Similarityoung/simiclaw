@@ -45,13 +45,17 @@ func TestSupervisorLogsWorkerLifecycle(t *testing.T) {
 	logcapture.AssertContainsInOrder(t, out,
 		"[runtime.supervisor] supervisor starting",
 		"[runtime.supervisor] worker starting",
-		"worker=test_worker",
 		"[runtime.supervisor] supervisor started",
 		"[runtime.supervisor] supervisor stopping",
 		"[runtime.supervisor] worker stopped",
 		"[runtime.supervisor] supervisor stopped",
 	)
-	if !strings.Contains(out, "heartbeat=test_heartbeat") {
-		t.Fatalf("expected heartbeat field, got %q", out)
+	for _, part := range []string{
+		`"worker": "test_worker"`,
+		`"heartbeat": "test_heartbeat"`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("expected %q in %q", part, out)
+		}
 	}
 }

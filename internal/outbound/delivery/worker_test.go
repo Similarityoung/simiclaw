@@ -132,7 +132,7 @@ func TestWorkerLogsRetryScheduled(t *testing.T) {
 	if !strings.Contains(out, "[outbound.delivery] retry scheduled") {
 		t.Fatalf("unexpected output: %q", out)
 	}
-	if !strings.Contains(out, "event_id=evt_2") || !strings.Contains(out, "outbox_id=out_2") {
+	if !strings.Contains(out, `"event_id": "evt_2"`) || !strings.Contains(out, `"outbox_id": "out_2"`) {
 		t.Fatalf("missing correlation fields in %q", out)
 	}
 }
@@ -166,7 +166,7 @@ func TestWorkerLogsDeadLetter(t *testing.T) {
 	if !strings.Contains(out, "[outbound.delivery] dead-lettered") {
 		t.Fatalf("unexpected output: %q", out)
 	}
-	if !strings.Contains(out, "event_id=evt_dead") || !strings.Contains(out, "dead=true") {
+	if !strings.Contains(out, `"event_id": "evt_dead"`) || !strings.Contains(out, `"dead": true`) {
 		t.Fatalf("missing dead-letter summary in %q", out)
 	}
 }

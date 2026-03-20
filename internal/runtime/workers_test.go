@@ -146,10 +146,10 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	if event.Status != model.EventStatusQueued {
 		t.Fatalf("expected queued event, got %+v", event)
 	}
-	if !strings.Contains(out, "[runtime.worker] job claimed") || !strings.Contains(out, "job_id=cron:nightly") {
+	if !strings.Contains(out, "[runtime.worker] job claimed") || !strings.Contains(out, `"job_id": "cron:nightly"`) {
 		t.Fatalf("missing scheduled-job claim log in %q", out)
 	}
-	if !strings.Contains(out, "[runtime.worker] job enqueued") || !strings.Contains(out, "event_id="+queue.eventIDs[0]) {
+	if !strings.Contains(out, "[runtime.worker] job enqueued") || !strings.Contains(out, `"event_id": "`+queue.eventIDs[0]+`"`) {
 		t.Fatalf("missing scheduled-job enqueue log in %q", out)
 	}
 }
@@ -419,10 +419,10 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 		}
 		_ = logging.Sync()
 	})
-	if !strings.Contains(out, "[runtime.worker] processing recovered") || !strings.Contains(out, "count=1") {
+	if !strings.Contains(out, "[runtime.worker] processing recovered") || !strings.Contains(out, `"count": 1`) {
 		t.Fatalf("missing processing recovery summary in %q", out)
 	}
-	if !strings.Contains(out, "[outbound.delivery] send started") || !strings.Contains(out, "outbox_id=out_1") || !strings.Contains(out, "[outbound.delivery] sent") {
+	if !strings.Contains(out, "[outbound.delivery] send started") || !strings.Contains(out, `"outbox_id": "out_1"`) || !strings.Contains(out, "[outbound.delivery] sent") {
 		t.Fatalf("missing delivery summary in %q", out)
 	}
 }
@@ -511,7 +511,7 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 	if lastError == "" {
 		t.Fatalf("expected scheduled job failure to be recorded")
 	}
-	if !strings.Contains(out, "[runtime.worker] job ingest unavailable") || !strings.Contains(out, "job_id=cron:broken") {
+	if !strings.Contains(out, "[runtime.worker] job ingest unavailable") || !strings.Contains(out, `"job_id": "cron:broken"`) {
 		t.Fatalf("expected scheduled job failure summary, got %q", out)
 	}
 }

@@ -160,7 +160,7 @@ func TestRunHeartbeatLogsFailure(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected heartbeat failure log, got %q", out)
 	}
-	if !strings.Contains(line, " WARN ") {
+	if !strings.Contains(line, "\tWARN\t") {
 		t.Fatalf("expected WARN level log, got %q", line)
 	}
 }
@@ -253,14 +253,17 @@ func TestHandleTextLogsIgnoredUpdateReason(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected telegram update ignored log in %q", out)
 	}
-	if !strings.Contains(line, " INFO ") {
+	if !strings.Contains(line, "\tINFO\t") {
 		t.Fatalf("expected INFO level log, got %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"[telegram] telegram update ignored",
-		"reason=user_not_allowed",
-		"update_id=42",
-	)
+	for _, part := range []string{
+		`"reason": "user_not_allowed"`,
+		`"update_id": 42`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestHandleTextLogsIngestAccepted(t *testing.T) {
@@ -319,21 +322,24 @@ func TestHandleTextLogsIngestAccepted(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected telegram ingest accepted log in %q", out)
 	}
-	if !strings.Contains(line, " INFO ") {
+	if !strings.Contains(line, "\tINFO\t") {
 		t.Fatalf("expected INFO level log, got %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"[telegram] telegram ingest accepted",
-		"event_id=evt_accepted",
-		"session_key=local:dm:telegram",
-		"session_id=ses_accepted",
-		"conversation_id=tg_chat_100",
-		"duplicate=false",
-		"enqueued=true",
-		"idempotency_key=telegram:update:44",
-		"participant_id=1001",
-		"update_id=44",
-	)
+	for _, part := range []string{
+		`"event_id": "evt_accepted"`,
+		`"session_key": "local:dm:telegram"`,
+		`"session_id": "ses_accepted"`,
+		`"conversation_id": "tg_chat_100"`,
+		`"duplicate": false`,
+		`"enqueued": true`,
+		`"idempotency_key": "telegram:update:44"`,
+		`"participant_id": "1001"`,
+		`"update_id": 44`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestHandleTextLogsIngestDuplicate(t *testing.T) {
@@ -393,14 +399,17 @@ func TestHandleTextLogsIngestDuplicate(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected telegram ingest duplicate log in %q", out)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"[telegram] telegram ingest duplicate",
-		"event_id=evt_duplicate",
-		"session_id=ses_duplicate",
-		"duplicate=true",
-		"enqueued=false",
-		"update_id=45",
-	)
+	for _, part := range []string{
+		`"event_id": "evt_duplicate"`,
+		`"session_id": "ses_duplicate"`,
+		`"duplicate": true`,
+		`"enqueued": false`,
+		`"update_id": 45`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestHandleTextLogsAcceptedButNotEnqueued(t *testing.T) {
@@ -459,17 +468,20 @@ func TestHandleTextLogsAcceptedButNotEnqueued(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected telegram ingest accepted but not enqueued log in %q", out)
 	}
-	if !strings.Contains(line, " WARN ") {
+	if !strings.Contains(line, "\tWARN\t") {
 		t.Fatalf("expected WARN level log, got %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"[telegram] telegram ingest accepted but not enqueued",
-		"event_id=evt_deferred",
-		"session_id=ses_deferred",
-		"duplicate=false",
-		"enqueued=false",
-		"update_id=46",
-	)
+	for _, part := range []string{
+		`"event_id": "evt_deferred"`,
+		`"session_id": "ses_deferred"`,
+		`"duplicate": false`,
+		`"enqueued": false`,
+		`"update_id": 46`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestHandleTextLogsIngestRejected(t *testing.T) {
@@ -512,16 +524,18 @@ func TestHandleTextLogsIngestRejected(t *testing.T) {
 	if line == "" {
 		t.Fatalf("expected telegram ingest rejected log in %q", out)
 	}
-	if !strings.Contains(line, " WARN ") {
+	if !strings.Contains(line, "\tWARN\t") {
 		t.Fatalf("expected WARN level log, got %q", line)
 	}
-
-	logcapture.AssertContainsInOrder(t, line,
-		"[telegram] telegram ingest rejected",
-		"error_code=INTERNAL",
-		"status_code=500",
-		"update_id=43",
-	)
+	for _, part := range []string{
+		`"error_code": "INTERNAL"`,
+		`"status_code": 500`,
+		`"update_id": 43`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func waitForHeartbeatCount(t *testing.T, recorder *fakeHeartbeatRecorder, want int) {

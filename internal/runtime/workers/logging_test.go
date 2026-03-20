@@ -50,12 +50,16 @@ func TestProcessingRecoveryWorkerLogsRecoveredSummary(t *testing.T) {
 	if !strings.Contains(out, "[runtime.worker] processing recovered") {
 		t.Fatalf("expected processing recovered log, got %q", out)
 	}
-	logcapture.AssertContainsInOrder(t, out,
-		"worker=processing_recovery",
-		"count=2",
-		"deferred=1",
-		"enqueued=1",
-	)
+	for _, part := range []string{
+		`"worker": "processing_recovery"`,
+		`"count": 2`,
+		`"deferred": 1`,
+		`"enqueued": 1`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+	}
 }
 
 type scheduledRepoStub struct {
@@ -121,11 +125,17 @@ func TestRunScheduledKindLogsJobOutcome(t *testing.T) {
 
 	logcapture.AssertContainsInOrder(t, out,
 		"[runtime.worker] job claimed",
-		"payload_type=cron_fire",
-		"job_id=job_1",
 		"[runtime.worker] job enqueued",
-		"event_id=evt_job",
 	)
+	for _, part := range []string{
+		`"payload_type": "cron_fire"`,
+		`"job_id": "job_1"`,
+		`"event_id": "evt_job"`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+	}
 }
 
 func TestRunScheduledKindLogsIngestFailure(t *testing.T) {
@@ -158,7 +168,7 @@ func TestRunScheduledKindLogsIngestFailure(t *testing.T) {
 	if !strings.Contains(out, "[runtime.worker] job ingest failed") {
 		t.Fatalf("expected ingest failure log, got %q", out)
 	}
-	if !strings.Contains(out, "job_id=job_fail") {
+	if !strings.Contains(out, `"job_id": "job_fail"`) {
 		t.Fatalf("expected job_id in log, got %q", out)
 	}
 }

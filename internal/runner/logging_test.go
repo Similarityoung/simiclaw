@@ -43,19 +43,25 @@ func TestProviderRunnerLogsProviderAndToolMilestones(t *testing.T) {
 
 	logcapture.AssertContainsInOrder(t, out,
 		"[runner] payload plan selected",
-		"event_id=evt_test",
-		"run_id=run_log",
 		"[runner] provider started",
-		"provider=fake",
-		"model=default",
 		"[runner] provider completed",
 		"[runner.tool] tool started",
-		"tool_call_id=fake-tool-call-1",
-		"tool_name=echo",
 		"[runner.tool] tool finished",
 		"[runner] run completed",
-		"tool_rounds=1",
 	)
+	for _, part := range []string{
+		`"event_id": "evt_test"`,
+		`"run_id": "run_log"`,
+		`"provider": "fake"`,
+		`"model": "default"`,
+		`"tool_call_id": "fake-tool-call-1"`,
+		`"tool_name": "echo"`,
+		`"tool_rounds": 1`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+	}
 }
 
 func TestProviderRunnerLogsToolPolicyRejection(t *testing.T) {
@@ -93,7 +99,7 @@ func TestProviderRunnerLogsToolPolicyRejection(t *testing.T) {
 	if !strings.Contains(out, "[runner.tool] tool denied") {
 		t.Fatalf("expected tool denied log, got %q", out)
 	}
-	if !strings.Contains(out, "error_code=FORBIDDEN") {
+	if !strings.Contains(out, `"error_code": "FORBIDDEN"`) {
 		t.Fatalf("expected forbidden error code, got %q", out)
 	}
 }
@@ -131,7 +137,7 @@ func TestProviderRunnerLogsToolRoundsExhausted(t *testing.T) {
 	if !strings.Contains(out, "[runner] tool rounds exhausted") {
 		t.Fatalf("expected tool rounds exhausted log, got %q", out)
 	}
-	if !strings.Contains(out, "max_tool_rounds=0") {
+	if !strings.Contains(out, `"max_tool_rounds": 0`) {
 		t.Fatalf("expected max_tool_rounds field, got %q", out)
 	}
 }

@@ -98,7 +98,7 @@ func TestIsIgnorableSyncErrorHandlesNonComparableError(t *testing.T) {
 	}
 }
 
-func TestHumanReadableEncoderEscapesAndOrdersFields(t *testing.T) {
+func TestConsoleEncoderRendersStructuredContext(t *testing.T) {
 	sink := &bytesSink{}
 	logger, err := newLogger("info", sink)
 	if err != nil {
@@ -122,38 +122,135 @@ func TestHumanReadableEncoderEscapesAndOrdersFields(t *testing.T) {
 	)
 
 	line := strings.TrimSpace(sink.buf.String())
-	assertContainsInOrder(t, line,
-		"[runner] provider failed",
-		"event_id=evt_123",
-		"run_id=run_456",
-		"session_key=cli:conv:1",
-		"model=gpt-5.4",
-		`empty=""`,
-		`error="disk full"`,
-		`next_attempt_at=2026-03-20T09:30:00Z`,
-		`note="quote me please"`,
+	assertContainsAll(t, line,
+		[]string{
+			"[runner] provider failed",
+			`"event_id": "evt_123"`,
+			`"run_id": "run_456"`,
+			`"session_key": "cli:conv:1"`,
+			`"model": "gpt-5.4"`,
+			`"empty": ""`,
+			`"error": "disk full"`,
+			`"next_attempt_at": "2026-03-20T09:30:00.000Z"`,
+			`"note": "quote me please"`,
+		},
 	)
 }
 
-func TestRenderFieldValueUsesJSONForStructuredData(t *testing.T) {
-	got := renderFieldValue(map[string]any{"b": 2, "a": 1})
-	if got != `"{\"a\":1,\"b\":2}"` {
-		t.Fatalf("unexpected rendered structured value: %s", got)
+func TestConsoleEncoderRendersStructuredData(t *testing.T) {
+	sink := &bytesSink{}
+	logger, err := newLogger("info", sink)
+	if err != nil {
+		t.Fatalf("newLogger: %v", err)
+	}
+	restore := zap.ReplaceGlobals(logger)
+	defer restore()
+
+	L("runner").Info("payload", Any("data", map[string]any{"a": 1, "b": 2}))
+
+	line := strings.TrimSpace(sink.buf.String())
+	if !strings.Contains(line, `"data": {"a":1,"b":2}`) {
+		t.Fatalf("unexpected rendered structured value: %s", line)
 	}
 }
 
-func assertContainsInOrder(t *testing.T, line string, parts ...string) {
+func TestShouldColorizeConsoleFor(t *testing.T) {
+	cases := []struct {
+		name   string
+		inputs colorizeConsoleInputs
+		want   bool
+	}{
+		{
+			name: "force color overrides no tty",
+			inputs: colorizeConsoleInputs{
+				forceColor: true,
+			},
+			want: true,
+		},
+		{
+			name: "no color disables tty",
+			inputs: colorizeConsoleInputs{
+				noColor:   true,
+				stdoutTTY: true,
+			},
+			want: false,
+		},
+		{
+			name: "tty enables color",
+			inputs: colorizeConsoleInputs{
+				stderrTTY: true,
+			},
+			want: true,
+		},
+		{
+			name: "jetbrains run binary enables color outside tests",
+			inputs: colorizeConsoleInputs{
+				jetbrainsRunBinary: true,
+			},
+			want: true,
+		},
+		{
+			name: "tests keep captured output uncolored",
+			inputs: colorizeConsoleInputs{
+				jetbrainsRunBinary: true,
+				runningTests:       true,
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldColorizeConsoleFor(tc.inputs); got != tc.want {
+				t.Fatalf("shouldColorizeConsoleFor(%+v)=%v want %v", tc.inputs, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLooksLikeJetBrainsRunBinary(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "goland temporary binary",
+			path: "/Users/similarityyoung/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___simi_server",
+			want: true,
+		},
+		{
+			name: "intellij temporary binary",
+			path: "/Users/similarityyoung/Library/Caches/JetBrains/IntelliJIdea2025.2/tmp/IntelliJIdea/___app",
+			want: true,
+		},
+		{
+			name: "normal binary path",
+			path: "/Users/similarityyoung/Documents/SimiClaw/bin/simiclaw",
+			want: false,
+		},
+		{
+			name: "empty path",
+			path: "",
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := looksLikeJetBrainsRunBinary(tc.path); got != tc.want {
+				t.Fatalf("looksLikeJetBrainsRunBinary(%q)=%v want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func assertContainsAll(t *testing.T, line string, parts []string) {
 	t.Helper()
 
-	last := -1
 	for _, part := range parts {
-		idx := strings.Index(line, part)
-		if idx < 0 {
+		if !strings.Contains(line, part) {
 			t.Fatalf("missing %q in %q", part, line)
 		}
-		if idx <= last {
-			t.Fatalf("out of order %q in %q", part, line)
-		}
-		last = idx
 	}
 }

@@ -59,15 +59,15 @@ func TestInitAndConsoleOutput(t *testing.T) {
 	})
 
 	line := firstNonEmptyLine(out)
-	if matched := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4} INFO .*logger_test\.go:\d+ \[gateway\] ingest accepted `).MatchString(line); !matched {
+	if matched := regexp.MustCompile(`^[^\t]+\tINFO\t.*logger_test\.go:\d+\t\[gateway\] ingest accepted\t\{.*\}$`).MatchString(line); !matched {
 		t.Fatalf("unexpected line=%q", line)
 	}
-	assertFieldSequence(t, line, []string{
-		"event_id=evt_123",
-		"run_id=run_456",
-		"session_key=cli:conv:1",
-		"model=gpt-5.4",
-		`detail="hello world"`,
+	assertContainsAll(t, line, []string{
+		`"event_id": "evt_123"`,
+		`"run_id": "run_456"`,
+		`"session_key": "cli:conv:1"`,
+		`"model": "gpt-5.4"`,
+		`"detail": "hello world"`,
 	})
 	if strings.Contains(line, `"module"`) {
 		t.Fatalf("unexpected module field=%q", line)
@@ -84,12 +84,12 @@ func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
 	})
 
 	line := firstNonEmptyLine(out)
-	if !strings.Contains(line, " plain message") {
+	if !strings.Contains(line, "plain message") {
 		t.Fatalf("msg=%q", line)
 	}
 }
 
-func TestCorrelationFieldsFollowCanonicalOrder(t *testing.T) {
+func TestCorrelationFieldsAppearInConsoleContext(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
@@ -113,19 +113,19 @@ func TestCorrelationFieldsFollowCanonicalOrder(t *testing.T) {
 	})
 
 	line := firstNonEmptyLine(out)
-	assertFieldSequence(t, line, []string{
-		"event_id=evt_123",
-		"run_id=run_456",
-		"session_key=cli:conv:1",
-		"session_id=ses_999",
-		"payload_type=message",
-		"outbox_id=out_789",
-		"job_id=job_654",
-		"worker=delivery_poll",
-		"tool_call_id=call_321",
-		"tool_name=web_search",
-		"provider=openai",
-		"model=gpt-5.4",
+	assertContainsAll(t, line, []string{
+		`"event_id": "evt_123"`,
+		`"run_id": "run_456"`,
+		`"session_key": "cli:conv:1"`,
+		`"session_id": "ses_999"`,
+		`"payload_type": "message"`,
+		`"outbox_id": "out_789"`,
+		`"job_id": "job_654"`,
+		`"worker": "delivery_poll"`,
+		`"tool_call_id": "call_321"`,
+		`"tool_name": "web_search"`,
+		`"provider": "openai"`,
+		`"model": "gpt-5.4"`,
 	})
 }
 
@@ -140,10 +140,10 @@ func TestNilLoggerWithDoesNotPanic(t *testing.T) {
 	})
 
 	line := firstNonEmptyLine(out)
-	if !strings.Contains(line, " plain message") {
+	if !strings.Contains(line, "plain message") {
 		t.Fatalf("msg=%q", line)
 	}
-	if !strings.Contains(line, " key=value") {
+	if !strings.Contains(line, `"key": "value"`) {
 		t.Fatalf("key fields=%q", line)
 	}
 }
@@ -181,19 +181,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	return out
 }
 
-func assertFieldSequence(t *testing.T, line string, fields []string) {
+func assertContainsAll(t *testing.T, line string, fields []string) {
 	t.Helper()
 
-	lastIndex := -1
 	for _, field := range fields {
-		idx := strings.Index(line, field)
-		if idx < 0 {
+		if !strings.Contains(line, field) {
 			t.Fatalf("missing field %q in %q", field, line)
 		}
-		if idx <= lastIndex {
-			t.Fatalf("field %q out of order in %q", field, line)
-		}
-		lastIndex = idx
 	}
 }
 

@@ -1,42 +1,20 @@
 package logging
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
-	"sort"
-	"strconv"
 	"strings"
-	"time"
-	"unicode"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/term"
 )
 
 const (
 	defaultLogLevel = "info"
-)
-
-var (
-	logBufferPool = buffer.NewPool()
-	fieldOrder    = map[string]int{
-		"event_id":     0,
-		"run_id":       1,
-		"session_key":  2,
-		"session_id":   3,
-		"payload_type": 4,
-		"outbox_id":    5,
-		"job_id":       6,
-		"worker":       7,
-		"tool_call_id": 8,
-		"tool_name":    9,
-		"provider":     10,
-		"model":        11,
-	}
 )
 
 type Field struct {
@@ -93,7 +71,7 @@ func ParseLevel(raw string) (zapcore.Level, error) {
 	}
 }
 
-// Init 初始化全局 logger，输出固定为 console 文本到 stdout。
+// Init 初始化全局 logger，输出为 zap console/development 风格文本到 stdout。
 func Init(level string) error {
 	if strings.TrimSpace(level) == "" {
 		level = defaultLogLevel
@@ -152,25 +130,12 @@ func newLogger(level string, sink zapcore.WriteSyncer) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "ts",
-		LevelKey:       "level",
-		NameKey:        "",
-		CallerKey:      "caller",
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     encodeOffsetTime,
-		EncodeDuration: zapcore.StringDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
+	encoderConfig := zap.NewDevelopmentEncoderConfig()
+	if shouldColorizeConsole() {
+		encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	}
-	core := zapcore.NewCore(newHumanReadableEncoder(encoderConfig), sink, parsed)
+	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), sink, parsed)
 	return zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)), nil
-}
-
-func encodeOffsetTime(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(t.Local().Format("2006-01-02T15:04:05.000-0700"))
 }
 
 func (l *Logger) unwrap() *zap.Logger {
@@ -228,7 +193,6 @@ func collectLeafErrors(err error) []error {
 	for len(stack) > 0 {
 		processed++
 		if processed > maxTraverseNodes {
-			// Traversal guard for malformed cyclic error chains.
 			return nil
 		}
 
@@ -298,178 +262,62 @@ func isIgnorableSyncErrorMessage(err error) bool {
 		strings.Contains(msg, "bad file descriptor")
 }
 
-type humanReadableEncoder struct {
-	cfg zapcore.EncoderConfig
-	*zapcore.MapObjectEncoder
+func shouldColorizeConsole() bool {
+	executablePath, _ := os.Executable()
+	inputs := colorizeConsoleInputs{
+		forceColor:         envBool("SIMICLAW_FORCE_COLOR"),
+		noColor:            envBool("SIMICLAW_NO_COLOR"),
+		stdoutTTY:          term.IsTerminal(int(os.Stdout.Fd())),
+		stderrTTY:          term.IsTerminal(int(os.Stderr.Fd())),
+		jetbrainsRunBinary: looksLikeJetBrainsRunBinary(executablePath),
+		runningTests:       flag.Lookup("test.v") != nil,
+	}
+	return shouldColorizeConsoleFor(inputs)
 }
 
-func newHumanReadableEncoder(cfg zapcore.EncoderConfig) zapcore.Encoder {
-	return &humanReadableEncoder{
-		cfg:              cfg,
-		MapObjectEncoder: zapcore.NewMapObjectEncoder(),
-	}
+type colorizeConsoleInputs struct {
+	forceColor         bool
+	noColor            bool
+	stdoutTTY          bool
+	stderrTTY          bool
+	jetbrainsRunBinary bool
+	runningTests       bool
 }
 
-func (e *humanReadableEncoder) Clone() zapcore.Encoder {
-	clone := zapcore.NewMapObjectEncoder()
-	for key, value := range e.Fields {
-		clone.Fields[key] = value
+func shouldColorizeConsoleFor(inputs colorizeConsoleInputs) bool {
+	if inputs.forceColor {
+		return true
 	}
-	return &humanReadableEncoder{
-		cfg:              e.cfg,
-		MapObjectEncoder: clone,
+	if inputs.noColor {
+		return false
 	}
+	if inputs.stdoutTTY || inputs.stderrTTY {
+		return true
+	}
+	if inputs.runningTests {
+		return false
+	}
+	return inputs.jetbrainsRunBinary
 }
 
-func (e *humanReadableEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
-	clone := e.Clone().(*humanReadableEncoder)
-	for i := range fields {
-		fields[i].AddTo(clone)
+func looksLikeJetBrainsRunBinary(executablePath string) bool {
+	normalized := strings.TrimSpace(filepath.ToSlash(executablePath))
+	if normalized == "" {
+		return false
 	}
-
-	buf := logBufferPool.Get()
-	appendEntryPrefix(buf, entry)
-	appendRenderedFields(buf, clone.Fields)
-	if entry.Stack != "" {
-		appendRenderedField(buf, "stacktrace", entry.Stack)
-	}
-	lineEnding := e.cfg.LineEnding
-	if lineEnding == "" {
-		lineEnding = zapcore.DefaultLineEnding
-	}
-	buf.AppendString(lineEnding)
-	return buf, nil
+	return strings.Contains(normalized, "/JetBrains/") &&
+		(strings.Contains(normalized, "/tmp/GoLand/") || strings.Contains(normalized, "/tmp/IntelliJIdea/"))
 }
 
-func appendEntryPrefix(buf *buffer.Buffer, entry zapcore.Entry) {
-	buf.AppendString(entry.Time.Local().Format("2006-01-02T15:04:05.000-0700"))
-	buf.AppendByte(' ')
-	buf.AppendString(strings.ToUpper(entry.Level.String()))
-	if entry.Caller.Defined {
-		buf.AppendByte(' ')
-		buf.AppendString(entry.Caller.TrimmedPath())
-	}
-	if entry.Message != "" {
-		buf.AppendByte(' ')
-		buf.AppendString(entry.Message)
-	}
-}
-
-func appendRenderedFields(buf *buffer.Buffer, fields map[string]any) {
-	if len(fields) == 0 {
-		return
-	}
-	keys := make([]string, 0, len(fields))
-	for key := range fields {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		leftRank := fieldRank(keys[i])
-		rightRank := fieldRank(keys[j])
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		return keys[i] < keys[j]
-	})
-	for _, key := range keys {
-		appendRenderedField(buf, key, fields[key])
-	}
-}
-
-func fieldRank(key string) int {
-	if rank, ok := fieldOrder[key]; ok {
-		return rank
-	}
-	return len(fieldOrder) + 1
-}
-
-func appendRenderedField(buf *buffer.Buffer, key string, value any) {
-	if key == "" {
-		return
-	}
-	buf.AppendByte(' ')
-	buf.AppendString(key)
-	buf.AppendByte('=')
-	buf.AppendString(renderFieldValue(value))
-}
-
-func renderFieldValue(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return "null"
-	case string:
-		return renderStringValue(v)
-	case []byte:
-		return renderStringValue(base64.StdEncoding.EncodeToString(v))
-	case bool:
-		if v {
-			return "true"
-		}
-		return "false"
-	case error:
-		return renderStringValue(v.Error())
-	case time.Time:
-		return renderStringValue(v.UTC().Format(time.RFC3339Nano))
-	case time.Duration:
-		return renderStringValue(v.String())
-	case fmt.Stringer:
-		return renderStringValue(v.String())
-	case int:
-		return strconv.Itoa(v)
-	case int8:
-		return strconv.FormatInt(int64(v), 10)
-	case int16:
-		return strconv.FormatInt(int64(v), 10)
-	case int32:
-		return strconv.FormatInt(int64(v), 10)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case uint:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint8:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint16:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint32:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint64:
-		return strconv.FormatUint(v, 10)
-	case uintptr:
-		return strconv.FormatUint(uint64(v), 10)
-	case float32:
-		return strconv.FormatFloat(float64(v), 'f', -1, 32)
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case complex64, complex128:
-		return renderStringValue(fmt.Sprint(v))
-	}
-
-	if data, err := json.Marshal(value); err == nil {
-		return renderStringValue(string(data))
-	}
-	return renderStringValue(fmt.Sprint(value))
-}
-
-func renderStringValue(value string) string {
+func envBool(key string) bool {
+	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
-		return `""`
+		return false
 	}
-	if needsQuotes(value) {
-		return strconv.Quote(value)
+	switch strings.ToLower(value) {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
 	}
-	return value
-}
-
-func needsQuotes(value string) bool {
-	for _, r := range value {
-		switch {
-		case unicode.IsLetter(r), unicode.IsNumber(r):
-			continue
-		case strings.ContainsRune("-._:/@+%", r):
-			continue
-		default:
-			return true
-		}
-	}
-	return false
 }

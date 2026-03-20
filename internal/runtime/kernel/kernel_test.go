@@ -216,13 +216,19 @@ func TestServiceProcessLogsLifecycleMilestones(t *testing.T) {
 
 	assertOutputContainsInOrder(t, out,
 		"[runtime.kernel] claim succeeded",
-		"event_id=evt_log",
-		"run_mode=NORMAL",
 		"[runtime.kernel] execution started",
 		"[runtime.kernel] finalize started",
 		"[runtime.kernel] completed",
-		"status=processed",
 	)
+	for _, part := range []string{
+		`"event_id": "evt_log"`,
+		`"run_mode": "NORMAL"`,
+		`"status": "processed"`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("missing %q in %q", part, out)
+		}
+	}
 }
 
 type stubFacts struct {

@@ -122,15 +122,19 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 	if !strings.Contains(line, "[gateway] ingest accepted") {
 		t.Fatalf("unexpected log line: %q", line)
 	}
-	logcapture.AssertContainsInOrder(t, line,
-		"event_id=evt_ok",
-		"session_key=local:dm:u1",
-		"session_id=ses_ok",
-		"payload_type=message",
-		"channel=dm",
-		"duplicate=false",
-		"enqueued=true",
-	)
+	for _, part := range []string{
+		`"event_id": "evt_ok"`,
+		`"session_key": "local:dm:u1"`,
+		`"session_id": "ses_ok"`,
+		`"payload_type": "message"`,
+		`"channel": "dm"`,
+		`"duplicate": false`,
+		`"enqueued": true`,
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("missing %q in %q", part, line)
+		}
+	}
 }
 
 func TestAcceptLogsAcceptedButNotEnqueued(t *testing.T) {
@@ -160,7 +164,7 @@ func TestAcceptLogsAcceptedButNotEnqueued(t *testing.T) {
 	if !strings.Contains(out, "[gateway] ingest accepted but not enqueued") {
 		t.Fatalf("unexpected log output: %q", out)
 	}
-	if !strings.Contains(out, "event_id=evt_deferred") || !strings.Contains(out, "enqueued=false") {
+	if !strings.Contains(out, `"event_id": "evt_deferred"`) || !strings.Contains(out, `"enqueued": false`) {
 		t.Fatalf("missing enqueue summary in %q", out)
 	}
 }
