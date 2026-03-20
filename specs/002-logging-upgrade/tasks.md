@@ -17,8 +17,8 @@
 
 **Purpose**: 先把 canonical log line 的测试基线立住，避免后续各链路补点时输出形状漂移
 
-- [ ] T001 [P] 在 `pkg/logging/logger_test.go` 中重写 console 输出断言，固定目标单行格式、`[module] message` 风格和字段区 `key=value` 形状
-- [ ] T002 [P] 在 `pkg/logging/logger_internal_test.go` 中补特殊字符、错误字段、空字段和 `Sync` 行为的内部断言，作为全 feature 的共享 guardrail
+- [X] T001 [P] 在 `pkg/logging/logger_test.go` 中重写 console 输出断言，固定目标单行格式、`[module] message` 风格和字段区 `key=value` 形状
+- [X] T002 [P] 在 `pkg/logging/logger_internal_test.go` 中补特殊字符、错误字段、空字段和 `Sync` 行为的内部断言，作为全 feature 的共享 guardrail
 
 ---
 
@@ -28,10 +28,10 @@
 
 **⚠️ CRITICAL**: 本阶段完成前，不应进入任何用户故事实现
 
-- [ ] T003 在 `pkg/logging/logger.go` 中把 console encoder 输出改为人类可读的单行 `key=value` 字段格式，同时保留 timestamp、level、caller 和 `[module] message`
-- [ ] T004 在 `pkg/logging/logger.go` 中收敛字段转义、稳定顺序、错误字段与空值输出策略，不改变 `Init`、`ParseLevel`、`L(module)`、`With`、`Sync` 的现有 API
-- [ ] T005 在 `pkg/logging/logger.go` 与 `pkg/logging/logger_test.go` 中定义并固定 canonical correlation field contract，统一 `event_id`、`run_id`、`session_key`、`payload_type`、`outbox_id`、`job_id`、`worker`、`tool_call_id`、`tool_name`、`provider`、`model` 等共享字段命名与展示顺序
-- [ ] T006 运行 `go test ./pkg/logging/...`，修正 logger 核心回归，作为所有故事的阻塞前置
+- [X] T003 在 `pkg/logging/logger.go` 中把 console encoder 输出改为人类可读的单行 `key=value` 字段格式，同时保留 timestamp、level、caller 和 `[module] message`
+- [X] T004 在 `pkg/logging/logger.go` 中收敛字段转义、稳定顺序、错误字段与空值输出策略，不改变 `Init`、`ParseLevel`、`L(module)`、`With`、`Sync` 的现有 API
+- [X] T005 在 `pkg/logging/logger.go` 与 `pkg/logging/logger_test.go` 中定义并固定 canonical correlation field contract，统一 `event_id`、`run_id`、`session_key`、`payload_type`、`outbox_id`、`job_id`、`worker`、`tool_call_id`、`tool_name`、`provider`、`model` 等共享字段命名与展示顺序
+- [X] T006 运行 `go test ./pkg/logging/...`，修正 logger 核心回归，作为所有故事的阻塞前置
 
 **Checkpoint**: canonical line shape 已固定，后续链路补点可以在统一输出契约上推进
 
@@ -45,18 +45,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] 在 `internal/http/middleware/api_key_test.go` 和新增 `internal/http/ingest/handler_test.go` 中补 API key 拒绝、JSON decode 失败和写入口错误日志断言
-- [ ] T008 [P] [US1] 在 `internal/gateway/service_test.go`、`internal/runtime/kernel/kernel_test.go`、`internal/outbound/delivery/worker_test.go`、`cmd/simiclaw/internal/gateway/command_test.go` 与新增 `internal/bootstrap/app_test.go` 中补 persist/enqueue、claim/finalize、send/retry/dead-letter、启动失败路径的代表性日志断言
+- [X] T007 [P] [US1] 在 `internal/http/middleware/api_key_test.go` 和新增 `internal/http/ingest/handler_test.go` 中补 API key 拒绝、JSON decode 失败和写入口错误日志断言
+- [X] T008 [P] [US1] 在 `internal/gateway/service_test.go`、`internal/runtime/kernel/kernel_test.go`、`internal/outbound/delivery/worker_test.go`、`cmd/simiclaw/internal/gateway/command_test.go` 与新增 `internal/bootstrap/app_test.go` 中补 persist/enqueue、claim/finalize、send/retry/dead-letter、启动失败路径的代表性日志断言
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] 在 `cmd/simiclaw/internal/gateway/command.go` 补服务启动、启动入口失败透传和优雅停止边界日志
-- [ ] T010 [US1] 在 `internal/bootstrap/app.go` 补 DB open、provider factory、Telegram runtime 创建、supervisor start 与 `App.Start` 失败日志，覆盖 major subsystem startup failure owner
-- [ ] T011 [US1] 在 `internal/http/middleware/api_key.go`、`internal/http/ingest/handler.go`、`internal/http/stream/handler.go` 补 ingress 鉴权/解码/streaming unsupported 日志，并避免 keepalive/空轮询进入 `info`
-- [ ] T012 [US1] 在 `internal/gateway/service.go` 补 validate、binding、routing、rate limit、persist、duplicate、enqueue 里程碑日志，明确区分“已接受但未入队”和“已开始执行”
-- [ ] T013 [US1] 在 `internal/runtime/eventloop.go` 与 `internal/runtime/kernel/service.go` 补 enqueue、repump 摘要、claim、execute start、finalize start/complete/fail 里程碑日志，保持两阶段语义不变
-- [ ] T014 [US1] 在 `internal/outbound/delivery/worker.go` 统一 send failed、retry scheduled、dead-letter、sent 的字段集合、日志级别和关联 ID
-- [ ] T015 [US1] 运行 `go test ./internal/http/... ./internal/gateway/... ./internal/runtime/... ./internal/outbound/...` 与 `go test ./tests/architecture/... -v`，确认主链路日志补点没有破坏边界和行为
+- [X] T009 [US1] 在 `cmd/simiclaw/internal/gateway/command.go` 补服务启动、启动入口失败透传和优雅停止边界日志
+- [X] T010 [US1] 在 `internal/bootstrap/app.go` 补 DB open、provider factory、Telegram runtime 创建、supervisor start 与 `App.Start` 失败日志，覆盖 major subsystem startup failure owner
+- [X] T011 [US1] 在 `internal/http/middleware/api_key.go`、`internal/http/ingest/handler.go`、`internal/http/stream/handler.go` 补 ingress 鉴权/解码/streaming unsupported 日志，并避免 keepalive/空轮询进入 `info`
+- [X] T012 [US1] 在 `internal/gateway/service.go` 补 validate、binding、routing、rate limit、persist、duplicate、enqueue 里程碑日志，明确区分“已接受但未入队”和“已开始执行”
+- [X] T013 [US1] 在 `internal/runtime/eventloop.go` 与 `internal/runtime/kernel/service.go` 补 enqueue、repump 摘要、claim、execute start、finalize start/complete/fail 里程碑日志，保持两阶段语义不变
+- [X] T014 [US1] 在 `internal/outbound/delivery/worker.go` 统一 send failed、retry scheduled、dead-letter、sent 的字段集合、日志级别和关联 ID
+- [X] T015 [US1] 运行 `go test ./internal/http/... ./internal/gateway/... ./internal/runtime/... ./internal/outbound/...` 与 `go test ./tests/architecture/... -v`，确认主链路日志补点没有破坏边界和行为
 
 **Checkpoint**: User Story 1 完成后，正常 event 主链路已经具备可读文本日志和稳定关联字段，可作为本 feature 的 MVP 演示
 
@@ -70,15 +70,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] 在 `internal/runner/runner_test.go` 中补 payload plan、provider start/end/failure、tool rounds、tool deny/fail、terminal outcome 的代表性日志断言
-- [ ] T017 [P] [US2] 在 `internal/provider/openai_timeout_test.go` 与 `internal/provider/openai_stream_test.go` 中补 timeout/stream failure error surface 和“不泄漏 prompt 正文”的断言
+- [X] T016 [P] [US2] 在 `internal/runner/runner_test.go` 中补 payload plan、provider start/end/failure、tool rounds、tool deny/fail、terminal outcome 的代表性日志断言
+- [X] T017 [P] [US2] 在 `internal/provider/openai_timeout_test.go` 与 `internal/provider/openai_stream_test.go` 中补 timeout/stream failure error surface 和“不泄漏 prompt 正文”的断言
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] 在 `internal/runner/runner.go` 增加 payload plan、run mode、provider start/end/timeout/fail、finish reason、token usage、latency 和 terminal outcome 日志，并让 runner 成为 provider 终态日志 owner
-- [ ] T019 [P] [US2] 在 `internal/runner/tool_executor.go` 与 `internal/runner/display.go` 收敛 tool start/finish/deny/fail 的摘要日志、截断规则和敏感字段脱敏
-- [ ] T020 [US2] 在 `internal/provider/openai.go` 与 `internal/provider/openai_stream.go` 只保留必要的底层 transport / `debug` 诊断，确保不重复打印 terminal `ERROR`，也不打印 prompt 原文
-- [ ] T021 [US2] 运行 `go test ./internal/runner/... ./internal/provider/...` 与 `make test-unit`，确认事务外执行链路日志与现有行为保持一致
+- [X] T018 [US2] 在 `internal/runner/runner.go` 增加 payload plan、run mode、provider start/end/timeout/fail、finish reason、token usage、latency 和 terminal outcome 日志，并让 runner 成为 provider 终态日志 owner
+- [X] T019 [P] [US2] 在 `internal/runner/tool_executor.go` 与 `internal/runner/display.go` 收敛 tool start/finish/deny/fail 的摘要日志、截断规则和敏感字段脱敏
+- [X] T020 [US2] 在 `internal/provider/openai.go` 与 `internal/provider/openai_stream.go` 只保留必要的底层 transport / `debug` 诊断，确保不重复打印 terminal `ERROR`，也不打印 prompt 原文
+- [X] T021 [US2] 运行 `go test ./internal/runner/... ./internal/provider/...` 与 `make test-unit`，确认事务外执行链路日志与现有行为保持一致
 
 **Checkpoint**: User Story 2 完成后，runner/provider/tool 链路已能独立排障，不必依赖 trace 查询或断点调试才能定位主要失败点
 
@@ -92,15 +92,15 @@
 
 ### Tests for User Story 3
 
-- [ ] T022 [P] [US3] 在 `internal/runtime/workers_test.go` 中补 processing recovery、scheduled jobs 与 delivery worker 的数量、决策和失败摘要日志断言
-- [ ] T023 [P] [US3] 在 `internal/channels/telegram/runtime_test.go` 中补 Telegram handler/poller/heartbeat/ignored update 的字段和级别一致性断言
+- [X] T022 [P] [US3] 在 `internal/runtime/workers_test.go` 中补 processing recovery、scheduled jobs 与 delivery worker 的数量、决策和失败摘要日志断言
+- [X] T023 [P] [US3] 在 `internal/channels/telegram/runtime_test.go` 中补 Telegram handler/poller/heartbeat/ignored update 的字段和级别一致性断言
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] 在 `internal/runtime/workers/processing_recovery.go` 补 recovery 数量、requeue 结果和失败摘要日志，并把 idle 空转控制在 `debug`
-- [ ] T025 [P] [US3] 在 `internal/runtime/workers/scheduled_jobs.go` 补 claim、ingest、duplicate、enqueue、fail/retry job 日志，包含 `job_id`、job kind、`event_id`
-- [ ] T026 [P] [US3] 在 `internal/runtime/supervisor.go` 与 `internal/channels/telegram/runtime.go` 补 worker lifecycle、heartbeat 和 channel owner 日志，并统一字段名与级别语义
-- [ ] T027 [US3] 运行 `go test ./internal/runtime/... ./internal/channels/telegram/...` 与 `make test-unit`，确认后台 worker 与 channel 路径的日志补点稳定
+- [X] T024 [US3] 在 `internal/runtime/workers/processing_recovery.go` 补 recovery 数量、requeue 结果和失败摘要日志，并把 idle 空转控制在 `debug`
+- [X] T025 [P] [US3] 在 `internal/runtime/workers/scheduled_jobs.go` 补 claim、ingest、duplicate、enqueue、fail/retry job 日志，包含 `job_id`、job kind、`event_id`
+- [X] T026 [P] [US3] 在 `internal/runtime/supervisor.go` 与 `internal/channels/telegram/runtime.go` 补 worker lifecycle、heartbeat 和 channel owner 日志，并统一字段名与级别语义
+- [X] T027 [US3] 运行 `go test ./internal/runtime/... ./internal/channels/telegram/...` 与 `make test-unit`，确认后台 worker 与 channel 路径的日志补点稳定
 
 **Checkpoint**: User Story 3 完成后，后台 worker 和 Telegram runtime 已具备一致的可观测性，维护者可以区分 idle、recovery、retry 和故障
 
@@ -110,10 +110,10 @@
 
 **Purpose**: 收口文档、噪声控制与最终回归，确保 feature 的验证路径和仓库参考文档同步
 
-- [ ] T028 [P] 更新 `docs/references/configuration.md`、`docs/references/testing.md` 与 `specs/002-logging-upgrade/quickstart.md`，说明默认人类可读日志、验证命令和 `api_key` 场景注意事项
-- [ ] T029 [P] 复查 `internal/http/stream/handler.go`、`internal/runtime/workers/*.go`、`internal/provider/*.go` 中的 keepalive、空转和 transport 噪声，把非里程碑日志压回 `debug`
-- [ ] T030 运行 `make fmt`，修复本特性涉及文件的格式化问题
-- [ ] T031 运行 `go test ./tests/architecture/... -v`、`make test-unit`、`make accept-current`，并把最终验证结果同步回 `specs/002-logging-upgrade/quickstart.md`
+- [X] T028 [P] 更新 `docs/references/configuration.md`、`docs/references/testing.md` 与 `specs/002-logging-upgrade/quickstart.md`，说明默认人类可读日志、验证命令和 `api_key` 场景注意事项
+- [X] T029 [P] 复查 `internal/http/stream/handler.go`、`internal/runtime/workers/*.go`、`internal/provider/*.go` 中的 keepalive、空转和 transport 噪声，把非里程碑日志压回 `debug`
+- [X] T030 运行 `make fmt`，修复本特性涉及文件的格式化问题
+- [X] T031 运行 `go test ./tests/architecture/... -v`、`make test-unit`、`make accept-current`，并把最终验证结果同步回 `specs/002-logging-upgrade/quickstart.md`
 
 ---
 

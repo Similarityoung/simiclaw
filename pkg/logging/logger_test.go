@@ -89,6 +89,46 @@ func TestLoggerWithoutModuleDoesNotPrefixMessage(t *testing.T) {
 	}
 }
 
+func TestCorrelationFieldsFollowCanonicalOrder(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		logging.L("runtime.kernel").Info(
+			"completed",
+			logging.String("model", "gpt-5.4"),
+			logging.String("tool_name", "web_search"),
+			logging.String("event_id", "evt_123"),
+			logging.String("provider", "openai"),
+			logging.String("session_key", "cli:conv:1"),
+			logging.String("run_id", "run_456"),
+			logging.String("payload_type", "message"),
+			logging.String("outbox_id", "out_789"),
+			logging.String("tool_call_id", "call_321"),
+			logging.String("worker", "delivery_poll"),
+			logging.String("session_id", "ses_999"),
+			logging.String("job_id", "job_654"),
+		)
+		logging.Sync()
+	})
+
+	line := firstNonEmptyLine(out)
+	assertFieldSequence(t, line, []string{
+		"event_id=evt_123",
+		"run_id=run_456",
+		"session_key=cli:conv:1",
+		"session_id=ses_999",
+		"payload_type=message",
+		"outbox_id=out_789",
+		"job_id=job_654",
+		"worker=delivery_poll",
+		"tool_call_id=call_321",
+		"tool_name=web_search",
+		"provider=openai",
+		"model=gpt-5.4",
+	})
+}
+
 func TestNilLoggerWithDoesNotPanic(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {

@@ -45,6 +45,7 @@ func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (C
 
 	resp, err := p.client.Chat.Completions.New(ctx, params, p.requestTimeoutOption()...)
 	if err != nil {
+		logTransportDebug(p.name, req.Model, "chat transport failed", p.requestTimeout, err)
 		return ChatResult{}, err
 	}
 	if len(resp.Choices) == 0 {
@@ -61,7 +62,9 @@ func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatReque
 	for stream.Next() {
 		chunk := stream.Current()
 		if !acc.AddChunk(chunk) {
-			return ChatResult{}, errors.New("openai-compatible provider returned inconsistent streaming chunks")
+			err := errors.New("openai-compatible provider returned inconsistent streaming chunks")
+			logTransportDebug(p.name, req.Model, "stream chunk rejected", p.requestTimeout, err)
+			return ChatResult{}, err
 		}
 		toolAcc.AddChunk(chunk)
 		if sink != nil {
@@ -76,9 +79,15 @@ func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatReque
 		}
 	}
 	if err := stream.Err(); err != nil {
+		logTransportDebug(p.name, req.Model, "stream transport failed", p.requestTimeout, err)
 		return ChatResult{}, err
 	}
-	return chatResultFromAccumulator(p.name, &acc, toolAcc)
+	result, err := chatResultFromAccumulator(p.name, &acc, toolAcc)
+	if err != nil {
+		logTransportDebug(p.name, req.Model, "stream accumulator failed", p.requestTimeout, err)
+		return ChatResult{}, err
+	}
+	return result, nil
 }
 
 func (p *openAICompatibleProvider) requestTimeoutOption() []option.RequestOption {

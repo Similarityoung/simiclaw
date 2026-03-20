@@ -71,4 +71,10 @@ make test-unit
 make accept-current
 ```
 
-当前实现已经通过上述验证命令。
+## 6. 最近一次验证记录
+
+- `2026-03-20`: `make fmt` 通过
+- `2026-03-20`: `go test ./pkg/logging/...` 通过
+- `2026-03-20`: `go test ./tests/architecture/... -v` 通过
+- `2026-03-20`: `make test-unit` 通过
+- `2026-03-20`: `make accept-current` 通过

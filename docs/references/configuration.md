@@ -41,6 +41,7 @@
 - `log_level=info` 主要用于启动、ingest、runtime、finalize、outbound 等里程碑日志；`debug` 才允许暴露更高频的内部调度细节。
 - HTTP 鉴权失败、参数校验失败、rate limit、duplicate、queue 未入队等拒绝或降级路径会按语义落到 `warn` 或 `info`，不会统一抬升成 `error`。
 - 日志不会直接打印 API key、Bearer token、Telegram token；大型或复杂字段会被转成可读摘要或转义后的单值。
+- `runner` / `runner.tool` / `runtime.worker` 等 owner 会补充 `provider`、`model`、`tool_name`、`worker` 等上下文；tool 参数与结果默认只输出摘要字段，不直接打印原始大对象。
 
 ## 服务端环境变量
 

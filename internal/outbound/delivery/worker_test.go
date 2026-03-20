@@ -136,3 +136,37 @@ func TestWorkerLogsRetryScheduled(t *testing.T) {
 		t.Fatalf("missing correlation fields in %q", out)
 	}
 }
+
+func TestWorkerLogsDeadLetter(t *testing.T) {
+	repo := &workerRepoStub{
+		claimOK: true,
+		claimed: runtimemodel.ClaimedOutbox{
+			OutboxID:     "out_dead",
+			EventID:      "evt_dead",
+			SessionKey:   "session:dead",
+			Channel:      "telegram",
+			TargetID:     "99",
+			AttemptCount: 5,
+		},
+	}
+
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		worker := NewWorker(repo, senderStub{err: errors.New("telegram rejected")})
+		worker.now = func() time.Time { return time.Date(2026, 3, 20, 8, 2, 0, 0, time.UTC) }
+		worker.tick(context.Background())
+		_ = logging.Sync()
+	})
+
+	if repo.failed != 1 || !repo.lastDead {
+		t.Fatalf("expected dead-letter failure record, got failed=%d dead=%v", repo.failed, repo.lastDead)
+	}
+	if !strings.Contains(out, "[outbound.delivery] dead-lettered") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if !strings.Contains(out, "event_id=evt_dead") || !strings.Contains(out, "dead=true") {
+		t.Fatalf("missing dead-letter summary in %q", out)
+	}
+}

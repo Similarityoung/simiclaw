@@ -46,6 +46,10 @@ type fakeQueue struct{}
 
 func (fakeQueue) TryEnqueue(string) bool { return true }
 
+type rejectQueue struct{}
+
+func (rejectQueue) TryEnqueue(string) bool { return false }
+
 func TestAcceptReturnsDuplicateAck(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &fakeRepo{
@@ -127,6 +131,38 @@ func TestAcceptReturnsAcceptedResponse(t *testing.T) {
 		"duplicate=false",
 		"enqueued=true",
 	)
+}
+
+func TestAcceptLogsAcceptedButNotEnqueued(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepo{
+		result: PersistResult{
+			EventID:     "evt_deferred",
+			SessionKey:  "local:dm:u1",
+			SessionID:   "ses_deferred",
+			ReceivedAt:  now,
+			PayloadHash: "sha256:test",
+		},
+	}
+	svc := newGatewayServiceForTest(repo, rejectQueue{}, now)
+
+	out := logcapture.CaptureStdout(t, func() {
+		if err := logging.Init("info"); err != nil {
+			t.Fatalf("Init error: %v", err)
+		}
+		_, apiErr := svc.Accept(context.Background(), validGatewayIngress(now))
+		if apiErr != nil {
+			t.Fatalf("Accept apiErr=%+v", apiErr)
+		}
+		_ = logging.Sync()
+	})
+
+	if !strings.Contains(out, "[gateway] ingest accepted but not enqueued") {
+		t.Fatalf("unexpected log output: %q", out)
+	}
+	if !strings.Contains(out, "event_id=evt_deferred") || !strings.Contains(out, "enqueued=false") {
+		t.Fatalf("missing enqueue summary in %q", out)
+	}
 }
 
 func TestAcceptUsesNewSessionPayloadOverride(t *testing.T) {

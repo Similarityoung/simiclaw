@@ -75,6 +75,7 @@ func (r *Runtime) Start() error {
 	if r.started {
 		return nil
 	}
+	r.logger.Info("telegram runtime starting")
 	ctx, cancel := context.WithCancel(context.Background())
 	bot, err := tele.NewBot(tele.Settings{
 		Token:       r.cfg.Token,
@@ -92,10 +93,12 @@ func (r *Runtime) Start() error {
 	})
 	if err != nil {
 		cancel()
+		r.logger.Error("telegram bot init failed", logging.Error(err))
 		return err
 	}
 	if err := bot.RemoveWebhook(false); err != nil {
 		cancel()
+		r.logger.Error("telegram webhook cleanup failed", logging.Error(err))
 		return err
 	}
 	bot.Handle(tele.OnText, func(c tele.Context) error {
@@ -113,6 +116,7 @@ func (r *Runtime) Start() error {
 	r.wg.Add(2)
 	go r.runBot(bot)
 	go r.runHeartbeat(ctx)
+	r.logger.Info("telegram runtime started")
 	return nil
 }
 
@@ -129,6 +133,7 @@ func (r *Runtime) Stop() {
 	r.cancel = nil
 	r.mu.Unlock()
 
+	r.logger.Info("telegram runtime stopping")
 	if cancel != nil {
 		cancel()
 	}
@@ -136,6 +141,7 @@ func (r *Runtime) Stop() {
 		bot.Stop()
 	}
 	r.wg.Wait()
+	r.logger.Info("telegram runtime stopped")
 }
 
 func (r *Runtime) SendTextMessage(ctx context.Context, chatID int64, text string) error {
@@ -167,7 +173,7 @@ func (r *Runtime) handleText(c tele.Context) error {
 		r.logger.Warn("telegram normalize failed", logging.Error(err), logging.Int("update_id", c.Update().ID))
 		return nil
 	}
-	_, apiErr := r.gateway.Accept(r.ctx, req)
+	accepted, apiErr := r.gateway.Accept(r.ctx, req)
 	if apiErr != nil {
 		r.logger.Warn("telegram ingest rejected",
 			logging.Int("update_id", c.Update().ID),
@@ -176,6 +182,25 @@ func (r *Runtime) handleText(c tele.Context) error {
 			logging.String("message", apiErr.Message),
 		)
 		return nil
+	}
+	fields := []logging.Field{
+		logging.Int("update_id", c.Update().ID),
+		logging.String("event_id", accepted.Result.EventID),
+		logging.String("session_key", accepted.Result.SessionKey),
+		logging.String("session_id", accepted.Result.SessionID),
+		logging.String("conversation_id", req.Conversation.ConversationID),
+		logging.String("participant_id", req.Conversation.ParticipantID),
+		logging.String("idempotency_key", req.IdempotencyKey),
+		logging.Bool("duplicate", accepted.Result.Duplicate),
+		logging.Bool("enqueued", accepted.Result.Enqueued),
+	}
+	switch {
+	case accepted.Result.Duplicate:
+		r.logger.Info("telegram ingest duplicate", fields...)
+	case accepted.Result.Enqueued:
+		r.logger.Info("telegram ingest accepted", fields...)
+	default:
+		r.logger.Warn("telegram ingest accepted but not enqueued", fields...)
 	}
 	return nil
 }

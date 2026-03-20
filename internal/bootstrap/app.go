@@ -2,6 +2,8 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -35,6 +37,8 @@ type App struct {
 	StreamHub  *runtimeevents.Hub
 	Handler    http.Handler
 }
+
+var ErrStartup = errors.New("bootstrap startup failed")
 
 func NewApp(cfg config.Config) (*App, error) {
 	logger := logging.L("bootstrap").With(
@@ -115,13 +119,13 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Info("telegram runtime starting")
 		if err := a.Telegram.Start(); err != nil {
 			logger.Error("telegram runtime start failed", logging.Error(err))
-			return err
+			return fmt.Errorf("%w: %w", ErrStartup, err)
 		}
 		logger.Info("telegram runtime started")
 	}
 	if err := a.Supervisor.Start(ctx); err != nil {
 		logger.Error("runtime supervisor start failed", logging.Error(err))
-		return err
+		return fmt.Errorf("%w: %w", ErrStartup, err)
 	}
 	logger.Info("runtime supervisor started")
 	return nil

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
+	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
 
 const (
@@ -25,10 +26,11 @@ type ProcessingRecoveryRepository interface {
 
 // ProcessingRecoveryWorker 定义了一个工作者，用于定期检查和恢复过期的处理事件。它依赖于一个存储库来管理心跳和恢复逻辑，以及一个事件入队器来重新加入处理队列。
 type ProcessingRecoveryWorker struct {
-	repo  ProcessingRecoveryRepository
-	queue EventEnqueuer
-	now   func() time.Time
-	role  kernel.WorkerRole
+	repo   ProcessingRecoveryRepository
+	queue  EventEnqueuer
+	now    func() time.Time
+	role   kernel.WorkerRole
+	logger *logging.Logger
 }
 
 func NewProcessingRecoveryWorker(repo ProcessingRecoveryRepository, queue EventEnqueuer) *ProcessingRecoveryWorker {
@@ -42,6 +44,7 @@ func NewProcessingRecoveryWorker(repo ProcessingRecoveryRepository, queue EventE
 			PollCadence:   processingSweepTick,
 			FailurePolicy: "continue on recover errors and requeue best-effort",
 		},
+		logger: logging.L("runtime.worker").With(logging.String("worker", "processing_recovery")),
 	}
 }
 
@@ -57,22 +60,39 @@ func (w *ProcessingRecoveryWorker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			now := w.now()
-			if w.repo != nil {
-				_ = w.repo.BeatHeartbeat(ctx, w.role.HeartbeatName, now)
-			}
-			if w.repo == nil {
-				continue
-			}
-			ids, err := w.repo.RecoverExpiredProcessing(ctx, now.Add(-processingLease), now)
-			if err != nil {
-				continue
-			}
-			for _, eventID := range ids {
-				if w.queue != nil {
-					w.queue.TryEnqueue(eventID)
-				}
-			}
+			w.tick(ctx, w.now())
 		}
 	}
+}
+
+func (w *ProcessingRecoveryWorker) tick(ctx context.Context, now time.Time) {
+	if w.repo != nil {
+		if err := w.repo.BeatHeartbeat(ctx, w.role.HeartbeatName, now); err != nil {
+			w.logger.Warn("recovery heartbeat failed", logging.Error(err))
+		}
+	}
+	if w.repo == nil {
+		return
+	}
+	ids, err := w.repo.RecoverExpiredProcessing(ctx, now.Add(-processingLease), now)
+	if err != nil {
+		w.logger.Warn("processing recovery failed", logging.Error(err))
+		return
+	}
+	if len(ids) == 0 {
+		w.logger.Debug("processing recovery idle")
+		return
+	}
+	enqueued := 0
+	for _, eventID := range ids {
+		if w.queue != nil && w.queue.TryEnqueue(eventID) {
+			enqueued++
+		}
+	}
+	w.logger.Info(
+		"processing recovered",
+		logging.Int("count", len(ids)),
+		logging.Int("enqueued", enqueued),
+		logging.Int("deferred", len(ids)-enqueued),
+	)
 }

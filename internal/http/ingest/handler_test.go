@@ -30,6 +30,9 @@ func TestHandleIngestLogsDecodeFailure(t *testing.T) {
 	if !strings.Contains(line, "[http.ingest] request decode failed") {
 		t.Fatalf("unexpected log line: %q", line)
 	}
+	if !strings.Contains(line, " WARN ") {
+		t.Fatalf("expected WARN level log, got %q", line)
+	}
 	logcapture.AssertContainsInOrder(t, line,
 		"error_code=INVALID_ARGUMENT",
 		"method=POST",
@@ -57,6 +60,9 @@ func TestHandleIngestLogsNormalizeFailure(t *testing.T) {
 	line := logcapture.FirstNonEmptyLine(t, out)
 	if !strings.Contains(line, "[http.ingest] request normalize failed") {
 		t.Fatalf("unexpected log line: %q", line)
+	}
+	if !strings.Contains(line, " WARN ") {
+		t.Fatalf("expected WARN level log, got %q", line)
 	}
 	logcapture.AssertContainsInOrder(t, line,
 		"error_code=INVALID_ARGUMENT",

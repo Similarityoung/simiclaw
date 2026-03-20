@@ -77,6 +77,9 @@ func run(opts Options) error {
 		return nil
 	}
 	if err != nil {
+		if !errors.Is(err, bootstrap.ErrStartup) {
+			logger.Error("simiclaw serve failed", logging.Error(err))
+		}
 		return err
 	}
 	logger.Info("simiclaw stopped")

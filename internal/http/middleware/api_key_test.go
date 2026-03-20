@@ -40,6 +40,9 @@ func TestWithAPIKeyRejectsMissingBearerToken(t *testing.T) {
 	if !strings.Contains(line, "[http.auth] api key rejected") {
 		t.Fatalf("unexpected log line: %q", line)
 	}
+	if !strings.Contains(line, " WARN ") {
+		t.Fatalf("expected WARN level log, got %q", line)
+	}
 	logcapture.AssertContainsInOrder(t, line,
 		"error_code=UNAUTHORIZED",
 		"method=GET",
