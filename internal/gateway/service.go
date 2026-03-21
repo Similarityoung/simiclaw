@@ -269,15 +269,11 @@ func (s *Service) Accept(ctx context.Context, in gatewaymodel.NormalizedIngress)
 			ReceivedAt:      result.ReceivedAt.Format(time.RFC3339Nano),
 			PayloadHash:     result.PayloadHash,
 			Status:          status,
-			StatusURL:       statusURLFor(result.EventID),
+			StatusURL:       "/v1/events/" + result.EventID,
 		},
 		Result:     result,
 		StatusCode: statusCode,
 	}, nil
-}
-
-func statusURLFor(eventID string) string {
-	return "/v1/events/" + eventID
 }
 
 func validateIngress(in gatewaymodel.NormalizedIngress, now time.Time) (time.Time, *APIError) {

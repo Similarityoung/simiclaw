@@ -13,21 +13,8 @@ type ClaimedEvent struct {
 	RunMode pkgmodel.RunMode
 }
 
-type WorkKind string
-
-const (
-	WorkKindEvent        WorkKind = "event"
-	WorkKindOutbox       WorkKind = "outbox"
-	WorkKindScheduledJob WorkKind = "scheduled_job"
-	WorkKindRecovery     WorkKind = "recovery"
-)
-
 type WorkItem struct {
-	Kind       WorkKind
-	Identity   string
 	EventID    string
-	OutboxID   string
-	JobID      string
 	SessionKey string
 	LaneKey    string
 	Source     string

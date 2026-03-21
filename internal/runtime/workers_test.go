@@ -244,7 +244,7 @@ func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
 	}
 
 	sink := newRuntimeEventStreamSink(context.Background(), runtimemodel.ClaimContext{
-		Work:       runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_stream", Identity: "evt_stream"},
+		Work:       runtimemodel.WorkItem{EventID: "evt_stream"},
 		Event:      model.InternalEvent{EventID: "evt_stream"},
 		RunID:      "run_stream",
 		SessionKey: "local:dm:u1",
@@ -305,9 +305,7 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 		t.Fatalf("MarkEventQueued stale: %v", err)
 	}
 	if _, ok, err := repo.ClaimWork(context.Background(), runtimemodel.WorkItem{
-		Kind:     runtimemodel.WorkKindEvent,
-		Identity: result.EventID,
-		EventID:  result.EventID,
+		EventID: result.EventID,
 	}, "run_stale", now.Add(-5*time.Minute)); err != nil || !ok {
 		t.Fatalf("ClaimWork stale ok=%v err=%v", ok, err)
 	}
@@ -442,7 +440,7 @@ func TestTelegramTargetIDValidation(t *testing.T) {
 
 func TestRuntimeEventStreamSinkHandlesNilHubAndEmptyDeltas(t *testing.T) {
 	sink := newRuntimeEventStreamSink(context.Background(), runtimemodel.ClaimContext{
-		Work:  runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_nil", Identity: "evt_nil"},
+		Work:  runtimemodel.WorkItem{EventID: "evt_nil"},
 		Event: model.InternalEvent{EventID: "evt_nil"},
 	}, nil)
 	sink.OnStatus("processing", "noop")

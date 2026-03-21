@@ -118,9 +118,7 @@ func (db *runtimeDB) ListRunnableEventIDs(ctx context.Context, limit int) ([]str
 
 func (db *runtimeDB) ClaimEvent(ctx context.Context, eventID, runID string, now time.Time) (ClaimedEvent, bool, error) {
 	claim, ok, err := db.runtime.ClaimWork(ctx, runtimemodel.WorkItem{
-		Kind:     runtimemodel.WorkKindEvent,
-		Identity: eventID,
-		EventID:  eventID,
+		EventID: eventID,
 	}, runID, now)
 	if err != nil || !ok {
 		return ClaimedEvent{}, ok, err

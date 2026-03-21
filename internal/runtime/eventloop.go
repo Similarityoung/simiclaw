@@ -70,11 +70,10 @@ func (l *EventLoop) IsAlive() bool {
 }
 
 func (l *EventLoop) TryEnqueue(eventID string) bool {
-	return l.tryEnqueueWork(newEventWorkItem(eventID))
+	return l.tryEnqueueWork(runtimemodel.WorkItem{EventID: eventID})
 }
 
 func (l *EventLoop) tryEnqueueWork(work runtimemodel.WorkItem) bool {
-	work = normalizeWorkItem(work)
 	logger := l.logger.With(workLogFields(work)...)
 	select {
 	case l.queue <- work:
@@ -142,7 +141,7 @@ func (l *EventLoop) repumpLoop() {
 func (l *EventLoop) processWork(work runtimemodel.WorkItem) {
 	ctx, cancel := context.WithTimeout(l.ctx, 2*time.Minute)
 	defer cancel()
-	work = l.prepareWorkForScheduling(ctx, normalizeWorkItem(work))
+	work = l.prepareWorkForScheduling(ctx, work)
 
 	if l.scheduler != nil {
 		lease, err := l.scheduler.Acquire(ctx, work)
@@ -156,20 +155,12 @@ func (l *EventLoop) processWork(work runtimemodel.WorkItem) {
 }
 
 func workLogFields(work runtimemodel.WorkItem) []logging.Field {
-	fields := []logging.Field{
-		logging.String("kind", string(work.Kind)),
-	}
+	fields := make([]logging.Field, 0, 3)
 	if work.EventID != "" {
 		fields = append(fields, logging.String("event_id", work.EventID))
 	}
 	if work.SessionKey != "" {
 		fields = append(fields, logging.String("session_key", work.SessionKey))
-	}
-	if work.OutboxID != "" {
-		fields = append(fields, logging.String("outbox_id", work.OutboxID))
-	}
-	if work.JobID != "" {
-		fields = append(fields, logging.String("job_id", work.JobID))
 	}
 	if work.LaneKey != "" {
 		fields = append(fields, logging.String("lane_key", work.LaneKey))
@@ -177,34 +168,10 @@ func workLogFields(work runtimemodel.WorkItem) []logging.Field {
 	return fields
 }
 
-func normalizeWorkItem(work runtimemodel.WorkItem) runtimemodel.WorkItem {
-	if work.Kind == "" {
-		work.Kind = runtimemodel.WorkKindEvent
-	}
-	if work.Identity == "" {
-		switch work.Kind {
-		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
-			work.Identity = work.EventID
-		case runtimemodel.WorkKindOutbox:
-			work.Identity = work.OutboxID
-		case runtimemodel.WorkKindScheduledJob:
-			work.Identity = work.JobID
-		}
-	}
-	return work
-}
-
 func (l *EventLoop) prepareWorkForScheduling(ctx context.Context, work runtimemodel.WorkItem) runtimemodel.WorkItem {
-	if work.SessionKey == "" && l.facts != nil {
-		switch work.Kind {
-		case runtimemodel.WorkKindEvent, runtimemodel.WorkKindRecovery:
-			eventID := work.EventID
-			if eventID == "" {
-				eventID = work.Identity
-			}
-			if rec, ok, err := l.facts.GetEventRecord(ctx, eventID); err == nil && ok {
-				work.SessionKey = rec.SessionKey
-			}
+	if work.SessionKey == "" && l.facts != nil && work.EventID != "" {
+		if rec, ok, err := l.facts.GetEventRecord(ctx, work.EventID); err == nil && ok {
+			work.SessionKey = rec.SessionKey
 		}
 	}
 	if work.LaneKey == "" {

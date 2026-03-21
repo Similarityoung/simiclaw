@@ -50,8 +50,6 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	if err != nil {
 		logging.L("runtime.kernel").Error("claim failed",
 			logging.String("event_id", work.EventID),
-			logging.String("job_id", work.JobID),
-			logging.String("outbox_id", work.OutboxID),
 			logging.Error(err),
 		)
 		return err

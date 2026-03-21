@@ -261,9 +261,7 @@ func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
 	defer loop.Stop()
 
 	loop.processWork(runtimemodel.WorkItem{
-		Kind:     runtimemodel.WorkKindEvent,
-		EventID:  "evt_lane",
-		Identity: "evt_lane",
+		EventID: "evt_lane",
 	})
 
 	if repo.claimedWork.SessionKey != "local:dm:u1" {
@@ -280,10 +278,10 @@ func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
 			t.Fatalf("Init error: %v", err)
 		}
 		loop := NewEventLoop(nil, nil, nil, 1)
-		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_1"}); !ok {
+		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{EventID: "evt_1"}); !ok {
 			t.Fatal("expected first enqueue to succeed")
 		}
-		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_2"}); ok {
+		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{EventID: "evt_2"}); ok {
 			t.Fatal("expected second enqueue to be deferred")
 		}
 		_ = logging.Sync()
@@ -322,14 +320,10 @@ func (r *stopPathFacts) ListRunnable(context.Context, int) ([]runtimemodel.WorkI
 }
 
 func (r *stopPathFacts) ClaimWork(_ context.Context, work runtimemodel.WorkItem, runID string, _ time.Time) (runtimemodel.ClaimContext, bool, error) {
-	eventID := work.EventID
-	if eventID == "" {
-		eventID = work.Identity
-	}
 	return runtimemodel.ClaimContext{
 		Work: work,
 		Event: model.InternalEvent{
-			EventID:         eventID,
+			EventID:         work.EventID,
 			Source:          "cli",
 			TenantID:        "local",
 			SessionKey:      "local:dm:u1",

@@ -11,7 +11,6 @@ import (
 func TestSchedulerSerializesSameLane(t *testing.T) {
 	scheduler := NewScheduler()
 	work := runtimemodel.WorkItem{
-		Kind:       runtimemodel.WorkKindEvent,
 		EventID:    "evt_1",
 		SessionKey: "local:dm:u1",
 	}
@@ -26,7 +25,6 @@ func TestSchedulerSerializesSameLane(t *testing.T) {
 	errs := make(chan error, 1)
 	go func() {
 		lease, err := scheduler.Acquire(context.Background(), runtimemodel.WorkItem{
-			Kind:       runtimemodel.WorkKindEvent,
 			EventID:    "evt_2",
 			SessionKey: "local:dm:u1",
 		})
@@ -63,7 +61,6 @@ func TestSchedulerSerializesSameLane(t *testing.T) {
 func TestSchedulerAllowsDifferentLanes(t *testing.T) {
 	scheduler := NewScheduler()
 	first, err := scheduler.Acquire(context.Background(), runtimemodel.WorkItem{
-		Kind:       runtimemodel.WorkKindEvent,
 		EventID:    "evt_1",
 		SessionKey: "local:dm:u1",
 	})
@@ -76,7 +73,6 @@ func TestSchedulerAllowsDifferentLanes(t *testing.T) {
 	errs := make(chan error, 1)
 	go func() {
 		lease, err := scheduler.Acquire(context.Background(), runtimemodel.WorkItem{
-			Kind:       runtimemodel.WorkKindEvent,
 			EventID:    "evt_2",
 			SessionKey: "local:dm:u2",
 		})
