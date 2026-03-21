@@ -70,7 +70,7 @@ func (l *EventLoop) IsAlive() bool {
 }
 
 func (l *EventLoop) TryEnqueue(eventID string) bool {
-	return l.tryEnqueueWork(newEventWorkItem(eventID))
+	return l.tryEnqueueWork(runtimemodel.WorkItem{EventID: eventID})
 }
 
 func (l *EventLoop) tryEnqueueWork(work runtimemodel.WorkItem) bool {
