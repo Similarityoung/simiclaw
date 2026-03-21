@@ -8,7 +8,6 @@ import (
 
 func TestResolvePrefersExplicitLaneKey(t *testing.T) {
 	work := runtimemodel.WorkItem{
-		Kind:       runtimemodel.WorkKindEvent,
 		EventID:    "evt_1",
 		SessionKey: "local:dm:u1",
 		LaneKey:    "lane:manual",
@@ -19,9 +18,8 @@ func TestResolvePrefersExplicitLaneKey(t *testing.T) {
 	}
 }
 
-func TestResolveUsesSessionKeyBeforeEventIdentity(t *testing.T) {
+func TestResolveUsesSessionKeyBeforeEventID(t *testing.T) {
 	work := runtimemodel.WorkItem{
-		Kind:       runtimemodel.WorkKindEvent,
 		EventID:    "evt_1",
 		SessionKey: "local:dm:u1",
 	}
@@ -31,39 +29,9 @@ func TestResolveUsesSessionKeyBeforeEventIdentity(t *testing.T) {
 	}
 }
 
-func TestResolveFallsBackByWorkKind(t *testing.T) {
-	cases := []struct {
-		name string
-		work runtimemodel.WorkItem
-		want Key
-	}{
-		{
-			name: "event",
-			work: runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_1"},
-			want: Key("event:evt_1"),
-		},
-		{
-			name: "outbox",
-			work: runtimemodel.WorkItem{Kind: runtimemodel.WorkKindOutbox, OutboxID: "out_1"},
-			want: Key("outbox:out_1"),
-		},
-		{
-			name: "scheduled job",
-			work: runtimemodel.WorkItem{Kind: runtimemodel.WorkKindScheduledJob, JobID: "job_1"},
-			want: Key("job:job_1"),
-		},
-		{
-			name: "recovery",
-			work: runtimemodel.WorkItem{Kind: runtimemodel.WorkKindRecovery, EventID: "evt_recover"},
-			want: Key("recovery:evt_recover"),
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := Resolve(tc.work); got != tc.want {
-				t.Fatalf("expected %q, got %q", tc.want, got)
-			}
-		})
+func TestResolveFallsBackToEventID(t *testing.T) {
+	work := runtimemodel.WorkItem{EventID: "evt_1"}
+	if got := Resolve(work); got != Key("event:evt_1") {
+		t.Fatalf("expected event lane key, got %q", got)
 	}
 }

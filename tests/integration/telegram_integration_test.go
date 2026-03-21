@@ -191,9 +191,7 @@ func TestTelegramPendingOutboxIsDeliveredOnStartup(t *testing.T) {
 		t.Fatalf("MarkEventQueued: %v", err)
 	}
 	claimed, ok, err := repo.ClaimWork(context.Background(), runtimemodel.WorkItem{
-		Kind:     runtimemodel.WorkKindEvent,
-		Identity: result.EventID,
-		EventID:  result.EventID,
+		EventID: result.EventID,
 	}, "run_seed_1", now)
 	if err != nil || !ok {
 		t.Fatalf("ClaimWork ok=%v err=%v", ok, err)

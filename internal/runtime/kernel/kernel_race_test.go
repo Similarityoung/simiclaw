@@ -35,9 +35,7 @@ func TestServiceProcessConcurrentCallsKeepIDsUnique(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			work := runtimemodel.WorkItem{
-				Kind:     runtimemodel.WorkKindEvent,
-				Identity: fmt.Sprintf("evt_%02d", i),
-				EventID:  fmt.Sprintf("evt_%02d", i),
+				EventID: fmt.Sprintf("evt_%02d", i),
 			}
 			if err := svc.Process(context.Background(), work); err != nil {
 				t.Errorf("Process(%s): %v", work.EventID, err)

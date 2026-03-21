@@ -17,7 +17,7 @@ import (
 
 func TestServiceProcessPublishesLifecycleAndFinalizesSuccess(t *testing.T) {
 	now := time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC)
-	work := runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, Identity: "evt_success", EventID: "evt_success"}
+	work := runtimemodel.WorkItem{EventID: "evt_success"}
 	facts := &stubFacts{
 		claimOK: true,
 		claimCtx: runtimemodel.ClaimContext{
@@ -99,7 +99,7 @@ func TestServiceProcessStopsWhenClaimRejected(t *testing.T) {
 	sink := &captureEventSink{}
 	svc := NewService(facts, executor, sink)
 
-	if err := svc.Process(context.Background(), runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, EventID: "evt_skip", Identity: "evt_skip"}); err != nil {
+	if err := svc.Process(context.Background(), runtimemodel.WorkItem{EventID: "evt_skip"}); err != nil {
 		t.Fatalf("Process: %v", err)
 	}
 	if got := executor.calls; got != 0 {
@@ -115,7 +115,7 @@ func TestServiceProcessStopsWhenClaimRejected(t *testing.T) {
 
 func TestServiceProcessRecoversExecutorPanicAsFailedFinalize(t *testing.T) {
 	now := time.Date(2026, 3, 18, 10, 1, 0, 0, time.UTC)
-	work := runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, Identity: "evt_panic", EventID: "evt_panic"}
+	work := runtimemodel.WorkItem{EventID: "evt_panic"}
 	facts := &stubFacts{
 		claimOK: true,
 		claimCtx: runtimemodel.ClaimContext{
@@ -153,7 +153,7 @@ func TestServiceProcessRecoversExecutorPanicAsFailedFinalize(t *testing.T) {
 
 func TestServiceProcessReturnsFinalizeError(t *testing.T) {
 	now := time.Date(2026, 3, 18, 10, 2, 0, 0, time.UTC)
-	work := runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, Identity: "evt_finalize_fail", EventID: "evt_finalize_fail"}
+	work := runtimemodel.WorkItem{EventID: "evt_finalize_fail"}
 	facts := &stubFacts{
 		claimOK: true,
 		claimCtx: runtimemodel.ClaimContext{
@@ -190,7 +190,7 @@ func TestServiceProcessReturnsFinalizeError(t *testing.T) {
 
 func TestServiceProcessLogsLifecycleMilestones(t *testing.T) {
 	now := time.Date(2026, 3, 18, 10, 3, 0, 0, time.UTC)
-	work := runtimemodel.WorkItem{Kind: runtimemodel.WorkKindEvent, Identity: "evt_log", EventID: "evt_log"}
+	work := runtimemodel.WorkItem{EventID: "evt_log"}
 	facts := &stubFacts{
 		claimOK: true,
 		claimCtx: runtimemodel.ClaimContext{
@@ -258,7 +258,7 @@ func (f *stubFacts) ClaimWork(_ context.Context, work runtimemodel.WorkItem, run
 	if claim.RunID == "" {
 		claim.RunID = runID
 	}
-	if claim.Work.Kind == "" && claim.Work.EventID == "" && claim.Work.Identity == "" {
+	if claim.Work.EventID == "" {
 		claim.Work = work
 	}
 	return claim, f.claimOK, f.claimErr

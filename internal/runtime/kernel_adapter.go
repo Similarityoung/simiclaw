@@ -100,8 +100,6 @@ func deliveryIntentForReply(event model.InternalEvent, reply string) (*runtimemo
 
 func newEventWorkItem(eventID string) runtimemodel.WorkItem {
 	return runtimemodel.WorkItem{
-		Kind:     runtimemodel.WorkKindEvent,
-		Identity: eventID,
-		EventID:  eventID,
+		EventID: eventID,
 	}
 }

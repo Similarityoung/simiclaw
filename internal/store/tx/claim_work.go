@@ -38,8 +38,6 @@ func (r *RuntimeRepository) ListRunnable(ctx context.Context, limit int) ([]runt
 			return nil, err
 		}
 		work := runtimemodel.WorkItem{
-			Kind:       runtimemodel.WorkKindEvent,
-			Identity:   id,
 			EventID:    id,
 			SessionKey: sessionKey,
 		}
@@ -53,21 +51,11 @@ func (r *RuntimeRepository) ListRunnable(ctx context.Context, limit int) ([]runt
 }
 
 func (r *RuntimeRepository) ClaimWork(ctx context.Context, work runtimemodel.WorkItem, runID string, now time.Time) (runtimemodel.ClaimContext, bool, error) {
-	eventID := work.EventID
-	if eventID == "" {
-		eventID = work.Identity
-	}
-	claimed, ok, err := r.claimEvent(ctx, eventID, runID, now)
+	claimed, ok, err := r.claimEvent(ctx, work.EventID, runID, now)
 	if err != nil || !ok {
 		return runtimemodel.ClaimContext{}, ok, err
 	}
 	claimedWork := work
-	if claimedWork.Kind == "" {
-		claimedWork.Kind = runtimemodel.WorkKindEvent
-	}
-	if claimedWork.Identity == "" {
-		claimedWork.Identity = claimed.Event.EventID
-	}
 	if claimedWork.EventID == "" {
 		claimedWork.EventID = claimed.Event.EventID
 	}
