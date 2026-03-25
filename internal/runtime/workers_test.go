@@ -110,16 +110,12 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	repo := storetx.NewRuntimeRepository(db)
 	ingestService := newGatewayIngestor("local", repo, db, queryRepo, queue)
 	ingestService.SetClock(func() time.Time { return now })
-	host := &HostControl{
-		workers: repo,
-		ingest:  ingestService,
-	}
 
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		runtimeworkers.RunScheduledKind(context.Background(), repo, ingestService, nil, model.ScheduledJobKindCron, now)
 		_ = logging.Sync()
 	})
 
@@ -190,17 +186,12 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
 	ingestService := newGatewayIngestor("local", repo, db, queryRepo, &rejectEnqueuer{})
 	ingestService.SetClock(func() time.Time { return now })
-	host := &HostControl{
-		workers: repo,
-		ingest:  ingestService,
-		host:    newWorkerHost(loop, nil, logging.L("runtime.host")),
-	}
 
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		runtimeworkers.RunScheduledKind(context.Background(), repo, ingestService, loop, model.ScheduledJobKindCron, now)
 		_ = logging.Sync()
 	})
 
@@ -237,7 +228,7 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 
 func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
 	hub := runtimeevents.NewHub()
-	sub := hub.Reserve("idem")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	if replay := hub.Attach(sub, "evt_stream"); len(replay) > 0 {
 		t.Fatalf("unexpected replay: %+v", replay)
@@ -270,9 +261,9 @@ func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
 		if event.Kind != want {
 			t.Fatalf("expected event kind %s, got %+v", want, event)
 		}
-	}
-	if nonZeroTime(time.Time{}).IsZero() {
-		t.Fatalf("expected nonZeroTime to synthesize timestamp")
+		if event.OccurredAt.IsZero() {
+			t.Fatalf("expected stream event %s to carry a timestamp", want)
+		}
 	}
 }
 
@@ -495,12 +486,11 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 	}
 
 	repo := storetx.NewRuntimeRepository(db)
-	host := &HostControl{workers: repo}
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		runtimeworkers.RunScheduledKind(context.Background(), repo, nil, nil, model.ScheduledJobKindCron, now)
 		_ = logging.Sync()
 	})
 

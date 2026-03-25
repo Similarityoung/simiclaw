@@ -32,12 +32,12 @@ func (f fakeGateway) Accept(context.Context, gatewaymodel.NormalizedIngress) (ga
 }
 
 type fakeObserver struct {
-	openKey string
-	sub     runtimeevents.StreamSubscription
+	opened bool
+	sub    runtimeevents.StreamSubscription
 }
 
-func (f *fakeObserver) Open(idempotencyKey string) runtimeevents.StreamSubscription {
-	f.openKey = idempotencyKey
+func (f *fakeObserver) Open() runtimeevents.StreamSubscription {
+	f.opened = true
 	return f.sub
 }
 
@@ -130,8 +130,8 @@ func TestHandleChatStreamReplaysTerminalEventFromObserveAttach(t *testing.T) {
 	if done.EventRecord == nil || done.EventRecord.AssistantReply != "done" {
 		t.Fatalf("unexpected terminal payload: %+v", done)
 	}
-	if observer.openKey != "cli:conv:1" {
-		t.Fatalf("expected observer to reserve by idempotency key, got %q", observer.openKey)
+	if !observer.opened {
+		t.Fatal("expected observer to open subscription")
 	}
 	if sub.attachedEventID != "evt_replay" {
 		t.Fatalf("expected observe attach event id evt_replay, got %q", sub.attachedEventID)

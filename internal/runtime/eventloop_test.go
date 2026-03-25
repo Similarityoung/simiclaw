@@ -64,7 +64,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	}
 
 	hub := runtimeevents.NewHub()
-	sub := hub.Reserve(req.IdempotencyKey)
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	if replay := hub.Attach(sub, result.EventID); len(replay) > 0 {
 		t.Fatalf("unexpected replay before processing: %+v", replay)

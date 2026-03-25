@@ -126,10 +126,3 @@ func (p runtimeEventPublisher) populateMetadata(event runtimemodel.RuntimeEvent)
 	}
 	return event
 }
-
-func nonZeroTime(in time.Time) time.Time {
-	if in.IsZero() {
-		return time.Now().UTC()
-	}
-	return in
-}

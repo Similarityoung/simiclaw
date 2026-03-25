@@ -16,7 +16,7 @@ type TerminalReplaySource interface {
 // StreamObserver is the runtime-owned observe seam consumed by surface stream
 // adapters.
 type StreamObserver interface {
-	Open(idempotencyKey string) StreamSubscription
+	Open() StreamSubscription
 }
 
 // StreamSubscription models one observer attached to a single event stream.
@@ -38,10 +38,10 @@ func NewObserver(hub *Hub, terminal TerminalReplaySource) *Observer {
 	return &Observer{hub: hub, terminal: terminal}
 }
 
-func (o *Observer) Open(idempotencyKey string) StreamSubscription {
+func (o *Observer) Open() StreamSubscription {
 	return &observerSubscription{
 		observer: o,
-		sub:      o.hub.Reserve(idempotencyKey),
+		sub:      o.hub.Reserve(),
 	}
 }
 

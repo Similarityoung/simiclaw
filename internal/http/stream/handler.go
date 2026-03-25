@@ -67,7 +67,7 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub := h.observe.Open(req.IdempotencyKey)
+	sub := h.observe.Open()
 	defer sub.Close()
 
 	accepted, apiErr := h.gateway.Accept(r.Context(), normalized)

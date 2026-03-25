@@ -135,10 +135,6 @@ func (c *HostControl) WorkerHeartbeatNames() []string {
 	return c.host.WorkerHeartbeatNames()
 }
 
-func (c *HostControl) runScheduledKind(ctx context.Context, now time.Time, kind model.ScheduledJobKind) {
-	runtimeworkers.RunScheduledKind(ctx, c.workers, c.ingest, c.host.Enqueuer(), kind, now)
-}
-
 func (h *workerHost) Start(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("runtime host requires a non-nil context")
@@ -208,13 +204,6 @@ func (h *workerHost) WorkerHeartbeatNames() []string {
 		names = append(names, heartbeat)
 	}
 	return names
-}
-
-func (h *workerHost) Enqueuer() runtimeworkers.EventEnqueuer {
-	if h == nil {
-		return nil
-	}
-	return h.loop
 }
 
 func (h *workerHost) runWorker(worker kernel.Worker) {

@@ -10,9 +10,9 @@ import (
 
 func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 	hub := NewHub()
-	sub1 := hub.Reserve("k1")
+	sub1 := hub.Reserve()
 	defer hub.Release(sub1)
-	sub2 := hub.Reserve("k2")
+	sub2 := hub.Reserve()
 	defer hub.Release(sub2)
 
 	if replay := hub.Attach(sub1, "evt_1"); len(replay) > 0 {
@@ -58,7 +58,7 @@ func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 		t.Fatalf("expected terminal sequence 2, got %d", terminal.Sequence)
 	}
 
-	sub := hub.Reserve("k3")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	replayed := hub.Attach(sub, "evt_2")
 	if len(replayed) != 1 {
@@ -88,7 +88,7 @@ func TestHubReplaysPreAttachHistoryInOrder(t *testing.T) {
 		OccurredAt: time.Now().UTC(),
 	})
 
-	sub := hub.Reserve("k4")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	replay := hub.Attach(sub, "evt_3")
 	if len(replay) != 2 {
@@ -109,7 +109,7 @@ func TestHubDropsQueueDroppableWhenSubscriberBufferIsFull(t *testing.T) {
 	hub := NewHub()
 	hub.maxQueued = 1
 
-	sub := hub.Reserve("k5")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	_ = hub.Attach(sub, "evt_qdrop")
 

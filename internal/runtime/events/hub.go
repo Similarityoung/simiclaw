@@ -15,9 +15,6 @@ const (
 )
 
 type Subscription struct {
-	id             uint64
-	idempotencyKey string
-
 	mu        sync.Mutex
 	pending   []queuedEvent
 	notify    chan struct{}
@@ -47,8 +44,6 @@ type eventState struct {
 type Hub struct {
 	mu                sync.Mutex
 	events            map[string]*eventState
-	reservations      map[*Subscription]struct{}
-	nextSubscription  uint64
 	terminalRetention time.Duration
 	maxQueued         int
 	maxReplay         int
@@ -57,26 +52,17 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		events:            make(map[string]*eventState),
-		reservations:      make(map[*Subscription]struct{}),
 		terminalRetention: defaultTerminalRetention,
 		maxQueued:         defaultSubscriptionBuffer,
 		maxReplay:         defaultReplayBuffer,
 	}
 }
 
-func (h *Hub) Reserve(idempotencyKey string) *Subscription {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.pruneLocked(time.Now().UTC())
-	h.nextSubscription++
-	sub := &Subscription{
-		id:             h.nextSubscription,
-		idempotencyKey: idempotencyKey,
-		notify:         make(chan struct{}, 1),
-		maxQueued:      h.maxQueued,
+func (h *Hub) Reserve() *Subscription {
+	return &Subscription{
+		notify:    make(chan struct{}, 1),
+		maxQueued: h.maxQueued,
 	}
-	h.reservations[sub] = struct{}{}
-	return sub
 }
 
 func (h *Hub) Release(sub *Subscription) {
@@ -85,7 +71,6 @@ func (h *Hub) Release(sub *Subscription) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.reservations, sub)
 	if sub.eventID != "" {
 		if state, ok := h.events[sub.eventID]; ok {
 			delete(state.subscribers, sub)
@@ -106,7 +91,6 @@ func (h *Hub) Attach(sub *Subscription, eventID string) []runtimemodel.RuntimeEv
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pruneLocked(now)
-	delete(h.reservations, sub)
 	state := h.ensureEventLocked(eventID, now)
 	sub.eventID = eventID
 	replay := state.replay()

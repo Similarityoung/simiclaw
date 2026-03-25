@@ -36,7 +36,7 @@ func TestObserverAttachFallsBackToTerminalReplaySource(t *testing.T) {
 		},
 	})
 
-	sub := observer.Open("idem-terminal")
+	sub := observer.Open()
 	defer sub.Close()
 
 	replay := sub.Attach(context.Background(), "evt_terminal")
