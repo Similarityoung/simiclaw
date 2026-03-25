@@ -8,6 +8,7 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -97,12 +98,12 @@ func (a *toolCallAccumulator) BuildToolCalls(choiceIndex int) ([]model.ToolCall,
 
 func chatResultFromAccumulator(providerName string, acc *openai.ChatCompletionAccumulator, toolAcc *toolCallAccumulator) (ChatResult, error) {
 	if acc == nil || len(acc.Choices) == 0 {
-		return ChatResult{}, fmt.Errorf("openai-compatible provider returned no streaming choices")
+		return ChatResult{}, kernel.NewCapabilityError("provider", providerName, "stream_chat", kernel.CapabilityErrorInvalidResponse, fmt.Errorf("openai-compatible provider returned no streaming choices"))
 	}
 	choice := acc.Choices[0]
 	toolCalls, err := toolAcc.BuildToolCalls(0)
 	if err != nil {
-		return ChatResult{}, err
+		return ChatResult{}, kernel.NewCapabilityError("provider", providerName, "stream_chat", kernel.CapabilityErrorInvalidResponse, err)
 	}
 	return ChatResult{
 		Text:              choice.Message.Content,

@@ -104,6 +104,21 @@ func TestRuntimeProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runtime")
 }
 
+func TestCapabilityPlaneProductionCodeDoesNotImportDurableStateOwners(t *testing.T) {
+	for _, dir := range []string{"internal/provider", "internal/tools"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/store",
+			"github.com/similarityyoung/simiclaw/internal/gateway",
+			"github.com/similarityyoung/simiclaw/internal/outbound",
+		)
+	}
+}
+
+func TestCapabilityPlaneProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/provider")
+	assertNoStoreDBReference(t, "internal/tools")
+}
+
 func TestQueryExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
 	assertNoExportedImportSelectors(t, storeImportPath, "internal/query")
 }

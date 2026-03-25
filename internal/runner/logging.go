@@ -2,10 +2,10 @@ package runner
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
@@ -57,24 +57,11 @@ func providerName(model string) string {
 }
 
 func providerErrorKind(err error) string {
-	switch {
-	case err == nil:
+	kind := kernel.CapabilityErrorKindOf(err)
+	if kind == "" {
 		return ""
-	case errors.Is(err, context.DeadlineExceeded):
-		return "timeout"
-	case errors.Is(err, context.Canceled):
-		return "canceled"
-	default:
-		msg := strings.ToLower(err.Error())
-		switch {
-		case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"):
-			return "timeout"
-		case strings.Contains(msg, "context canceled"), strings.Contains(msg, "cancelled"), strings.Contains(msg, "canceled"):
-			return "canceled"
-		default:
-			return "error"
-		}
 	}
+	return string(kind)
 }
 
 func mapSummaryFields(prefix string, input map[string]any, truncated bool) []logging.Field {

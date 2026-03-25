@@ -3,12 +3,12 @@ package runner
 import (
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/provider"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 )
 
-func historyToChatMessages(history []runnermodel.HistoryMessage) []provider.ChatMessage {
-	out := make([]provider.ChatMessage, 0, len(history))
+func historyToChatMessages(history []runnermodel.HistoryMessage) []kernel.ModelMessage {
+	out := make([]kernel.ModelMessage, 0, len(history))
 	pendingToolCalls := map[string]bool{}
 	for _, msg := range history {
 		if shouldSkipPromptHistoryPayloadType(msg.Meta[payloadTypeMetaKey]) {
@@ -19,7 +19,7 @@ func historyToChatMessages(history []runnermodel.HistoryMessage) []provider.Chat
 			if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
-			out = append(out, provider.ChatMessage{
+			out = append(out, kernel.ModelMessage{
 				Role:      msg.Role,
 				Content:   msg.Content,
 				ToolCalls: cloneToolCalls(msg.ToolCalls),
@@ -34,14 +34,14 @@ func historyToChatMessages(history []runnermodel.HistoryMessage) []provider.Chat
 			if strings.TrimSpace(msg.ToolCallID) == "" || !pendingToolCalls[msg.ToolCallID] {
 				continue
 			}
-			out = append(out, provider.ChatMessage{
+			out = append(out, kernel.ModelMessage{
 				Role:       msg.Role,
 				Content:    msg.Content,
 				ToolCallID: msg.ToolCallID,
 			})
 			delete(pendingToolCalls, msg.ToolCallID)
 		default:
-			out = append(out, provider.ChatMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID})
+			out = append(out, kernel.ModelMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID})
 		}
 	}
 	return out

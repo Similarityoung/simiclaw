@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"sync"
 
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -30,14 +33,34 @@ func (r *Registry) RegisterHandler(name string, handler Handler) {
 	r.Register(name, Schema{Name: name}, handler)
 }
 
-func (r *Registry) Call(ctx context.Context, toolCtx Context, name string, args map[string]any) Result {
+func (r *Registry) Invoke(ctx context.Context, toolCtx kernel.ToolContext, name string, args map[string]any) (result kernel.ToolResult) {
 	r.mu.RLock()
 	d, ok := r.defs[name]
 	r.mu.RUnlock()
 	if !ok {
-		return Result{Error: &model.ErrorBlock{Code: model.ErrorCodeInvalidArgument, Message: "tool not found"}}
+		return kernel.ToolResult{Error: &model.ErrorBlock{Code: model.ErrorCodeInvalidArgument, Message: "tool not found"}}
 	}
-	return d.Handler(ctx, toolCtx, args)
+	if ctx != nil && ctx.Err() != nil {
+		return kernel.ToolResult{
+			Error: kernel.ErrorBlockFromError(kernel.WrapCapabilityError("tool", name, "invoke", ctx.Err())),
+		}
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = kernel.ToolResult{
+				Error: &model.ErrorBlock{
+					Code:    model.ErrorCodeInternal,
+					Message: fmt.Sprintf("tool panic: %v", recovered),
+				},
+			}
+		}
+	}()
+	result = d.Handler(ctx, toolCtx, args)
+	return result
+}
+
+func (r *Registry) Call(ctx context.Context, toolCtx Context, name string, args map[string]any) Result {
+	return r.Invoke(ctx, toolCtx, name, args)
 }
 
 // Definitions returns all registered tool definitions (schema + handler).
@@ -45,9 +68,23 @@ func (r *Registry) Call(ctx context.Context, toolCtx Context, name string, args 
 func (r *Registry) Definitions() []Definition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Definition, 0, len(r.defs))
-	for _, d := range r.defs {
-		out = append(out, d)
+	names := make([]string, 0, len(r.defs))
+	for name := range r.defs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	out := make([]Definition, 0, len(names))
+	for _, name := range names {
+		out = append(out, r.defs[name])
+	}
+	return out
+}
+
+func (r *Registry) ToolDefinitions() []kernel.ToolDefinition {
+	defs := r.Definitions()
+	out := make([]kernel.ToolDefinition, 0, len(defs))
+	for _, def := range defs {
+		out = append(out, def.Schema)
 	}
 	return out
 }

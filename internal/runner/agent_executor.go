@@ -5,15 +5,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/provider"
 	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type llmAgentExecutor struct {
-	providers       *provider.Factory
+	providers       kernel.ModelResolver
 	contextBuilder  runnercontext.Assembler
 	promptAssembler llmPromptAssembler
 	toolExecutor    llmToolExecutor
@@ -54,9 +54,9 @@ func (e llmAgentExecutor) Execute(ctx context.Context, event model.InternalEvent
 	toolDefs := assembly.toolDefs
 
 	var (
-		totalUsage    provider.Usage
+		totalUsage    kernel.Usage
 		reply         string
-		last          provider.ChatResult
+		last          kernel.ModelResult
 		toolUseCounts = map[string]int{}
 		toolRounds    int
 	)
@@ -70,7 +70,7 @@ func (e llmAgentExecutor) Execute(ctx context.Context, event model.InternalEvent
 			logging.Int("tool_definition_count", len(toolDefs)),
 		)
 		providerLogger.Info("provider started")
-		last, err = llmProvider.StreamChat(ctx, provider.ChatRequest{
+		last, err = llmProvider.StreamChat(ctx, kernel.ModelRequest{
 			Model:    actualModel,
 			Messages: chatMessages,
 			Tools:    toolDefs,
@@ -129,7 +129,7 @@ func (e llmAgentExecutor) Execute(ctx context.Context, event model.InternalEvent
 		}
 		toolRounds++
 		messages = append(messages, assistantToolMessage)
-		chatMessages = append(chatMessages, provider.ChatMessage{
+		chatMessages = append(chatMessages, kernel.ModelMessage{
 			Role:      "assistant",
 			Content:   strings.TrimSpace(last.Text),
 			ToolCalls: cloneToolCalls(last.ToolCalls),
@@ -139,7 +139,7 @@ func (e llmAgentExecutor) Execute(ctx context.Context, event model.InternalEvent
 			trace.ToolExecutions = append(trace.ToolExecutions, step.execution)
 			trace.Actions = append(trace.Actions, step.action)
 			messages = append(messages, step.message)
-			chatMessages = append(chatMessages, provider.ChatMessage{
+			chatMessages = append(chatMessages, kernel.ModelMessage{
 				Role:       step.chat.role,
 				Content:    step.chat.content,
 				ToolCallID: step.chat.toolCallID,

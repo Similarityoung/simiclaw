@@ -1,12 +1,10 @@
 package runner
 
 import (
-	"context"
 	"fmt"
 	"sync/atomic"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -41,18 +39,4 @@ func cloneMap(in map[string]any) map[string]any {
 func nextID(prefix string, now time.Time) string {
 	n := idSeq.Add(1)
 	return fmt.Sprintf("%s_%d_%04d", prefix, now.UnixNano(), n)
-}
-
-func callToolSafely(ctx context.Context, registry *tools.Registry, toolCtx tools.Context, name string, args map[string]any) (result tools.Result) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			result = tools.Result{
-				Error: &model.ErrorBlock{
-					Code:    model.ErrorCodeInternal,
-					Message: fmt.Sprintf("tool panic: %v", recovered),
-				},
-			}
-		}
-	}()
-	return registry.Call(ctx, toolCtx, name, args)
 }

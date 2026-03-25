@@ -85,6 +85,16 @@ func TestSurfaceAdaptersDoNotImportCapabilityPlane(t *testing.T) {
 	}
 }
 
+func TestCapabilityPlaneDoesNotImportSurfaceAdapters(t *testing.T) {
+	for _, dir := range []string{"internal/provider", "internal/tools"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/http",
+			"github.com/similarityyoung/simiclaw/internal/channels",
+			"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+		)
+	}
+}
+
 func assertNoPackageImportPrefix(t *testing.T, dir string, prefixes ...string) {
 	t.Helper()
 	root := repoRoot(t)

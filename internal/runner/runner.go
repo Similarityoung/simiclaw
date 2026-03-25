@@ -3,13 +3,14 @@ package runner
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/prompt"
-	"github.com/similarityyoung/simiclaw/internal/provider"
 	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/tools"
 	"github.com/similarityyoung/simiclaw/pkg/api"
@@ -55,31 +56,45 @@ type HistoryReader interface {
 }
 
 type ProviderRunner struct {
-	registry       *tools.Registry
+	tools          kernel.ToolCatalog
 	payloads       *runtimepayload.Registry
 	memoryExecutor memoryRunExecutor
 	llmExecutor    llmAgentExecutor
 }
 
-func NewProviderRunner(workspace string, historyReader HistoryReader, registry *tools.Registry, providers *provider.Factory, payloads *runtimepayload.Registry) *ProviderRunner {
-	if registry == nil {
-		registry = tools.NewRegistry()
+func NewProviderRunner(workspace string, historyReader HistoryReader, toolCatalog kernel.ToolCatalog, providers kernel.ModelResolver, payloads *runtimepayload.Registry) *ProviderRunner {
+	if isNilToolCatalog(toolCatalog) {
+		registry := tools.NewRegistry()
 		tools.RegisterBuiltins(registry)
+		toolCatalog = registry
 	}
 	prompts := prompt.NewBuilder(workspace)
 	runner := &ProviderRunner{
-		registry: registry,
+		tools:    toolCatalog,
 		payloads: payloads,
 	}
 	runner.memoryExecutor = memoryRunExecutor{writer: runnercontext.NewMemoryWriter(workspace)}
 	runner.llmExecutor = llmAgentExecutor{
 		providers:       providers,
 		contextBuilder:  runnercontext.NewAssembler(historyReader),
-		promptAssembler: llmPromptAssembler{prompts: prompts, registry: runner.registry},
-		toolExecutor:    llmToolExecutor{workspace: workspace, registry: runner.registry},
+		promptAssembler: llmPromptAssembler{prompts: prompts, tools: runner.tools},
+		toolExecutor:    llmToolExecutor{workspace: workspace, tools: runner.tools},
 		traceAssembler:  runTraceAssembler{},
 	}
 	return runner
+}
+
+func isNilToolCatalog(toolCatalog kernel.ToolCatalog) bool {
+	if toolCatalog == nil {
+		return true
+	}
+	value := reflect.ValueOf(toolCatalog)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func (r *ProviderRunner) Run(ctx context.Context, event model.InternalEvent, maxToolRounds int, sink StreamSink) (RunOutput, error) {

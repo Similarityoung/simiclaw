@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -45,11 +46,12 @@ func (p *openAICompatibleProvider) Chat(ctx context.Context, req ChatRequest) (C
 
 	resp, err := p.client.Chat.Completions.New(ctx, params, p.requestTimeoutOption()...)
 	if err != nil {
+		err = kernel.WrapCapabilityError("provider", p.name, "chat", err)
 		logTransportDebug(p.name, req.Model, "chat transport failed", p.requestTimeout, err)
 		return ChatResult{}, err
 	}
 	if len(resp.Choices) == 0 {
-		return ChatResult{}, errors.New("openai-compatible provider returned no choices")
+		return ChatResult{}, kernel.NewCapabilityError("provider", p.name, "chat", kernel.CapabilityErrorInvalidResponse, errors.New("openai-compatible provider returned no choices"))
 	}
 	return chatResultFromCompletion(p.name, resp)
 }
@@ -62,7 +64,7 @@ func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatReque
 	for stream.Next() {
 		chunk := stream.Current()
 		if !acc.AddChunk(chunk) {
-			err := errors.New("openai-compatible provider returned inconsistent streaming chunks")
+			err := kernel.NewCapabilityError("provider", p.name, "stream_chat", kernel.CapabilityErrorInvalidResponse, errors.New("openai-compatible provider returned inconsistent streaming chunks"))
 			logTransportDebug(p.name, req.Model, "stream chunk rejected", p.requestTimeout, err)
 			return ChatResult{}, err
 		}
@@ -79,6 +81,7 @@ func (p *openAICompatibleProvider) StreamChat(ctx context.Context, req ChatReque
 		}
 	}
 	if err := stream.Err(); err != nil {
+		err = kernel.WrapCapabilityError("provider", p.name, "stream_chat", err)
 		logTransportDebug(p.name, req.Model, "stream transport failed", p.requestTimeout, err)
 		return ChatResult{}, err
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/tools"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	"github.com/similarityyoung/simiclaw/pkg/model"
@@ -27,7 +27,7 @@ type providerToolMessage struct {
 
 type llmToolExecutor struct {
 	workspace string
-	registry  *tools.Registry
+	tools     kernel.ToolCatalog
 }
 
 func (e llmToolExecutor) Execute(ctx context.Context, event model.InternalEvent, call model.ToolCall, opts llmRunOptions, counts map[string]int, sink StreamSink, actionIndex int, now time.Time) executedToolStep {
@@ -105,25 +105,25 @@ func (e llmToolExecutor) Execute(ctx context.Context, event model.InternalEvent,
 	}
 }
 
-func (e llmToolExecutor) call(ctx context.Context, event model.InternalEvent, call model.ToolCall, allowedTools map[string]struct{}, counts map[string]int) tools.Result {
+func (e llmToolExecutor) call(ctx context.Context, event model.InternalEvent, call model.ToolCall, allowedTools map[string]struct{}, counts map[string]int) kernel.ToolResult {
 	switch {
 	case !toolAllowed(call.Name, allowedTools):
-		return tools.Result{Error: &model.ErrorBlock{
+		return kernel.ToolResult{Error: &model.ErrorBlock{
 			Code:    model.ErrorCodeForbidden,
 			Message: fmt.Sprintf("tool %q is not allowed for payload_type=%s", call.Name, event.Payload.Type),
 		}}
 	case strings.EqualFold(strings.TrimSpace(event.Payload.Type), "cron_fire"):
 		if errBlock := cronFireToolPolicyError(call, counts); errBlock != nil {
-			return tools.Result{Error: errBlock}
+			return kernel.ToolResult{Error: errBlock}
 		}
-		res := callToolSafely(ctx, e.registry, tools.Context{
+		res := e.tools.Invoke(ctx, kernel.ToolContext{
 			Workspace:    e.workspace,
 			Conversation: event.Conversation,
 		}, call.Name, call.Args)
 		counts[call.Name]++
 		return res
 	default:
-		return callToolSafely(ctx, e.registry, tools.Context{
+		return e.tools.Invoke(ctx, kernel.ToolContext{
 			Workspace:    e.workspace,
 			Conversation: event.Conversation,
 		}, call.Name, call.Args)

@@ -139,15 +139,15 @@
 
 ### Tests for User Story 5
 
-- [ ] T037 [P] [US5] 在 `internal/provider/{fake_test.go,openai_stream_test.go,openai_timeout_test.go}` 与新增 `internal/tools/registry_test.go` 中补 capability invocation、timeout 和 error surface 测试
-- [ ] T038 [P] [US5] 在 `tests/architecture/four_plane_boundaries_test.go` 与 `tests/architecture/boundaries_test.go` 中补“Capability Plane 不得推进 durable state、不得拥有 transport 行为”的守护测试
+- [X] T037 [P] [US5] 在 `internal/provider/{fake_test.go,openai_stream_test.go,openai_timeout_test.go}` 与新增 `internal/tools/registry_test.go` 中补 capability invocation、timeout 和 error surface 测试
+- [X] T038 [P] [US5] 在 `tests/architecture/four_plane_boundaries_test.go` 与 `tests/architecture/boundaries_test.go` 中补“Capability Plane 不得推进 durable state、不得拥有 transport 行为”的守护测试
 
 ### Implementation for User Story 5
 
-- [ ] T039 [US5] 重构 `internal/provider/types.go`、`internal/tools/{types.go,registry.go}`、`internal/runtime/kernel/contracts.go`、`internal/runner/runner.go`，固定 capability invocation contract 与注册点
-- [ ] T040 [P] [US5] 重构 `internal/provider/{openai.go,openai_stream.go,logging.go}` 与 `internal/runner/tool_executor.go`，把 timeout、error typing、trace/log 语义固定在 Runtime <-> Capability 边界
-- [ ] T041 [P] [US5] 清理 `internal/tools/{context_get.go,memory_get.go,workspace_file.go,web_fetch.go,web_search.go}` 中潜在的 runtime/store 耦合，确保 capability 只返回结果或错误，不推进 durable state
-- [ ] T042 [US5] 运行并记录本故事最小验证：`go test ./internal/provider/... ./internal/tools/... ./internal/runner/... -v`、`make test-unit`
+- [X] T039 [US5] 重构 `internal/provider/types.go`、`internal/tools/{types.go,registry.go}`、`internal/runtime/kernel/contracts.go`、`internal/runner/runner.go`，固定 capability invocation contract 与注册点
+- [X] T040 [P] [US5] 重构 `internal/provider/{openai.go,openai_stream.go,logging.go}` 与 `internal/runner/tool_executor.go`，把 timeout、error typing、trace/log 语义固定在 Runtime <-> Capability 边界
+- [X] T041 [P] [US5] 清理 `internal/tools/{context_get.go,memory_get.go,workspace_file.go,web_fetch.go,web_search.go}` 中潜在的 runtime/store 耦合，确保 capability 只返回结果或错误，不推进 durable state
+- [X] T042 [US5] 运行并记录本故事最小验证：`go test ./internal/provider/... ./internal/tools/... ./internal/runner/... -v`、`make test-unit`
 
 **Checkpoint**: User Story 5 完成后，新增 provider/tool/skill/MCP/router 已有统一 capability 接入方式
 
