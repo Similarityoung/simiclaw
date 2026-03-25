@@ -69,16 +69,16 @@
 
 ### Tests for User Story 3
 
-- [ ] T015 [P] [US3] 在 `internal/runtime/kernel/kernel_test.go`、`internal/runtime/eventloop_test.go`、`internal/runtime/kernel/kernel_race_test.go` 中补 claim/execute/finalize、worker lifecycle 与 host control 的边界测试
-- [ ] T016 [P] [US3] 在 `tests/integration/runtime_kernel_integration_test.go` 与 `tests/integration/runtime_trace_path_test.go` 中补运行时主链路和 observe publication 的集成验证
+- [X] T015 [P] [US3] 在 `internal/runtime/kernel/kernel_test.go`、`internal/runtime/eventloop_test.go`、`internal/runtime/kernel/kernel_race_test.go` 中补 claim/execute/finalize、worker lifecycle 与 host control 的边界测试
+- [X] T016 [P] [US3] 在 `tests/integration/runtime_kernel_integration_test.go` 与 `tests/integration/runtime_trace_path_test.go` 中补运行时主链路和 observe publication 的集成验证
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] 重构 `internal/runtime/eventloop.go`、`internal/runtime/kernel/{service.go,claim.go,finalize.go}`、`internal/runtime/kernel_adapter.go`，把 claim/execute/finalize orchestration 与 host control 明确收口到 Runtime
-- [ ] T018 [P] [US3] 重构 `internal/runner/{runner.go,tool_executor.go,prompt_assembler.go,stream_sink.go,trace_assembler.go}`，把 agent execution、tool loop、prompt glue 与 stream sink 责任拆开
-- [ ] T019 [P] [US3] 重构 `internal/runtime/events/hub.go`、`internal/runtime/stream_sink.go`、`internal/outbound/delivery/worker.go`、`internal/outbound/sender/router.go`，让 runtime observe publication 与 durable delivery coordination 不再依赖混合中心对象
-- [ ] T020 [US3] 更新 `internal/runtime/supervisor.go` 与 `internal/runtime/delivery_intent.go`，把 supervisor/readiness/worker host 收回 Runtime owner，不再混入 transport 或 capability 细节
-- [ ] T021 [US3] 运行并记录本故事最小验证：`go test ./internal/runtime/... ./internal/runner/... ./internal/outbound/... -v`、`make test-unit-race-core`、`make accept-current`
+- [X] T017 [US3] 重构 `internal/runtime/eventloop.go`、`internal/runtime/kernel/{service.go,claim.go,finalize.go}`、`internal/runtime/kernel_adapter.go`，把 claim/execute/finalize orchestration 与 host control 明确收口到 Runtime
+- [X] T018 [P] [US3] 重构 `internal/runner/{runner.go,tool_executor.go,prompt_assembler.go,stream_sink.go,trace_assembler.go}`，把 agent execution、tool loop、prompt glue 与 stream sink 责任拆开
+- [X] T019 [P] [US3] 重构 `internal/runtime/events/hub.go`、`internal/runtime/stream_sink.go`、`internal/outbound/delivery/worker.go`、`internal/outbound/sender/router.go`，让 runtime observe publication 与 durable delivery coordination 不再依赖混合中心对象
+- [X] T020 [US3] 更新 `internal/runtime/host_control.go`、`internal/runtime/readiness.go` 与 `internal/runtime/delivery_intent.go`，把 host control/readiness/worker host 收回 Runtime owner，不再混入 transport 或 capability 细节
+- [X] T021 [US3] 运行并记录本故事最小验证：`go test ./internal/runtime/... ./internal/runner/... ./internal/outbound/... -v`、`make test-unit-race-core`、`make accept-current`
 
 **Checkpoint**: User Story 3 完成后，Runtime 开发者可以在不触碰 Surface/Capability 细节的前提下演进执行内核
 

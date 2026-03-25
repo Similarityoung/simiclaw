@@ -28,14 +28,15 @@ import (
 )
 
 type App struct {
-	Cfg        config.Config
-	DB         *store.DB
-	Gateway    *gateway.Service
-	EventLoop  *runtime.EventLoop
-	Supervisor *runtime.Supervisor
-	Telegram   *telegramchannel.Runtime
-	StreamHub  *runtimeevents.Hub
-	Handler    http.Handler
+	Cfg       config.Config
+	DB        *store.DB
+	Gateway   *gateway.Service
+	EventLoop *runtime.EventLoop
+	Host      *runtime.HostControl
+	Readiness *runtime.ReadinessProbe
+	Telegram  *telegramchannel.Runtime
+	StreamHub *runtimeevents.Hub
+	Handler   http.Handler
 }
 
 var ErrStartup = errors.New("bootstrap startup failed")
@@ -101,18 +102,24 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
-	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
-	server := httpserver.New(cfg.APIKey, gatewayService, queryService, supervisor, streamObserver)
+	host := runtime.NewHostControl(cfg, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
+	extraHeartbeats := []string(nil)
+	if cfg.Channels.Telegram.Enabled {
+		extraHeartbeats = append(extraHeartbeats, "telegram_polling")
+	}
+	readiness := runtime.NewReadinessProbe(runtimeRepo, host, extraHeartbeats...)
+	server := httpserver.New(cfg.APIKey, gatewayService, queryService, readiness, streamObserver)
 	logger.Info("application assembled")
 	return &App{
-		Cfg:        cfg,
-		DB:         db,
-		Gateway:    gatewayService,
-		EventLoop:  eventLoop,
-		Supervisor: supervisor,
-		Telegram:   telegramRuntime,
-		StreamHub:  streamHub,
-		Handler:    server.Handler(),
+		Cfg:       cfg,
+		DB:        db,
+		Gateway:   gatewayService,
+		EventLoop: eventLoop,
+		Host:      host,
+		Readiness: readiness,
+		Telegram:  telegramRuntime,
+		StreamHub: streamHub,
+		Handler:   server.Handler(),
 	}, nil
 }
 
@@ -129,11 +136,11 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		logger.Info("telegram runtime started")
 	}
-	if err := a.Supervisor.Start(ctx); err != nil {
-		logger.Error("runtime supervisor start failed", logging.Error(err))
+	if err := a.Host.Start(ctx); err != nil {
+		logger.Error("runtime host start failed", logging.Error(err))
 		return fmt.Errorf("%w: %w", ErrStartup, err)
 	}
-	logger.Info("runtime supervisor started")
+	logger.Info("runtime host started")
 	return nil
 }
 
@@ -143,7 +150,7 @@ func (a *App) Stop() {
 		logging.String("addr", a.Cfg.ListenAddr),
 	)
 	logger.Info("application stopping")
-	a.Supervisor.Stop()
+	a.Host.Stop()
 	if a.Telegram != nil {
 		a.Telegram.Stop()
 	}

@@ -104,3 +104,48 @@ func TestHubReplaysPreAttachHistoryInOrder(t *testing.T) {
 		t.Fatalf("expected terminal sequence %d, got %d", terminal.Sequence, replay[1].Sequence)
 	}
 }
+
+func TestHubDropsQueueDroppableWhenSubscriberBufferIsFull(t *testing.T) {
+	hub := NewHub()
+	hub.maxQueued = 1
+
+	sub := hub.Reserve("k5")
+	defer hub.Release(sub)
+	_ = hub.Attach(sub, "evt_qdrop")
+
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventTextDelta,
+		EventID: "evt_qdrop",
+		Delta:   "first",
+	}); err != nil {
+		t.Fatalf("Publish first delta: %v", err)
+	}
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventTextDelta,
+		EventID: "evt_qdrop",
+		Delta:   "second",
+	}); err != nil {
+		t.Fatalf("Publish second delta: %v", err)
+	}
+	terminal := hub.PublishTerminal(runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventCompleted,
+		EventID: "evt_qdrop",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	first, ok := sub.Next(ctx)
+	if !ok {
+		t.Fatalf("expected first event from subscription")
+	}
+	if first.Kind != runtimemodel.RuntimeEventCompleted {
+		t.Fatalf("expected terminal event, got %+v", first)
+	}
+	if first.Sequence != terminal.Sequence {
+		t.Fatalf("expected terminal sequence %d, got %d", terminal.Sequence, first.Sequence)
+	}
+	if _, ok := sub.Next(ctx); ok {
+		t.Fatalf("expected subscription to close after terminal")
+	}
+}

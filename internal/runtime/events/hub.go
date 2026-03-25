@@ -31,6 +31,11 @@ type queuedEvent struct {
 	droppable bool
 }
 
+type publishPolicy struct {
+	queueDroppable  bool
+	replayDroppable bool
+}
+
 type eventState struct {
 	nextSequence int64
 	subscribers  map[*Subscription]struct{}
@@ -138,24 +143,34 @@ func (h *Hub) publish(event runtimemodel.RuntimeEvent, terminal bool) runtimemod
 		cached := *state.terminal
 		return cached
 	}
-	if event.OccurredAt.IsZero() {
-		event.OccurredAt = now
-	}
-	if event.Sequence == 0 {
-		event.Sequence = state.nextSequence
-		state.nextSequence++
-	}
+	event = state.populate(event, now)
 	state.updatedAt = now
-	queueDroppable := event.Kind == runtimemodel.RuntimeEventClaimed ||
-		event.Kind == runtimemodel.RuntimeEventExecuting ||
-		event.Kind == runtimemodel.RuntimeEventFinalizeStarted ||
-		event.Kind == runtimemodel.RuntimeEventReasoningDelta ||
-		event.Kind == runtimemodel.RuntimeEventTextDelta
-	replayDroppable := event.Kind == runtimemodel.RuntimeEventReasoningDelta ||
-		event.Kind == runtimemodel.RuntimeEventTextDelta
+	policy := policyForKind(event.Kind)
 	if !terminal {
-		state.appendHistory(queuedEvent{event: event, droppable: replayDroppable}, h.maxReplay)
+		state.appendHistory(queuedEvent{event: event, droppable: policy.replayDroppable}, h.maxReplay)
 	}
+	h.dispatch(state, event, terminal, policy.queueDroppable)
+	if terminal {
+		cached := event
+		state.terminal = &cached
+		clear(state.subscribers)
+	}
+	return event
+}
+
+func policyForKind(kind runtimemodel.RuntimeEventKind) publishPolicy {
+	return publishPolicy{
+		queueDroppable: kind == runtimemodel.RuntimeEventClaimed ||
+			kind == runtimemodel.RuntimeEventExecuting ||
+			kind == runtimemodel.RuntimeEventFinalizeStarted ||
+			kind == runtimemodel.RuntimeEventReasoningDelta ||
+			kind == runtimemodel.RuntimeEventTextDelta,
+		replayDroppable: kind == runtimemodel.RuntimeEventReasoningDelta ||
+			kind == runtimemodel.RuntimeEventTextDelta,
+	}
+}
+
+func (h *Hub) dispatch(state *eventState, event runtimemodel.RuntimeEvent, terminal bool, queueDroppable bool) {
 	for sub := range state.subscribers {
 		if terminal {
 			sub.enqueue(event, false)
@@ -164,14 +179,6 @@ func (h *Hub) publish(event runtimemodel.RuntimeEvent, terminal bool) runtimemod
 		}
 		sub.enqueue(event, queueDroppable)
 	}
-	if terminal {
-		cached := event
-		state.terminal = &cached
-		for sub := range state.subscribers {
-			delete(state.subscribers, sub)
-		}
-	}
-	return event
 }
 
 func (h *Hub) ensureEventLocked(eventID string, now time.Time) *eventState {
@@ -185,6 +192,17 @@ func (h *Hub) ensureEventLocked(eventID string, now time.Time) *eventState {
 		h.events[eventID] = state
 	}
 	return state
+}
+
+func (s *eventState) populate(event runtimemodel.RuntimeEvent, now time.Time) runtimemodel.RuntimeEvent {
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = now
+	}
+	if event.Sequence == 0 {
+		event.Sequence = s.nextSequence
+		s.nextSequence++
+	}
+	return event
 }
 
 func (s *eventState) appendHistory(item queuedEvent, maxQueued int) {

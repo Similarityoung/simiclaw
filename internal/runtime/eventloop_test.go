@@ -295,6 +295,41 @@ func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
 	}
 }
 
+func TestHostControlDelegatesLoopBoundary(t *testing.T) {
+	loop := &stubRuntimeHost{depth: 3}
+	host := newWorkerHost(loop, nil, logging.L("runtime.host"))
+	control := &HostControl{
+		host:   host,
+		logger: logging.L("runtime.host"),
+	}
+	readiness := NewReadinessProbe(readyStateRepoStub{}, host)
+
+	if err := control.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if loop.started != 1 || !control.Alive() {
+		t.Fatalf("expected host control to start loop host, host=%+v", loop)
+	}
+
+	state, err := readiness.ReadyState(context.Background())
+	if err != nil {
+		t.Fatalf("ReadyState: %v state=%+v", err, state)
+	}
+	if state["status"] != "ready" || state["queue_depth"] != 3 {
+		t.Fatalf("expected ready state from host boundary, got %+v", state)
+	}
+
+	control.Stop()
+	if loop.stopped != 1 || control.Alive() {
+		t.Fatalf("expected host control to stop loop host, host=%+v", loop)
+	}
+
+	state, err = readiness.ReadyState(context.Background())
+	if err == nil || state["event_loop"] != "down" {
+		t.Fatalf("expected loop-down readiness after stop, err=%v state=%+v", err, state)
+	}
+}
+
 type stopAwareRunner struct {
 	once     sync.Once
 	started  chan struct{}
@@ -386,4 +421,44 @@ func (r *laneHydrationFacts) GetEventRecord(context.Context, string) (runtimemod
 		EventID:    "evt_lane",
 		SessionKey: "local:dm:u1",
 	}, true, nil
+}
+
+type stubRuntimeHost struct {
+	started int
+	stopped int
+	alive   bool
+	depth   int
+}
+
+func (h *stubRuntimeHost) Start(context.Context) error {
+	h.started++
+	h.alive = true
+	return nil
+}
+
+func (h *stubRuntimeHost) Stop() {
+	h.stopped++
+	h.alive = false
+}
+
+func (h *stubRuntimeHost) IsAlive() bool {
+	return h.alive
+}
+
+func (h *stubRuntimeHost) InboundDepth() int {
+	return h.depth
+}
+
+func (h *stubRuntimeHost) TryEnqueue(string) bool {
+	return true
+}
+
+type readyStateRepoStub struct{}
+
+func (readyStateRepoStub) CheckReadWrite(context.Context) error {
+	return nil
+}
+
+func (readyStateRepoStub) HeartbeatAt(context.Context, string) (time.Time, bool, error) {
+	return time.Now().UTC(), true, nil
 }

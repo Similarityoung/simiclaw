@@ -110,7 +110,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 	repo := storetx.NewRuntimeRepository(db)
 	ingestService := newGatewayIngestor("local", repo, queue)
 	ingestService.SetClock(func() time.Time { return now })
-	supervisor := &Supervisor{
+	host := &HostControl{
 		workers: repo,
 		ingest:  ingestService,
 	}
@@ -119,7 +119,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 		_ = logging.Sync()
 	})
 
@@ -190,17 +190,17 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
 	ingestService := newGatewayIngestor("local", repo, &rejectEnqueuer{})
 	ingestService.SetClock(func() time.Time { return now })
-	supervisor := &Supervisor{
+	host := &HostControl{
 		workers: repo,
 		ingest:  ingestService,
-		loop:    loop,
+		host:    newWorkerHost(loop, nil, logging.L("runtime.host")),
 	}
 
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 		_ = logging.Sync()
 	})
 
@@ -276,7 +276,7 @@ func TestRuntimeEventStreamSinkPublishesEvents(t *testing.T) {
 	}
 }
 
-func TestSupervisorStartStopAndReadyState(t *testing.T) {
+func TestHostControlStartStopAndReadinessProbe(t *testing.T) {
 	workspace := t.TempDir()
 	cfg := config.Default()
 	cfg.Workspace = workspace
@@ -365,9 +365,10 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		supervisor := NewSupervisor(cfg, repo, repo, ingestService, loop, sender)
-		if err := supervisor.Start(context.Background()); err != nil {
-			t.Fatalf("Start supervisor: %v", err)
+		host := NewHostControl(cfg, repo, ingestService, loop, sender)
+		readiness := NewReadinessProbe(repo, host)
+		if err := host.Start(context.Background()); err != nil {
+			t.Fatalf("Start host control: %v", err)
 		}
 
 		deadline := time.Now().Add(12 * time.Second)
@@ -377,10 +378,10 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
-		if !supervisor.EventLoopAlive() || !loop.IsAlive() || loop.InboundDepth() != 0 {
+		if !host.Alive() || !loop.IsAlive() || loop.InboundDepth() != 0 {
 			t.Fatalf("expected running event loop")
 		}
-		state, err := supervisor.ReadyState(context.Background())
+		state, err := readiness.ReadyState(context.Background())
 		if err != nil {
 			t.Fatalf("ReadyState: %v state=%+v", err, state)
 		}
@@ -400,18 +401,18 @@ func TestSupervisorStartStopAndReadyState(t *testing.T) {
 
 		stopDone := make(chan struct{})
 		go func() {
-			supervisor.Stop()
+			host.Stop()
 			close(stopDone)
 		}()
 		select {
 		case <-stopDone:
 		case <-time.After(2 * time.Second):
-			t.Fatal("timeout waiting for supervisor stop")
+			t.Fatal("timeout waiting for host control stop")
 		}
-		if supervisor.EventLoopAlive() || loop.IsAlive() {
-			t.Fatalf("expected event loop to be down after supervisor stop")
+		if host.Alive() || loop.IsAlive() {
+			t.Fatalf("expected event loop to be down after host control stop")
 		}
-		state, err = supervisor.ReadyState(context.Background())
+		state, err = readiness.ReadyState(context.Background())
 		if err == nil || state["event_loop"] != "down" {
 			t.Fatalf("expected loop-down readiness failure after stop, err=%v state=%+v", err, state)
 		}
@@ -466,8 +467,9 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 	hub := runtimeevents.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 1)
-	supervisor := NewSupervisor(cfg, repo, repo, nil, loop, &captureSender{})
-	state, err := supervisor.ReadyState(context.Background())
+	host := NewHostControl(cfg, repo, nil, loop, &captureSender{})
+	readiness := NewReadinessProbe(repo, host)
+	state, err := readiness.ReadyState(context.Background())
 	if err == nil || state["event_loop"] != "down" {
 		t.Fatalf("expected loop-down readiness failure, err=%v state=%+v", err, state)
 	}
@@ -493,12 +495,12 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 	}
 
 	repo := storetx.NewRuntimeRepository(db)
-	supervisor := &Supervisor{workers: repo}
+	host := &HostControl{workers: repo}
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		supervisor.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
+		host.runScheduledKind(context.Background(), now, model.ScheduledJobKindCron)
 		_ = logging.Sync()
 	})
 

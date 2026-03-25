@@ -62,13 +62,13 @@ func TestAppStartStopLogsLifecycle(t *testing.T) {
 	logcapture.AssertContainsInOrder(t, out,
 		"[bootstrap] database opened",
 		"[bootstrap] application assembled",
-		"[bootstrap] runtime supervisor started",
+		"[bootstrap] runtime host started",
 		"[bootstrap] application stopping",
 		"[bootstrap] application stopped",
 	)
 }
 
-func TestAppStartLogsSupervisorStartFailure(t *testing.T) {
+func TestAppStartLogsHostStartFailure(t *testing.T) {
 	cfg := config.Default()
 	cfg.Workspace = t.TempDir()
 	if err := store.InitWorkspace(cfg.Workspace, false, cfg.DBBusyTimeout.Duration); err != nil {
@@ -91,7 +91,7 @@ func TestAppStartLogsSupervisorStartFailure(t *testing.T) {
 		_ = logging.Sync()
 	})
 
-	if !strings.Contains(out, "[bootstrap] runtime supervisor start failed") {
-		t.Fatalf("expected supervisor start failure log, got %q", out)
+	if !strings.Contains(out, "[bootstrap] runtime host start failed") {
+		t.Fatalf("expected host start failure log, got %q", out)
 	}
 }

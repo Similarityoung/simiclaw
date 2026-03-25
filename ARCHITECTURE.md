@@ -7,7 +7,7 @@
 ## System Map
 
 - 入口面:
-  - `cmd/simiclaw serve`: 启动 HTTP API、runtime supervisor 与可选 Telegram runtime
+  - `cmd/simiclaw serve`: 启动 HTTP API、runtime host control 与可选 Telegram runtime
   - `cmd/simiclaw chat`: 交互式 TUI，优先走 `POST /v1/chat:stream`
   - `cmd/simiclaw inspect`: 读取 health、sessions、events、runs、trace
   - `web/`: React + Vite 前端，消费同一组 HTTP 接口

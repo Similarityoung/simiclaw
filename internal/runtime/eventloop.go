@@ -15,7 +15,7 @@ import (
 
 type EventLoop struct {
 	facts     kernel.Facts
-	processor *kernel.Service
+	processor kernel.Processor
 	queue     chan runtimemodel.WorkItem
 	scheduler *lanes.Scheduler
 	logger    *logging.Logger

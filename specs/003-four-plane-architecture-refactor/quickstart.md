@@ -122,3 +122,11 @@ make web-ci
 - `go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestHTTPChatStreamTerminalRecordMatchesQueryProjection' -v`: PASS
 - `make web-ci`: PASS
 - 已固定内容: HTTP `chat:stream` 只消费 command/observe seam，Telegram adapter 只依赖 surface ingress seam，CLI/Web fallback 保持在 consumer 侧
+
+### US3 Checkpoint (2026-03-25)
+
+- `go test ./internal/runtime/... ./internal/runner/... ./internal/outbound/... -v`: PASS
+- `go test ./tests/integration/... -tags=integration -run 'TestRuntimeKernelLifecycleStreamAndPersistence|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery' -v`: PASS
+- `make test-unit-race-core`: PASS
+- `make accept-current`: PASS
+- 已固定内容: `ProviderRunner` 收紧为 payload dispatch + memory executor + agent executor；`runnerExecutor` 通过显式 translator / delivery resolver 对接 kernel；`runtimeEventStreamSink` 已拆分 translator + publisher；`events.Hub` 的 publish path 已拆分为 metadata populate + policy + dispatch；`Supervisor` 已收口为 `HostControl` + `ReadinessProbe`，host control 不再与 readiness aggregation 共享同一个公开 owner

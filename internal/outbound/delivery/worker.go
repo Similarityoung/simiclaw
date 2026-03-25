@@ -97,7 +97,7 @@ func (w *Worker) tick(ctx context.Context) {
 		return
 	}
 
-	msg, ok, err := w.repo.ClaimRuntimeOutbox(ctx, "outbox-worker", now)
+	msg, ok, err := w.claimNext(ctx, now)
 	if err != nil {
 		w.logger.Warn("claim outbox failed", logging.Error(err))
 		return
@@ -116,8 +116,8 @@ func (w *Worker) tick(ctx context.Context) {
 	)
 	logger.Info("send started")
 	if err := w.send(ctx, msg); err != nil {
-		decision := w.retryPolicy.Next(msg.AttemptCount, now)
-		if recordErr := w.repo.FailOutboxSend(ctx, msg.OutboxID, msg.EventID, err.Error(), decision.Dead, decision.NextAttemptAt, now); recordErr != nil {
+		decision, recordErr := w.recordFailure(ctx, msg, err, now)
+		if recordErr != nil {
 			logger.Error("failed to record outbound send failure", logging.Error(recordErr), logging.NamedError("send_error", err))
 			return
 		}
@@ -136,11 +136,25 @@ func (w *Worker) tick(ctx context.Context) {
 		return
 	}
 
-	if err := w.repo.CompleteOutboxSend(ctx, msg.OutboxID, msg.EventID, now); err != nil {
+	if err := w.markCompleted(ctx, msg, now); err != nil {
 		logger.Error("failed to mark outbound send completed", logging.Error(err))
 		return
 	}
 	logger.Info("sent")
+}
+
+func (w *Worker) claimNext(ctx context.Context, now time.Time) (runtimemodel.ClaimedOutbox, bool, error) {
+	return w.repo.ClaimRuntimeOutbox(ctx, "outbox-worker", now)
+}
+
+func (w *Worker) recordFailure(ctx context.Context, msg runtimemodel.ClaimedOutbox, sendErr error, now time.Time) (retry.Decision, error) {
+	decision := w.retryPolicy.Next(msg.AttemptCount, now)
+	err := w.repo.FailOutboxSend(ctx, msg.OutboxID, msg.EventID, sendErr.Error(), decision.Dead, decision.NextAttemptAt, now)
+	return decision, err
+}
+
+func (w *Worker) markCompleted(ctx context.Context, msg runtimemodel.ClaimedOutbox, now time.Time) error {
+	return w.repo.CompleteOutboxSend(ctx, msg.OutboxID, msg.EventID, now)
 }
 
 func (w *Worker) send(ctx context.Context, msg runtimemodel.ClaimedOutbox) error {
