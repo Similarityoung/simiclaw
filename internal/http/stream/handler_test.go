@@ -12,7 +12,6 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
-	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 	runtimeevents "github.com/similarityyoung/simiclaw/internal/runtime/events"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/pkg/api"
@@ -32,18 +31,62 @@ func (f fakeGateway) Accept(context.Context, gatewaymodel.NormalizedIngress) (ga
 	return f.accepted, f.apiErr
 }
 
-type fakeStreamQuery struct {
-	record querymodel.EventRecord
-	ok     bool
-	err    error
+type fakeObserver struct {
+	openKey string
+	sub     runtimeevents.StreamSubscription
 }
 
-func (f fakeStreamQuery) GetEvent(context.Context, string) (querymodel.EventRecord, bool, error) {
-	return f.record, f.ok, f.err
+func (f *fakeObserver) Open(idempotencyKey string) runtimeevents.StreamSubscription {
+	f.openKey = idempotencyKey
+	return f.sub
 }
 
-func TestHandleChatStreamReplaysTerminalEventFromQuery(t *testing.T) {
+type fakeSubscription struct {
+	attachedEventID string
+	attach          func(context.Context, string) []runtimemodel.RuntimeEvent
+	next            func(context.Context) (runtimemodel.RuntimeEvent, bool)
+	closed          bool
+}
+
+func (s *fakeSubscription) Attach(ctx context.Context, eventID string) []runtimemodel.RuntimeEvent {
+	s.attachedEventID = eventID
+	if s.attach != nil {
+		return s.attach(ctx, eventID)
+	}
+	return nil
+}
+
+func (s *fakeSubscription) Next(ctx context.Context) (runtimemodel.RuntimeEvent, bool) {
+	if s.next != nil {
+		return s.next(ctx)
+	}
+	return runtimemodel.RuntimeEvent{}, false
+}
+
+func (s *fakeSubscription) Close() {
+	s.closed = true
+}
+
+func TestHandleChatStreamReplaysTerminalEventFromObserveAttach(t *testing.T) {
 	now := time.Date(2026, 3, 19, 10, 0, 0, 0, time.UTC)
+	sub := &fakeSubscription{
+		attach: func(context.Context, string) []runtimemodel.RuntimeEvent {
+			return []runtimemodel.RuntimeEvent{
+				{
+					Kind:       runtimemodel.RuntimeEventCompleted,
+					EventID:    "evt_replay",
+					OccurredAt: now,
+					EventRecord: &runtimemodel.EventRecord{
+						EventID:        "evt_replay",
+						Status:         model.EventStatusProcessed,
+						AssistantReply: "done",
+						UpdatedAt:      now,
+					},
+				},
+			}
+		},
+	}
+	observer := &fakeObserver{sub: sub}
 	handler := NewHandlers(
 		fakeGateway{
 			accepted: gateway.AcceptedIngest{
@@ -56,16 +99,7 @@ func TestHandleChatStreamReplaysTerminalEventFromQuery(t *testing.T) {
 				StatusCode: http.StatusAccepted,
 			},
 		},
-		fakeStreamQuery{
-			record: querymodel.EventRecord{
-				EventID:        "evt_replay",
-				Status:         model.EventStatusProcessed,
-				AssistantReply: "done",
-				UpdatedAt:      now,
-			},
-			ok: true,
-		},
-		runtimeevents.NewHub(),
+		observer,
 	)
 
 	body, err := json.Marshal(api.IngestRequest{
@@ -96,11 +130,52 @@ func TestHandleChatStreamReplaysTerminalEventFromQuery(t *testing.T) {
 	if done.EventRecord == nil || done.EventRecord.AssistantReply != "done" {
 		t.Fatalf("unexpected terminal payload: %+v", done)
 	}
+	if observer.openKey != "cli:conv:1" {
+		t.Fatalf("expected observer to reserve by idempotency key, got %q", observer.openKey)
+	}
+	if sub.attachedEventID != "evt_replay" {
+		t.Fatalf("expected observe attach event id evt_replay, got %q", sub.attachedEventID)
+	}
+	if !sub.closed {
+		t.Fatal("expected observe subscription to close after terminal replay")
+	}
 }
 
-func TestHandleChatStreamReplaysPreAttachRuntimeEvents(t *testing.T) {
+func TestHandleChatStreamStreamsReplayAndNextEventsFromObserveSeam(t *testing.T) {
 	now := time.Date(2026, 3, 19, 11, 0, 0, 0, time.UTC)
-	hub := runtimeevents.NewHub()
+	events := []runtimemodel.RuntimeEvent{
+		{
+			Kind:       runtimemodel.RuntimeEventExecuting,
+			EventID:    "evt_trace",
+			Message:    "running",
+			OccurredAt: now.Add(time.Second),
+		},
+		{
+			Kind:       runtimemodel.RuntimeEventCompleted,
+			EventID:    "evt_trace",
+			OccurredAt: now.Add(2 * time.Second),
+		},
+	}
+	sub := &fakeSubscription{
+		attach: func(context.Context, string) []runtimemodel.RuntimeEvent {
+			return []runtimemodel.RuntimeEvent{
+				{
+					Kind:       runtimemodel.RuntimeEventClaimed,
+					EventID:    "evt_trace",
+					Message:    "claimed",
+					OccurredAt: now,
+				},
+			}
+		},
+		next: func(context.Context) (runtimemodel.RuntimeEvent, bool) {
+			if len(events) == 0 {
+				return runtimemodel.RuntimeEvent{}, false
+			}
+			next := events[0]
+			events = events[1:]
+			return next, true
+		},
+	}
 	handler := NewHandlers(
 		fakeGateway{
 			accepted: gateway.AcceptedIngest{
@@ -112,28 +187,8 @@ func TestHandleChatStreamReplaysPreAttachRuntimeEvents(t *testing.T) {
 				},
 				StatusCode: http.StatusAccepted,
 			},
-			onAccept: func() {
-				_ = hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
-					Kind:       runtimemodel.RuntimeEventClaimed,
-					EventID:    "evt_trace",
-					Message:    "claimed",
-					OccurredAt: now,
-				})
-				_ = hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
-					Kind:       runtimemodel.RuntimeEventExecuting,
-					EventID:    "evt_trace",
-					Message:    "running",
-					OccurredAt: now.Add(time.Second),
-				})
-				hub.PublishTerminal(runtimemodel.RuntimeEvent{
-					Kind:       runtimemodel.RuntimeEventCompleted,
-					EventID:    "evt_trace",
-					OccurredAt: now.Add(2 * time.Second),
-				})
-			},
 		},
-		fakeStreamQuery{},
-		hub,
+		&fakeObserver{sub: sub},
 	)
 
 	body, err := json.Marshal(api.IngestRequest{
@@ -165,6 +220,9 @@ func TestHandleChatStreamReplaysPreAttachRuntimeEvents(t *testing.T) {
 	done := readStreamEventForTest(t, reader)
 	if done.Type != api.ChatStreamEventDone {
 		t.Fatalf("expected done replay, got %+v", done)
+	}
+	if !sub.closed {
+		t.Fatal("expected observe subscription to close after streamed terminal event")
 	}
 }
 

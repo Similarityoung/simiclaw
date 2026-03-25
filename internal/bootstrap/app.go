@@ -87,6 +87,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		cfg.RateLimitSessionBurst,
 	)
 	queryService := querysvc.NewService(queryRepo)
+	streamObserver := runtimeevents.NewObserver(streamHub, runtimeTerminalReplaySource{query: queryService})
 
 	var telegramRuntime *telegramchannel.Runtime
 	if cfg.Channels.Telegram.Enabled {
@@ -101,7 +102,7 @@ func NewApp(cfg config.Config) (*App, error) {
 
 	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
 	supervisor := runtime.NewSupervisor(cfg, runtimeRepo, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
-	server := httpserver.New(cfg, gatewayService, queryService, supervisor, streamHub)
+	server := httpserver.New(cfg.APIKey, gatewayService, queryService, supervisor, streamObserver)
 	logger.Info("application assembled")
 	return &App{
 		Cfg:        cfg,

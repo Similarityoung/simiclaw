@@ -163,6 +163,65 @@ describe('router shell', () => {
     expect(await screen.findAllByText('你好，控制台')).not.toHaveLength(0);
   });
 
+  it('Console 在 stream endpoint 不可用时仍通过 consumer fallback 完成发送', async () => {
+    const originalFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.href
+              : String(input);
+
+      if (url.endsWith('/v1/chat:stream') && init?.method === 'POST') {
+        return new Response('', { status: 404 });
+      }
+      if (url.endsWith('/v1/events:ingest') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            event_id: 'evt-fallback',
+            session_key: 'session-1',
+            active_session_id: 'sid-1',
+            received_at: '2026-03-09T12:05:00Z',
+            payload_hash: 'hash-fallback',
+            status: 'accepted',
+            status_url: '/v1/events/evt-fallback',
+          }),
+          { status: 202, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url.includes('/v1/events/evt-fallback')) {
+        return new Response(
+          JSON.stringify({
+            event_id: 'evt-fallback',
+            status: 'processed',
+            session_key: 'session-1',
+            session_id: 'sid-1',
+            assistant_reply: '你好，回退链路',
+            received_at: '2026-03-09T12:05:00Z',
+            created_at: '2026-03-09T12:05:00Z',
+            updated_at: '2026-03-09T12:05:02Z',
+            payload_hash: 'hash-fallback',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return originalFetch(input, init);
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<ConsolePage />);
+
+    const input = await screen.findByPlaceholderText('输入消息，开始一次新的 agent run…');
+    await user.type(input, 'fallback');
+    await user.click(screen.getByRole('button', { name: /发送消息/i }));
+
+    expect(await screen.findByText('fallback')).toBeInTheDocument();
+    expect(await screen.findAllByText('你好，回退链路')).not.toHaveLength(0);
+  });
+
   it('Channels / Memory / Skills 在空数据时显示真实空态', async () => {
     renderWithProviders(<ChannelsPage />);
     expect(await screen.findByText('暂无通道摘要')).toBeInTheDocument();

@@ -114,3 +114,11 @@ make web-ci
 - `go test ./tests/architecture/... -v`: PASS
 - `make docs-style`: PASS
 - 已固定内容: 四块 owner map、当前可执行依赖方向 guardrails、长期文档、包注释、composition root wiring 说明
+
+### US2 Checkpoint (2026-03-25)
+
+- `go test ./internal/http/... ./cmd/simiclaw/internal/... ./internal/channels/telegram/... -v`: PASS
+- `go test ./cmd/simiclaw/internal/client/... -v`: PASS
+- `go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestHTTPChatStreamTerminalRecordMatchesQueryProjection' -v`: PASS
+- `make web-ci`: PASS
+- 已固定内容: HTTP `chat:stream` 只消费 command/observe seam，Telegram adapter 只依赖 surface ingress seam，CLI/Web fallback 保持在 consumer 侧

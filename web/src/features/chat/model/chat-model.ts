@@ -181,16 +181,33 @@ export function applyTerminalEvent(state: ConsoleChatState, record?: EventRecord
     };
   }
 
+  const nextAssistantMessageID = state.assistantMessageID || (record.assistant_reply ? `assistant-terminal-${record.event_id}` : undefined);
+  const hasAssistantMessage =
+    !!nextAssistantMessageID && state.messages.some((item) => item.id === nextAssistantMessageID);
+  const nextMessages = hasAssistantMessage
+    ? state.messages.map((item) =>
+        item.id === nextAssistantMessageID ? { ...item, content: record.assistant_reply || item.content, streaming: false } : item,
+      )
+    : record.assistant_reply
+      ? [
+          ...state.messages,
+          {
+            id: nextAssistantMessageID!,
+            role: 'assistant' as const,
+            content: record.assistant_reply,
+            createdAt: record.updated_at,
+            streaming: false,
+          },
+        ]
+      : state.messages;
+
   return {
     ...state,
+    assistantMessageID: nextAssistantMessageID,
     sessionKey: record.session_key || state.sessionKey,
     statusLabel: record.status === 'failed' ? '运行失败' : '运行完成',
     errorText: record.error?.message,
-    messages: state.messages.map((item) =>
-      item.id === state.assistantMessageID
-        ? { ...item, content: record.assistant_reply || item.content, streaming: false }
-        : item,
-    ),
+    messages: nextMessages,
     debugEntries: [
       ...state.debugEntries,
       {

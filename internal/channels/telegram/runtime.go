@@ -9,6 +9,7 @@ import (
 
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 	tele "gopkg.in/telebot.v4"
 )
@@ -25,6 +26,10 @@ var testHooks runtimeTestHooks
 
 type HeartbeatRecorder interface {
 	BeatHeartbeat(ctx context.Context, name string, at time.Time) error
+}
+
+type Gateway interface {
+	Accept(ctx context.Context, in gatewaymodel.NormalizedIngress) (gateway.AcceptedIngest, *gateway.APIError)
 }
 
 func SetRuntimeTestHooksForTesting(apiURL string, client *http.Client) func() {
@@ -46,7 +51,7 @@ type Runtime struct {
 	cfg               config.TelegramChannelConfig
 	heartbeat         HeartbeatRecorder
 	heartbeatInterval time.Duration
-	gateway           *gateway.Service
+	gateway           Gateway
 	allowedUsers      map[int64]struct{}
 	logger            *logging.Logger
 
@@ -58,7 +63,7 @@ type Runtime struct {
 	started bool
 }
 
-func NewRuntime(cfg config.TelegramChannelConfig, heartbeat HeartbeatRecorder, gatewayService *gateway.Service) (*Runtime, error) {
+func NewRuntime(cfg config.TelegramChannelConfig, heartbeat HeartbeatRecorder, gatewayService Gateway) (*Runtime, error) {
 	return &Runtime{
 		cfg:               cfg,
 		heartbeat:         heartbeat,

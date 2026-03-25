@@ -374,6 +374,10 @@ function eventFromRecord(record: EventRecord): ChatStreamEvent {
   };
 }
 
+function isStreamFallbackStatus(status: number): boolean {
+  return status === 404 || status === 405 || status === 501 || status === 502;
+}
+
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -495,6 +499,28 @@ export function createRuntimeClient(fetcher: typeof fetch = fetch, config: { bas
     throw new Error('stream finished without accepted event');
   };
 
+  const ingestAndWait = async (request: IngestRequest, options?: SendChatOptions): Promise<EventRecord> => {
+    const ingestResponse = await decodeJSON<IngestResponse>(
+      await fetcher(apiURL('/v1/events:ingest', baseURL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: options?.signal,
+      }),
+    );
+    await options?.onEvent?.({
+      type: 'accepted',
+      event_id: ingestResponse.event_id,
+      sequence: 1,
+      at: ingestResponse.received_at || new Date().toISOString(),
+      stream_protocol_version: chatStreamProtocolVersion,
+      ingest_response: ingestResponse,
+    });
+    const record = await waitForTerminalEvent(ingestResponse.event_id, options?.signal);
+    await options?.onEvent?.(eventFromRecord(record));
+    return record;
+  };
+
   const client: RuntimeClient = {
     async getHealth() {
       return decodeJSON<Record<string, unknown>>(await fetcher(apiURL('/healthz', baseURL)));
@@ -542,12 +568,18 @@ export function createRuntimeClient(fetcher: typeof fetch = fetch, config: { bas
       });
 
       if (!response.ok) {
+        if (isStreamFallbackStatus(response.status)) {
+          return ingestAndWait(request, options);
+        }
         throw await decodeAPIError(response);
       }
 
       try {
         return await consumeChatStream(response, options);
       } catch (error) {
+        if (error instanceof Error && error.message === 'streaming unsupported') {
+          return ingestAndWait(request, options);
+        }
         if (error instanceof StreamRecoverableError && error.eventID) {
           const record = await waitForTerminalEvent(error.eventID, options?.signal);
           await options?.onEvent?.(eventFromRecord(record));

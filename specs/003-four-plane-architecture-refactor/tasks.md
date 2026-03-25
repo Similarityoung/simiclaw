@@ -47,15 +47,15 @@
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] 在 `tests/architecture/four_plane_boundaries_test.go` 与 `tests/architecture/owner_closure_test.go` 中补 module-to-plane 映射断言与“禁止单模块同时承担 transport + execution + observe + fallback”断言
-- [ ] T010 [P] [US1] 在 `tests/architecture/boundaries_test.go` 与 `tests/architecture/runtime_kernel_boundaries_test.go` 中补四块依赖方向断言，覆盖 `Surface -> Runtime/Query`、`Runtime -> Context/State`、`Runtime -> Capability`
+- [X] T009 [P] [US1] 在 `tests/architecture/four_plane_boundaries_test.go` 与 `tests/architecture/owner_closure_test.go` 中补 module-to-plane 映射断言与“禁止单模块同时承担 transport + execution + observe + fallback”断言
+- [X] T010 [P] [US1] 在 `tests/architecture/boundaries_test.go` 与 `tests/architecture/runtime_kernel_boundaries_test.go` 中补四块依赖方向断言，覆盖 `Surface -> Runtime/Query`、`Runtime -> Context/State`、`Runtime -> Capability`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] 更新 `ARCHITECTURE.md`、`docs/design-docs/four-plane-architecture.md`、`docs/design-docs/module-boundaries.md`，把 Phase 1/2 固定的 owner map、依赖方向和 current-to-target module mapping 同步到仓库长期文档
-- [ ] T012 [P] [US1] 更新包级 owner 注释与边界说明：`internal/http/stream/doc.go`、`internal/query/model/doc.go`、`internal/runtime/model/doc.go`、`cmd/simiclaw/internal/messages/doc.go`
-- [ ] T013 [US1] 收敛 composition root 的 owner 说明和 wiring 边界：`internal/bootstrap/app.go`、`cmd/simiclaw/internal/root/command.go`
-- [ ] T014 [US1] 运行并记录本故事最小验证：`go test ./tests/architecture/... -v`、`make docs-style`，并将结果同步到 `specs/003-four-plane-architecture-refactor/quickstart.md`
+- [X] T011 [US1] 更新 `ARCHITECTURE.md`、`docs/design-docs/four-plane-architecture.md`、`docs/design-docs/module-boundaries.md`，把 Phase 1/2 固定的 owner map、依赖方向和 current-to-target module mapping 同步到仓库长期文档
+- [X] T012 [P] [US1] 更新包级 owner 注释与边界说明：`internal/http/stream/doc.go`、`internal/query/model/doc.go`、`internal/runtime/model/doc.go`、`cmd/simiclaw/internal/messages/doc.go`
+- [X] T013 [US1] 收敛 composition root 的 owner 说明和 wiring 边界：`internal/bootstrap/app.go`、`cmd/simiclaw/internal/root/command.go`
+- [X] T014 [US1] 运行并记录本故事最小验证：`go test ./tests/architecture/... -v`、`make docs-style`，并将结果同步到 `specs/003-four-plane-architecture-refactor/quickstart.md`
 
 **Checkpoint**: User Story 1 完成后，四块统一骨架已经在仓库中可见、可读、可守护
 
@@ -92,17 +92,17 @@
 
 ### Tests for User Story 2
 
-- [ ] T022 [P] [US2] 在 `internal/http/{ingest/handler_test.go,query/handler_test.go,stream/handler_test.go}` 与 `tests/integration/http_ingress_integration_test.go` 中补 HTTP command/query/observe seam 的契约测试
-- [ ] T023 [P] [US2] 在 `cmd/simiclaw/internal/client/client_test.go`、`tests/integration/cli_integration_test.go`、`web/src/app/router/router.test.tsx` 中补 CLI/Web 的 stream fallback 与 consumer-only 契约测试
-- [ ] T024 [P] [US2] 在 `internal/channels/telegram/{normalize_test.go,runtime_test.go,filter_test.go}` 与 `tests/integration/telegram_integration_test.go` 中补 Telegram 归一化与 adapter seam 测试
+- [X] T022 [P] [US2] 在 `internal/http/{ingest/handler_test.go,query/handler_test.go,stream/handler_test.go}` 与 `tests/integration/http_ingress_integration_test.go` 中补 HTTP command/query/observe seam 的契约测试
+- [X] T023 [P] [US2] 在 `cmd/simiclaw/internal/client/client_test.go`、`tests/integration/cli_integration_test.go`、`web/src/app/router/router.test.tsx` 中补 CLI/Web 的 stream fallback 与 consumer-only 契约测试
+- [X] T024 [P] [US2] 在 `internal/channels/telegram/{normalize_test.go,runtime_test.go,filter_test.go}` 与 `tests/integration/telegram_integration_test.go` 中补 Telegram 归一化与 adapter seam 测试
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] 重构 `internal/http/{ingest/handler.go,query/handler.go,stream/handler.go,server.go}`，让 HTTP 只组合 command/query/observe seams，不再直接拥有 runtime orchestration 或 query fallback
-- [ ] T026 [P] [US2] 重构 `cmd/simiclaw/internal/{client/client.go,chat/async_cmds.go,inspect/command.go}`，把 CLI 的 retry/poll fallback、stream unsupported recovery 和 inspect query 保持在 client consumer 一侧
-- [ ] T027 [P] [US2] 重构 `internal/channels/telegram/{normalize.go,runtime.go,filter.go}`，让 Telegram adapter 只负责 transport normalization 和 Surface seam 调用
-- [ ] T028 [P] [US2] 重构 `web/src/lib/api-client.ts` 与 `web/src/app/router/router.test.tsx`，确保 Web 只消费 HTTP/SSE 契约，不编码后端 owner 假设
-- [ ] T029 [US2] 运行并记录本故事最小验证：`go test ./internal/http/... ./cmd/simiclaw/internal/... ./internal/channels/telegram/... -v`、`go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery' -v`、`go test ./cmd/simiclaw/internal/client/... -v`、`make web-ci`
+- [X] T025 [US2] 重构 `internal/http/{ingest/handler.go,query/handler.go,stream/handler.go,server.go}`，让 HTTP 只组合 command/query/observe seams，不再直接拥有 runtime orchestration 或 query fallback
+- [X] T026 [P] [US2] 重构 `cmd/simiclaw/internal/{client/client.go,chat/async_cmds.go,inspect/command.go}`，把 CLI 的 retry/poll fallback、stream unsupported recovery 和 inspect query 保持在 client consumer 一侧
+- [X] T027 [P] [US2] 重构 `internal/channels/telegram/{normalize.go,runtime.go,filter.go}`，让 Telegram adapter 只负责 transport normalization 和 Surface seam 调用
+- [X] T028 [P] [US2] 重构 `web/src/lib/api-client.ts` 与 `web/src/app/router/router.test.tsx`，确保 Web 只消费 HTTP/SSE 契约，不编码后端 owner 假设
+- [X] T029 [US2] 运行并记录本故事最小验证：`go test ./internal/http/... ./cmd/simiclaw/internal/... ./internal/channels/telegram/... -v`、`go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery' -v`、`go test ./cmd/simiclaw/internal/client/... -v`、`make web-ci`
 
 **Checkpoint**: User Story 2 完成后，Surface 入口可以替换或扩展，而不需要再改 Runtime 内核
 
