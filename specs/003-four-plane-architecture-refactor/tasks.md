@@ -157,11 +157,11 @@
 
 **Purpose**: 收口文档、导航、残余混合 glue 与最终回归，确保四块骨架在仓库里稳定可持续
 
-- [ ] T043 [P] 更新治理与导航文档：`AGENTS.md`、`ARCHITECTURE.md`、`docs/design-docs/{index.md,runtime-flow.md,prompt-and-workspace-context.md}`、`docs/references/testing.md`
-- [ ] T044 清理剩余 mixed-owner glue 与过渡 wiring：`internal/bootstrap/app.go`、`internal/runtime/kernel_adapter.go`、`internal/runtime/stream_sink.go`、`internal/http/server.go`
-- [ ] T045 [P] 复查并删除多余的 owner 回流点与 stale tests：`tests/architecture/*.go`、`tests/integration/*.go`、`cmd/simiclaw/internal/client/client_test.go`
-- [ ] T046 运行 `make fmt`，修复本 feature 涉及文件的格式化问题
-- [ ] T047 运行最终验证并把结果同步回 `specs/003-four-plane-architecture-refactor/quickstart.md`：`go test ./tests/architecture/... -v`、`make docs-style`、`make test-unit`、`make test-unit-race-core`、`make accept-current`、`make web-ci`
+- [X] T043 [P] 更新治理与导航文档：`AGENTS.md`、`ARCHITECTURE.md`、`docs/design-docs/{index.md,runtime-flow.md,prompt-and-workspace-context.md}`、`docs/references/testing.md`
+- [X] T044 清理剩余 mixed-owner glue 与过渡 wiring：`internal/bootstrap/app.go`、`internal/runtime/kernel_adapter.go`、`internal/runtime/stream_sink.go`、`internal/http/server.go`
+- [X] T045 [P] 复查并删除多余的 owner 回流点与 stale tests：`tests/architecture/*.go`、`tests/integration/*.go`、`cmd/simiclaw/internal/client/client_test.go`
+- [X] T046 运行 `make fmt`，修复本 feature 涉及文件的格式化问题
+- [X] T047 运行最终验证并把结果同步回 `specs/003-four-plane-architecture-refactor/quickstart.md`：`go test ./tests/architecture/... -v`、`make docs-style`、`make test-unit`、`make test-unit-race-core`、`make accept-current`、`make web-ci`
 
 ---
 

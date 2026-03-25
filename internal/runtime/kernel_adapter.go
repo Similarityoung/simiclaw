@@ -16,12 +16,9 @@ type runnerExecutor struct {
 }
 
 func NewRunnerExecutor(run runner.Runner, maxRounds int) kernel.Executor {
-	if maxRounds <= 0 {
-		maxRounds = 4
-	}
 	return runnerExecutor{
 		runner:     run,
-		maxRounds:  maxRounds,
+		maxRounds:  normalizeMaxToolRounds(maxRounds),
 		translator: runOutputTranslator{delivery: deliveryIntentResolver{}},
 	}
 }
@@ -30,10 +27,7 @@ func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimCon
 	ctx = runner.WithRunID(ctx, claim.RunID)
 	output, err := e.runner.Run(ctx, claim.Event, e.maxRounds, newRuntimeEventStreamSink(ctx, claim, sink))
 	result, convErr := e.translator.Translate(claim, output)
-	if err == nil && convErr != nil {
-		err = convErr
-	}
-	return result, err
+	return result, firstExecutionError(err, convErr)
 }
 
 type runOutputTranslator struct {
@@ -84,4 +78,18 @@ func (t runOutputTranslator) Translate(claim runtimemodel.ClaimContext, output r
 	}
 	result.Delivery = intent
 	return result, nil
+}
+
+func normalizeMaxToolRounds(maxRounds int) int {
+	if maxRounds <= 0 {
+		return 4
+	}
+	return maxRounds
+}
+
+func firstExecutionError(runErr, translateErr error) error {
+	if runErr != nil {
+		return runErr
+	}
+	return translateErr
 }

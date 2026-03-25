@@ -155,6 +155,18 @@ func TestChannelsProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/channels")
 }
 
+func TestGatewayExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/gateway")
+}
+
+func TestHTTPExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/http")
+}
+
+func TestChannelsExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/channels")
+}
+
 func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {
 	assertNoPackageImport(t, "net/http", "cmd/simiclaw/internal/chat")
 }

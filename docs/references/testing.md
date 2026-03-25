@@ -58,6 +58,7 @@ make guardrails-check
 - 对 docs、CI 配置或 `devtools/` 改动，最小建议是补 `make docs-style` 和 `make test-devtools`
 - Guardrails 与 baseline 变更前，先跑 `make guardrails-check` 或 `make guardrails-report`
 - 对 runtime kernel refactor 的 US4 / lane-ready 收口，推荐按顺序跑：`go test ./tests/architecture/... -v`、`make test-unit`、`make test-unit-race-core`、`go test ./tests/integration/... -tags=integration -run 'TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery|TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane' -v`、`make accept-current`
+- 对 `003-four-plane-architecture-refactor` 的最终 Phase 8 收口，推荐按顺序跑：`go test ./tests/architecture/... -v`、`make docs-style`、`make test-unit`、`make test-unit-race-core`、`make accept-current`、`make web-ci`
 
 ## Verification
 

@@ -137,3 +137,19 @@ make web-ci
 - `make test-unit`: PASS
 - `make accept-current`: PASS
 - 已固定内容: `store/tx` 不再依赖 `store/queries` 获取 event/session 读取面；query service 按 events/runs/sessions 显式拆分 consumer-owned contract；prompt 静态上下文改为只读 bundle 组装；workspace/context 与 curated memory 的整文件读取收敛到 `internal/workspacefile` 与 `internal/memory` 边界
+
+### US5 Checkpoint (2026-03-25)
+
+- `go test ./internal/provider/... ./internal/tools/... ./internal/runner/... -v`: PASS
+- `make test-unit`: PASS
+- 已固定内容: provider/tool invocation contract 已统一收敛到 capability seam；timeout、typed error 与 trace/log 语义停留在 Runtime <-> Capability 边界；capability source 不再直接推进 durable state
+
+### Phase 8 Final Closure (2026-03-25)
+
+- `go test ./tests/architecture/... -v`: PASS
+- `make docs-style`: PASS
+- `make test-unit`: PASS
+- `make test-unit-race-core`: PASS
+- `make accept-current`: PASS
+- `make web-ci`: PASS
+- 已固定内容: `bootstrap.NewApp` 改为按 plane seam 装配进程；`internal/http/server.go` 只保留 health/command/query/stream route registration；runtime boundary adapters 只负责 runner invocation translation 与 runtime event publish；导航文档、测试矩阵和 quickstart 已与最终代码形状对齐

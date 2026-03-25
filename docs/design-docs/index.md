@@ -20,6 +20,9 @@
   - `runtime-flow.md`
   - `module-boundaries.md`
   - `prompt-and-workspace-context.md`
+- 当前收口:
+  - `ARCHITECTURE.md`、`AGENTS.md` 与这里的 owner map 已在 Phase 8 对齐
+  - bootstrap / HTTP server / runtime boundary adapter 已回到“只组装、不越界”的稳定形状
 - 待补全:
   - API 示例与常见请求流程图
   - 前端路由、状态管理与后端协作方式

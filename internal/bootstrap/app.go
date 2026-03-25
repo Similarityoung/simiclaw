@@ -41,6 +41,26 @@ type App struct {
 
 var ErrStartup = errors.New("bootstrap startup failed")
 
+type capabilityBundle struct {
+	registry  *tools.Registry
+	providers *provider.Factory
+	payloads  *runtimepayload.Registry
+}
+
+type stateBundle struct {
+	queryRepo    *storequeries.Repository
+	runtimeRepo  *storetx.RuntimeRepository
+	queryService *querysvc.Service
+}
+
+type runtimeBundle struct {
+	streamHub      *runtimeevents.Hub
+	eventLoop      *runtime.EventLoop
+	streamObserver runtimeevents.StreamObserver
+	host           *runtime.HostControl
+	readiness      *runtime.ReadinessProbe
+}
+
 // NewApp assembles the process composition root.
 //
 // Ownership stays in the underlying Surface, Runtime, Context/State, and
@@ -57,40 +77,25 @@ func NewApp(cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	logger.Info("database opened")
-	registry := tools.NewRegistry()
-	tools.RegisterBuiltins(registry)
-	tools.RegisterWebSearch(registry, tools.WebSearchOptions{
-		Timeout:    cfg.WebSearch.Timeout.Duration,
-		MaxResults: cfg.WebSearch.MaxResults,
-	})
-	providers, err := provider.NewFactory(cfg.LLM)
+	capabilities, err := newCapabilityBundle(cfg)
 	if err != nil {
 		logger.Error("provider factory failed", logging.Error(err))
 		_ = db.Close()
 		return nil, err
 	}
-	streamHub := runtimeevents.NewHub()
-	payloads := runtimepayload.NewBuiltinRegistry()
-	queryRepo := storequeries.NewRepository(db)
-	run := runner.NewProviderRunner(cfg.Workspace, queryRepo, registry, providers, payloads)
-	runtimeRepo := storetx.NewRuntimeRepository(db)
-	sessionLookup := gatewaySessionLookup{scopes: db, sessions: queryRepo}
-	eventView := runtimeEventRecordView{query: queryRepo}
-	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
-	eventLoop := runtime.NewEventLoop(runtimeRepo, eventView, executor, streamHub, cfg.EventQueueCapacity)
+	state := newStateBundle(db)
+	runtimeServices := newRuntimeBundle(cfg, state, capabilities)
 	gatewayService := gateway.NewService(
 		cfg.TenantID,
-		runtimeRepo,
-		eventLoop,
-		gatewaybindings.NewResolver(cfg.TenantID, sessionLookup),
-		gatewayrouting.NewService(payloads),
+		state.runtimeRepo,
+		runtimeServices.eventLoop,
+		gatewaybindings.NewResolver(cfg.TenantID, gatewaySessionLookup{scopes: db, sessions: state.queryRepo}),
+		gatewayrouting.NewService(capabilities.payloads),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,
 		cfg.RateLimitSessionBurst,
 	)
-	queryService := querysvc.NewService(queryRepo, queryRepo, queryRepo)
-	streamObserver := runtimeevents.NewObserver(streamHub, runtimeTerminalReplaySource{query: queryService})
 
 	var telegramRuntime *telegramchannel.Runtime
 	if cfg.Channels.Telegram.Enabled {
@@ -103,24 +108,24 @@ func NewApp(cfg config.Config) (*App, error) {
 		logger.Info("telegram runtime configured")
 	}
 
-	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
-	host := runtime.NewHostControl(cfg, runtimeRepo, newRuntimeEventIngestor(gatewayService), eventLoop, sender)
-	extraHeartbeats := []string(nil)
-	if cfg.Channels.Telegram.Enabled {
-		extraHeartbeats = append(extraHeartbeats, "telegram_polling")
-	}
-	readiness := runtime.NewReadinessProbe(runtimeRepo, host, extraHeartbeats...)
-	server := httpserver.New(cfg.APIKey, gatewayService, queryService, readiness, streamObserver)
+	runtimeServices = runtimeServices.attachProcessRuntime(cfg, state, gatewayService, telegramRuntime)
+	server := httpserver.New(httpserver.Dependencies{
+		APIKey:         cfg.APIKey,
+		Command:        gatewayService,
+		Query:          state.queryService,
+		Readiness:      runtimeServices.readiness,
+		StreamObserver: runtimeServices.streamObserver,
+	})
 	logger.Info("application assembled")
 	return &App{
 		Cfg:       cfg,
 		DB:        db,
 		Gateway:   gatewayService,
-		EventLoop: eventLoop,
-		Host:      host,
-		Readiness: readiness,
+		EventLoop: runtimeServices.eventLoop,
+		Host:      runtimeServices.host,
+		Readiness: runtimeServices.readiness,
 		Telegram:  telegramRuntime,
-		StreamHub: streamHub,
+		StreamHub: runtimeServices.streamHub,
 		Handler:   server.Handler(),
 	}, nil
 }
@@ -174,4 +179,59 @@ func (a *App) RunHTTPServer(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
+}
+
+func newCapabilityBundle(cfg config.Config) (capabilityBundle, error) {
+	registry := tools.NewRegistry()
+	tools.RegisterBuiltins(registry)
+	tools.RegisterWebSearch(registry, tools.WebSearchOptions{
+		Timeout:    cfg.WebSearch.Timeout.Duration,
+		MaxResults: cfg.WebSearch.MaxResults,
+	})
+	providers, err := provider.NewFactory(cfg.LLM)
+	if err != nil {
+		return capabilityBundle{}, err
+	}
+	return capabilityBundle{
+		registry:  registry,
+		providers: providers,
+		payloads:  runtimepayload.NewBuiltinRegistry(),
+	}, nil
+}
+
+func newStateBundle(db *store.DB) stateBundle {
+	queryRepo := storequeries.NewRepository(db)
+	return stateBundle{
+		queryRepo:    queryRepo,
+		runtimeRepo:  storetx.NewRuntimeRepository(db),
+		queryService: querysvc.NewService(queryRepo, queryRepo, queryRepo),
+	}
+}
+
+func newRuntimeBundle(cfg config.Config, state stateBundle, capabilities capabilityBundle) runtimeBundle {
+	streamHub := runtimeevents.NewHub()
+	run := runner.NewProviderRunner(cfg.Workspace, state.queryRepo, capabilities.registry, capabilities.providers, capabilities.payloads)
+	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
+	return runtimeBundle{
+		streamHub: streamHub,
+		eventLoop: runtime.NewEventLoop(
+			state.runtimeRepo,
+			runtimeEventRecordView{query: state.queryRepo},
+			executor,
+			streamHub,
+			cfg.EventQueueCapacity,
+		),
+		streamObserver: runtimeevents.NewObserver(streamHub, runtimeTerminalReplaySource{query: state.queryService}),
+	}
+}
+
+func (b runtimeBundle) attachProcessRuntime(cfg config.Config, state stateBundle, gatewayService *gateway.Service, telegramRuntime *telegramchannel.Runtime) runtimeBundle {
+	sender := outboundsender.NewRouter(outboundsender.Stdout{}, telegramRuntime)
+	b.host = runtime.NewHostControl(cfg, state.runtimeRepo, newRuntimeEventIngestor(gatewayService), b.eventLoop, sender)
+	extraHeartbeats := []string(nil)
+	if telegramRuntime != nil {
+		extraHeartbeats = append(extraHeartbeats, "telegram_polling")
+	}
+	b.readiness = runtime.NewReadinessProbe(state.runtimeRepo, b.host, extraHeartbeats...)
+	return b
 }

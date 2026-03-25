@@ -36,6 +36,7 @@
 补充说明:
 
 - `internal/bootstrap/` 和 `internal/config/` 是 composition root / process wiring，不单列为第五个 plane。
+- `internal/bootstrap/app.go` 会按 `Capability -> Context/State -> Runtime -> Surface` 的顺序装配进程，但只负责组装，不重新拥有 owner。
 - `web/` 是 Surface contract consumer，不是后端 owner plane。
 - `pkg/api/`, `pkg/model/`, `pkg/logging/` 继续承担稳定外部契约与共享基础类型，不承载某个 plane 的内部 owner。
 
@@ -58,6 +59,7 @@
 - Runtime 对 Context/State 与 Capability 的依赖必须通过显式 owner 收口；当前最小形状是 `internal/runner` 负责消费 `prompt/memory/provider/tools`，而不是把这些依赖散回 `gateway/runtime/outbound`。
 - Capability Plane 不推进 durable runtime state；Context/State 不反向拥有 transport 或 execution 逻辑。
 - Composition root 只负责 wiring 和生命周期，不重新发明跨 plane 的“万能 service”。
+- `internal/http/server.go` 只注册 health、command、query 与 stream routes；`chat:stream` 的 query fallback 继续停留在 CLI/Web/shared client consumer 一侧。
 
 ## Primary Flows
 
@@ -66,9 +68,9 @@
 2. 事件执行
    `runtime.EventLoop` 从 SQLite 列出 runnable event，claim 成功后创建 started run，在事务外调用 `runner.ProviderRunner`，最后把执行结果一次性提交回 SQLite。
 3. Prompt 与工具回合
-  `prompt.Builder` 把 `internal/prompt/system/*.md` 中的 system 模板、memory、workspace 上下文、skills 索引和当前 run context 组装成静态前缀；`runner` 再与 provider 和 `tools.Registry` 协作完成多轮 tool calling。
+  `prompt.Builder` 把 `internal/prompt/system/*.md` 中的 system 模板、memory、workspace 上下文、skills 索引和当前 run context 组装成静态前缀；`runner` 再与 provider 和 `tools.Registry` 协作完成多轮 tool calling。`runtime.NewRunnerExecutor` 只负责把 kernel claim 映射为 runner 调用，并把 runner output 翻译为 finalize 所需的 runtime result。
 4. 查询与观测
-   `query.Service` 负责 events / runs / sessions 的读模型；`internal/http/query` 和 `inspect` 只消费这些查询接口，而不直接暴露 store 内部类型。
+   `query.Service` 负责 events / runs / sessions 的读模型；`internal/http/query` 和 `inspect` 只消费这些查询接口，而不直接暴露 store 内部类型。`runtimeEventStreamSink` 只负责把 runner delta/tool events 翻译为 runtime events，并由 publisher 补齐 event/run/session metadata 后投递给 observe sink。
 
 ## Streaming Chat Ownership
 

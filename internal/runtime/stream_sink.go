@@ -17,14 +17,7 @@ type runtimeEventStreamSink struct {
 func newRuntimeEventStreamSink(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) runtimeEventStreamSink {
 	return runtimeEventStreamSink{
 		translator: streamEventTranslator{},
-		publisher: runtimeEventPublisher{
-			ctx:   ctx,
-			claim: claim,
-			sink:  sink,
-			now: func() time.Time {
-				return time.Now().UTC()
-			},
-		},
+		publisher:  newRuntimeEventPublisher(ctx, claim, sink),
 	}
 }
 
@@ -32,19 +25,11 @@ func (s runtimeEventStreamSink) OnStatus(string, string) {
 }
 
 func (s runtimeEventStreamSink) OnReasoningDelta(delta string) {
-	event, ok := s.translator.reasoningDelta(delta)
-	if !ok {
-		return
-	}
-	s.publisher.publish(event)
+	s.publisher.publishTranslated(s.translator.reasoningDelta(delta))
 }
 
 func (s runtimeEventStreamSink) OnTextDelta(delta string) {
-	event, ok := s.translator.textDelta(delta)
-	if !ok {
-		return
-	}
-	s.publisher.publish(event)
+	s.publisher.publishTranslated(s.translator.textDelta(delta))
 }
 
 func (s runtimeEventStreamSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
@@ -105,10 +90,32 @@ type runtimeEventPublisher struct {
 	now   func() time.Time
 }
 
+func newRuntimeEventPublisher(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) runtimeEventPublisher {
+	return runtimeEventPublisher{
+		ctx:   ctx,
+		claim: claim,
+		sink:  sink,
+		now: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+}
+
+func (p runtimeEventPublisher) publishTranslated(event runtimemodel.RuntimeEvent, ok bool) {
+	if !ok {
+		return
+	}
+	p.publish(event)
+}
+
 func (p runtimeEventPublisher) publish(event runtimemodel.RuntimeEvent) {
 	if p.sink == nil {
 		return
 	}
+	_ = p.sink.Publish(p.ctx, p.populateMetadata(event))
+}
+
+func (p runtimeEventPublisher) populateMetadata(event runtimemodel.RuntimeEvent) runtimemodel.RuntimeEvent {
 	event.Work = p.claim.Work
 	event.EventID = p.claim.Event.EventID
 	event.RunID = p.claim.RunID
@@ -117,7 +124,7 @@ func (p runtimeEventPublisher) publish(event runtimemodel.RuntimeEvent) {
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = p.now()
 	}
-	_ = p.sink.Publish(p.ctx, event)
+	return event
 }
 
 func nonZeroTime(in time.Time) time.Time {
