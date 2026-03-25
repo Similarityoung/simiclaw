@@ -116,16 +116,16 @@
 
 ### Tests for User Story 4
 
-- [ ] T030 [P] [US4] 在 `internal/store/tx/runtime_repository_test.go`、`internal/store/tx/repository_behavior_test.go`、`tests/architecture/runtime_kernel_boundaries_test.go` 中补 facts/projections/context 分离测试
-- [ ] T031 [P] [US4] 在 `internal/prompt/builder_test.go`、`internal/tools/context_get_test.go`、`internal/workspacefile/context_test.go`、`internal/memory/memory_test.go` 中补只读上下文组装与 workspace 安全边界测试
+- [X] T030 [P] [US4] 在 `internal/store/tx/runtime_repository_test.go`、`internal/store/tx/repository_behavior_test.go`、`tests/architecture/runtime_kernel_boundaries_test.go` 中补 facts/projections/context 分离测试
+- [X] T031 [P] [US4] 在 `internal/prompt/builder_test.go`、`internal/tools/context_get_test.go`、`internal/workspacefile/context_test.go`、`internal/memory/memory_test.go` 中补只读上下文组装与 workspace 安全边界测试
 
 ### Implementation for User Story 4
 
-- [ ] T032 [US4] 重构 `internal/store/tx/{runtime_facts.go,claim_work.go,finalize_run.go,ingest_event.go}` 与 `internal/store/{queries/repository.go,projections/sessions.go}`，明确写事实、读查询、投影缓存的 owner
-- [ ] T033 [P] [US4] 重构 `internal/query/{service.go,events.go,runs.go,sessions.go}`，让 Surface 只消费 query/projection contract，而不是混合 store/runtime/context
-- [ ] T034 [P] [US4] 重构 `internal/prompt/{builder.go,loader.go,fingerprint.go}` 与 `internal/runner/context/{assembler.go,history.go,memory.go}`，把上下文组装收敛到只读 context bundle
-- [ ] T035 [P] [US4] 重构 `internal/memory/{get.go,search.go,writer.go}`、`internal/tools/{context_get.go,memory_get.go,memory_search.go,workspace_file.go}`、`internal/workspacefile/context.go`，确保 workspace/memory/context 访问只经过明确边界
-- [ ] T036 [US4] 运行并记录本故事最小验证：`go test ./internal/store/... ./internal/query/... ./internal/prompt/... ./internal/workspacefile/... ./internal/tools/... ./internal/memory/... -v`、`make test-unit`、`make accept-current`
+- [X] T032 [US4] 重构 `internal/store/tx/{runtime_facts.go,claim_work.go,finalize_run.go,ingest_event.go}` 与 `internal/store/{queries/repository.go,projections/sessions.go}`，明确写事实、读查询、投影缓存的 owner
+- [X] T033 [P] [US4] 重构 `internal/query/{service.go,events.go,runs.go,sessions.go}`，让 Surface 只消费 query/projection contract，而不是混合 store/runtime/context
+- [X] T034 [P] [US4] 重构 `internal/prompt/{builder.go,loader.go,fingerprint.go}` 与 `internal/runner/context/{assembler.go,history.go,memory.go}`，把上下文组装收敛到只读 context bundle
+- [X] T035 [P] [US4] 重构 `internal/memory/{get.go,search.go,writer.go}`、`internal/tools/{context_get.go,memory_get.go,memory_search.go,workspace_file.go}`、`internal/workspacefile/context.go`，确保 workspace/memory/context 访问只经过明确边界
+- [X] T036 [US4] 运行并记录本故事最小验证：`go test ./internal/store/... ./internal/query/... ./internal/prompt/... ./internal/workspacefile/... ./internal/tools/... ./internal/memory/... -v`、`make test-unit`、`make accept-current`
 
 **Checkpoint**: User Story 4 完成后，facts、projections、context assets 不再混成一个“万能状态层”
 

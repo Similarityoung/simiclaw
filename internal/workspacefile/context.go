@@ -3,6 +3,7 @@ package workspacefile
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -26,6 +27,12 @@ type ContextGetArgs struct {
 type ContextGetResult struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+type ContextText struct {
+	Path         string
+	ResolvedPath string
+	Content      string
 }
 
 func ResolveContextPath(workspace, rawPath string) (string, string, error) {
@@ -88,6 +95,32 @@ func GetContext(workspace string, args ContextGetArgs, maxChars int) (ContextGet
 		sb.WriteString(chunk)
 	}
 	return ContextGetResult{Path: rel, Content: sb.String()}, nil
+}
+
+func ReadContextText(workspace, rawPath string) (ContextText, bool, error) {
+	rel, abs, err := ResolveContextPath(workspace, rawPath)
+	if err != nil {
+		return ContextText{}, false, err
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ContextText{}, false, nil
+		}
+		return ContextText{}, false, err
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return ContextText{}, false, nil
+	}
+	if normalizedAbs, err := filepath.Abs(abs); err == nil {
+		abs = normalizedAbs
+	}
+	return ContextText{
+		Path:         rel,
+		ResolvedPath: abs,
+		Content:      content,
+	}, true, nil
 }
 
 func isAllowedContextPath(rel string) bool {

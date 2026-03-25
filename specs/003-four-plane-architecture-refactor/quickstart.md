@@ -130,3 +130,10 @@ make web-ci
 - `make test-unit-race-core`: PASS
 - `make accept-current`: PASS
 - 已固定内容: `ProviderRunner` 收紧为 payload dispatch + memory executor + agent executor；`runnerExecutor` 通过显式 translator / delivery resolver 对接 kernel；`runtimeEventStreamSink` 已拆分 translator + publisher；`events.Hub` 的 publish path 已拆分为 metadata populate + policy + dispatch；`Supervisor` 已收口为 `HostControl` + `ReadinessProbe`，host control 不再与 readiness aggregation 共享同一个公开 owner
+
+### US4 Checkpoint (2026-03-25)
+
+- `go test ./internal/store/... ./internal/query/... ./internal/prompt/... ./internal/workspacefile/... ./internal/tools/... ./internal/memory/... -v`: PASS
+- `make test-unit`: PASS
+- `make accept-current`: PASS
+- 已固定内容: `store/tx` 不再依赖 `store/queries` 获取 event/session 读取面；query service 按 events/runs/sessions 显式拆分 consumer-owned contract；prompt 静态上下文改为只读 bundle 组装；workspace/context 与 curated memory 的整文件读取收敛到 `internal/workspacefile` 与 `internal/memory` 边界

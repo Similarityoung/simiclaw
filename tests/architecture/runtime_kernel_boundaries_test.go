@@ -84,3 +84,7 @@ func TestStoreRootProductionCodeDoesNotImportRuntimeModel(t *testing.T) {
 func TestStoreTxProductionCodeDoesNotImportRuntimeRoot(t *testing.T) {
 	assertNoPackageImport(t, runtimeImportPath, "internal/store/tx")
 }
+
+func TestStoreTxProductionCodeDoesNotImportStoreQueries(t *testing.T) {
+	assertNoPackageImport(t, storeQueriesImportPath, "internal/store/tx")
+}

@@ -1,8 +1,8 @@
 package prompt
 
 import (
+	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,8 +15,8 @@ type promptLoader struct {
 	workspace string
 }
 
-func (l promptLoader) loadStaticData(variant staticVariant) staticPromptData {
-	data := staticPromptData{
+func (l promptLoader) loadStaticBundle(variant staticVariant) staticContextBundle {
+	data := staticContextBundle{
 		workspacePath:    l.workspacePath(),
 		memoryBlocks:     l.loadCuratedMemoryBlocks(variant.memoryMode),
 		workspaceContext: l.loadWorkspaceContextEntries(),
@@ -71,48 +71,43 @@ func (l promptLoader) loadCuratedMemoryBlocks(memoryMode string) []textEntry {
 }
 
 func (l promptLoader) readContextText(rel string) (textEntry, bool) {
-	normalizedRel, absPath, err := workspacefile.ResolveContextPath(l.workspace, rel)
+	entry, ok, err := workspacefile.ReadContextText(l.workspace, rel)
 	if err != nil {
 		return textEntry{}, false
 	}
-	content, ok := l.readFileText(absPath)
 	if !ok {
 		return textEntry{}, false
 	}
-	return textEntry{DisplayPath: normalizedRel, ResolvedPath: resolvedPath(absPath), Content: content}, true
+	return textEntry{
+		DisplayPath:  entry.Path,
+		ResolvedPath: entry.ResolvedPath,
+		Content:      entry.Content,
+	}, true
 }
 
 func (l promptLoader) readMemoryText(rel, memoryMode string) (textEntry, bool) {
-	normalizedRel, absPath, visibility, err := memory.ResolvePath(l.workspace, rel)
-	if err != nil {
-		return textEntry{}, false
+	allowed := map[string]bool{memory.VisibilityPublic: true}
+	if memoryMode == "public_private" {
+		allowed[memory.VisibilityPrivate] = true
 	}
-	if !canAccessMemoryVisibility(memoryMode, visibility) {
-		return textEntry{}, false
-	}
-	content, ok := l.readFileText(absPath)
+	entry, ok, err := memory.ReadText(l.workspace, rel, allowed)
 	if !ok {
 		return textEntry{}, false
 	}
-	return textEntry{DisplayPath: normalizedRel, ResolvedPath: resolvedPath(absPath), Content: content}, true
-}
-
-func (l promptLoader) readFileText(absPath string) (string, bool) {
-	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return "", false
+		return textEntry{}, false
 	}
-	content := strings.TrimSpace(string(data))
-	if content == "" {
-		return "", false
-	}
-	return content, true
+	return textEntry{
+		DisplayPath:  entry.Path,
+		ResolvedPath: entry.ResolvedPath,
+		Content:      entry.Content,
+	}, true
 }
 
 func (l promptLoader) loadSkillSummaries() []SkillSummary {
 	root := filepath.Join(l.workspace, "skills")
 	entries := make([]SkillSummary, 0, 8)
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() || d.Name() != "SKILL.md" {
 			return nil
 		}

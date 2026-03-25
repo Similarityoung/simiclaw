@@ -67,7 +67,7 @@ type textEntry struct {
 	Content      string
 }
 
-type staticPromptData struct {
+type staticContextBundle struct {
 	workspacePath    string
 	memoryBlocks     []textEntry
 	workspaceContext []textEntry
@@ -96,7 +96,7 @@ func (b *Builder) Build(input BuildInput) string {
 
 	variant := buildStaticVariant(input.Context)
 	parts := []string{
-		b.buildStaticPrefix(variant),
+		b.renderStaticPrefix(variant),
 		b.renderer.renderCurrentRunContext(input.Context, now),
 	}
 	return strings.Join(parts, "\n\n---\n\n")
@@ -109,7 +109,11 @@ func buildStaticVariant(ctx RunContext) staticVariant {
 	}
 }
 
-func (b *Builder) buildStaticPrefix(variant staticVariant) string {
+func (b *Builder) loadStaticBundle(variant staticVariant) staticContextBundle {
+	return b.loader.loadStaticBundle(variant)
+}
+
+func (b *Builder) renderStaticPrefix(variant staticVariant) string {
 	key := variant.key()
 	snapshot := b.finger.snapshotStaticState(variant)
 
@@ -122,7 +126,7 @@ func (b *Builder) buildStaticPrefix(variant staticVariant) string {
 	b.mu.RUnlock()
 
 	content, snapshot, cacheable := stableStaticBuild(
-		func() string { return b.buildStaticContent(variant) },
+		func() string { return b.renderer.renderStatic(b.loadStaticBundle(variant)) },
 		func() map[string]string { return b.finger.snapshotStaticState(variant) },
 	)
 
@@ -137,8 +141,4 @@ func (b *Builder) buildStaticPrefix(variant staticVariant) string {
 		b.staticBuilds++
 	}
 	return content
-}
-
-func (b *Builder) buildStaticContent(variant staticVariant) string {
-	return b.renderer.renderStatic(b.loader.loadStaticData(variant))
 }

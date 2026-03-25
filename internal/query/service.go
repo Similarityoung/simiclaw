@@ -6,23 +6,35 @@ import (
 	querymodel "github.com/similarityyoung/simiclaw/internal/query/model"
 )
 
-type Repository interface {
+type EventRepository interface {
 	GetEventRecord(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error)
 	LookupEvent(ctx context.Context, key string) (querymodel.LookupEvent, bool, error)
+	ListEventRecords(ctx context.Context, filter querymodel.EventFilter) ([]querymodel.EventRecord, error)
+}
+
+type RunRepository interface {
 	GetRunTrace(ctx context.Context, runID string) (querymodel.RunTrace, bool, error)
+	ListRunTraces(ctx context.Context, filter querymodel.RunFilter) ([]querymodel.RunTrace, error)
+}
+
+type SessionRepository interface {
 	GetSessionRecord(ctx context.Context, sessionKey string) (querymodel.SessionRecord, bool, error)
 	ListMessageRecords(ctx context.Context, filter querymodel.SessionHistoryFilter) ([]querymodel.MessageRecord, error)
-	ListEventRecords(ctx context.Context, filter querymodel.EventFilter) ([]querymodel.EventRecord, error)
-	ListRunTraces(ctx context.Context, filter querymodel.RunFilter) ([]querymodel.RunTrace, error)
 	ListSessionRecords(ctx context.Context, filter querymodel.SessionFilter) ([]querymodel.SessionRecord, error)
 }
 
 type Service struct {
-	repo Repository
+	events   EventRepository
+	runs     RunRepository
+	sessions SessionRepository
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(events EventRepository, runs RunRepository, sessions SessionRepository) *Service {
+	return &Service{
+		events:   events,
+		runs:     runs,
+		sessions: sessions,
+	}
 }
 
 func pageFetchLimit(limit int) int {

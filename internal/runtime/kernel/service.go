@@ -12,19 +12,21 @@ import (
 )
 
 type Service struct {
-	facts    Facts
-	executor Executor
-	events   EventSink
-	now      func() time.Time
-	nextID   func() uint64
-	counter  atomic.Uint64
+	facts     Facts
+	eventView EventView
+	executor  Executor
+	events    EventSink
+	now       func() time.Time
+	nextID    func() uint64
+	counter   atomic.Uint64
 }
 
-func NewService(facts Facts, executor Executor, events EventSink) *Service {
+func NewService(facts Facts, eventView EventView, executor Executor, events EventSink) *Service {
 	return &Service{
-		facts:    facts,
-		executor: executor,
-		events:   events,
+		facts:     facts,
+		eventView: eventView,
+		executor:  executor,
+		events:    events,
 		now: func() time.Time {
 			return time.Now().UTC()
 		},
@@ -137,7 +139,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		eventKind = runtimemodel.RuntimeEventFailed
 	}
 	var eventRecord *runtimemodel.EventRecord
-	if rec, ok, err := s.facts.GetEventRecord(ctx, claim.Event.EventID); err == nil && ok {
+	if rec, ok, err := s.loadEventRecord(ctx, claim.Event.EventID); err == nil && ok {
 		eventRecord = &rec
 	}
 	s.publish(ctx, runtimemodel.RuntimeEvent{
@@ -176,6 +178,13 @@ func (s *Service) publish(ctx context.Context, event runtimemodel.RuntimeEvent) 
 		return
 	}
 	_ = s.events.Publish(ctx, event)
+}
+
+func (s *Service) loadEventRecord(ctx context.Context, eventID string) (runtimemodel.EventRecord, bool, error) {
+	if s.eventView == nil {
+		return runtimemodel.EventRecord{}, false, nil
+	}
+	return s.eventView.GetEventRecord(ctx, eventID)
 }
 
 func (s *Service) next() uint64 {

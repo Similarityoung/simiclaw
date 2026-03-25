@@ -9,7 +9,7 @@ import (
 
 type promptRenderer struct{}
 
-func (promptRenderer) renderStatic(data staticPromptData) string {
+func (promptRenderer) renderStatic(data staticContextBundle) string {
 	parts := []string{
 		renderIdentitySection(data.workspacePath),
 		renderToolContractSection(),

@@ -15,6 +15,7 @@ import (
 
 type EventLoop struct {
 	facts     kernel.Facts
+	eventView kernel.EventView
 	processor kernel.Processor
 	queue     chan runtimemodel.WorkItem
 	scheduler *lanes.Scheduler
@@ -26,17 +27,18 @@ type EventLoop struct {
 	enqueueID atomic.Uint64
 }
 
-func NewEventLoop(facts kernel.Facts, executor kernel.Executor, events kernel.EventSink, queueCap int) *EventLoop {
+func NewEventLoop(facts kernel.Facts, eventView kernel.EventView, executor kernel.Executor, events kernel.EventSink, queueCap int) *EventLoop {
 	if queueCap <= 0 {
 		queueCap = 1024
 	}
 	loop := &EventLoop{
 		facts:     facts,
+		eventView: eventView,
 		queue:     make(chan runtimemodel.WorkItem, queueCap),
 		scheduler: lanes.NewScheduler(),
 		logger:    logging.L("runtime.eventloop"),
 	}
-	processor := kernel.NewService(facts, executor, events)
+	processor := kernel.NewService(facts, eventView, executor, events)
 	processor.SetClock(func() time.Time { return time.Now().UTC() })
 	processor.SetIDGenerator(func() uint64 { return loop.enqueueID.Add(1) })
 	loop.processor = processor
@@ -169,8 +171,8 @@ func workLogFields(work runtimemodel.WorkItem) []logging.Field {
 }
 
 func (l *EventLoop) prepareWorkForScheduling(ctx context.Context, work runtimemodel.WorkItem) runtimemodel.WorkItem {
-	if work.SessionKey == "" && l.facts != nil && work.EventID != "" {
-		if rec, ok, err := l.facts.GetEventRecord(ctx, work.EventID); err == nil && ok {
+	if work.SessionKey == "" && l.eventView != nil && work.EventID != "" {
+		if rec, ok, err := l.eventView.GetEventRecord(ctx, work.EventID); err == nil && ok {
 			work.SessionKey = rec.SessionKey
 		}
 	}

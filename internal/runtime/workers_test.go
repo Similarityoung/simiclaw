@@ -108,7 +108,7 @@ func TestRunScheduledKindUsesUnifiedIngestSemantics(t *testing.T) {
 
 	queue := &captureEnqueuer{}
 	repo := storetx.NewRuntimeRepository(db)
-	ingestService := newGatewayIngestor("local", repo, queue)
+	ingestService := newGatewayIngestor("local", repo, db, queryRepo, queue)
 	ingestService.SetClock(func() time.Time { return now })
 	host := &HostControl{
 		workers: repo,
@@ -187,8 +187,8 @@ func TestRunScheduledKindFallbackLoopMarksEventQueued(t *testing.T) {
 	hub := runtimeevents.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
 	queryRepo := storequeries.NewRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
-	ingestService := newGatewayIngestor("local", repo, &rejectEnqueuer{})
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 4)
+	ingestService := newGatewayIngestor("local", repo, db, queryRepo, &rejectEnqueuer{})
 	ingestService.SetClock(func() time.Time { return now })
 	host := &HostControl{
 		workers: repo,
@@ -357,8 +357,8 @@ func TestHostControlStartStopAndReadinessProbe(t *testing.T) {
 	}
 
 	hub := runtimeevents.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 8)
-	ingestService := newGatewayIngestor(cfg.TenantID, repo, loop)
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 8)
+	ingestService := newGatewayIngestor(cfg.TenantID, repo, db, queryRepo, loop)
 	ingestService.SetClock(func() time.Time { return now })
 	sender := &captureSender{}
 	out := logcapture.CaptureStdout(t, func() {
@@ -466,7 +466,7 @@ func TestReadyStateWhenLoopDown(t *testing.T) {
 
 	hub := runtimeevents.NewHub()
 	repo := storetx.NewRuntimeRepository(db)
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 1)
+	loop := NewEventLoop(repo, nil, NewRunnerExecutor(fixedOutputRunner{}, 1), hub, 1)
 	host := NewHostControl(cfg, repo, nil, loop, &captureSender{})
 	readiness := NewReadinessProbe(repo, host)
 	state, err := readiness.ReadyState(context.Background())
@@ -517,7 +517,7 @@ func TestRunScheduledKindFailsWithoutIngestService(t *testing.T) {
 }
 
 func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
-	loop := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 0), nil, 0)
+	loop := NewEventLoop(nil, nil, NewRunnerExecutor(fixedOutputRunner{}, 0), nil, 0)
 	if cap(loop.queue) != 1024 {
 		t.Fatalf("expected default queue capacity, got cap=%d", cap(loop.queue))
 	}
@@ -525,7 +525,7 @@ func TestNewEventLoopDefaultsAndQueueCapacity(t *testing.T) {
 		t.Fatalf("expected first enqueue to succeed")
 	}
 
-	full := NewEventLoop(nil, NewRunnerExecutor(fixedOutputRunner{}, 1), nil, 1)
+	full := NewEventLoop(nil, nil, NewRunnerExecutor(fixedOutputRunner{}, 1), nil, 1)
 	if !full.TryEnqueue("evt_1") {
 		t.Fatalf("expected bounded queue first enqueue to succeed")
 	}
@@ -576,13 +576,13 @@ func (g *gatewayEventIngestor) Ingest(ctx context.Context, req runtimeworkers.In
 	}, nil
 }
 
-func newGatewayIngestor(tenantID string, repo *storetx.RuntimeRepository, queue gateway.Enqueuer) *gatewayEventIngestor {
+func newGatewayIngestor(tenantID string, repo *storetx.RuntimeRepository, db *store.DB, queryRepo *storequeries.Repository, queue gateway.Enqueuer) *gatewayEventIngestor {
 	payloads := runtimepayload.NewBuiltinRegistry()
 	svc := gateway.NewService(
 		tenantID,
 		repo,
 		queue,
-		gatewaybindings.NewResolver(tenantID, repo),
+		gatewaybindings.NewResolver(tenantID, newTestGatewaySessionLookup(db, queryRepo)),
 		gatewayrouting.NewService(payloads),
 		100,
 		100,

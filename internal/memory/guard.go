@@ -130,6 +130,7 @@ func ResolvePathInfo(workspace, rawPath string) (string, string, PathInfo, error
 		if !resolvedAllowed {
 			return "", "", PathInfo{}, fmt.Errorf("%w: symlink target not in whitelist", ErrPathDenied)
 		}
+		absPath = resolvedAbs
 		info = resolvedInfo
 	} else if !os.IsNotExist(err) {
 		return "", "", PathInfo{}, err

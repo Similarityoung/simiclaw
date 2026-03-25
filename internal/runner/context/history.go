@@ -11,7 +11,8 @@ type Reader interface {
 	SearchRAGHits(ctx context.Context, sessionID, query string, limit int) ([]runnermodel.RAGHit, error)
 }
 
-type Loaded struct {
+// Bundle is the read-only per-run context assembled from history and RAG hits.
+type Bundle struct {
 	History  []runnermodel.HistoryMessage
 	RAGHits  []runnermodel.RAGHit
 	Manifest *runnermodel.ContextManifest

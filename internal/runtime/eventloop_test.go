@@ -70,7 +70,7 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 		t.Fatalf("unexpected replay before processing: %+v", replay)
 	}
 
-	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 	}
 
 	hub := runtimeevents.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 		finished: make(chan struct{}),
 	}
 	hub := runtimeevents.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1), hub, 1)
+	loop := NewEventLoop(repo, nil, NewRunnerExecutor(run, 1), hub, 1)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 
 func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
 	repo := &laneHydrationFacts{}
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
+	loop := NewEventLoop(repo, stubEventView{record: runtimemodel.EventRecord{EventID: "evt_lane", SessionKey: "local:dm:u1"}, ok: true}, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		loop := NewEventLoop(nil, nil, nil, 1)
+		loop := NewEventLoop(nil, nil, nil, nil, 1)
 		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{EventID: "evt_1"}); !ok {
 			t.Fatal("expected first enqueue to succeed")
 		}
@@ -380,10 +380,6 @@ func (r *stopPathFacts) Finalize(_ context.Context, finalize runtimemodel.Finali
 	return nil
 }
 
-func (r *stopPathFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{}, false, nil
-}
-
 type laneHydrationFacts struct {
 	claimedWork runtimemodel.WorkItem
 }
@@ -416,11 +412,14 @@ func (r *laneHydrationFacts) Finalize(context.Context, runtimemodel.FinalizeComm
 	return nil
 }
 
-func (r *laneHydrationFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{
-		EventID:    "evt_lane",
-		SessionKey: "local:dm:u1",
-	}, true, nil
+type stubEventView struct {
+	record runtimemodel.EventRecord
+	ok     bool
+	err    error
+}
+
+func (v stubEventView) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
+	return v.record, v.ok, v.err
 }
 
 type stubRuntimeHost struct {

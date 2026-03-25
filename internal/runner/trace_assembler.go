@@ -12,7 +12,7 @@ import (
 
 type runTraceAssembler struct{}
 
-func (runTraceAssembler) AttachContext(trace *api.RunTrace, history runnercontext.Loaded) {
+func (runTraceAssembler) AttachContext(trace *api.RunTrace, history runnercontext.Bundle) {
 	trace.ContextManifest = toAPIContextManifest(history.Manifest)
 	trace.RAGHits = toAPIRAGHits(history.RAGHits)
 }

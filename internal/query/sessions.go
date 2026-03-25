@@ -7,12 +7,12 @@ import (
 )
 
 func (s *Service) GetSession(ctx context.Context, sessionKey string) (querymodel.SessionRecord, bool, error) {
-	return s.repo.GetSessionRecord(ctx, sessionKey)
+	return s.sessions.GetSessionRecord(ctx, sessionKey)
 }
 
 func (s *Service) ListSessionHistory(ctx context.Context, filter querymodel.SessionHistoryFilter) (querymodel.MessagePage, error) {
 	filter.Limit = pageFetchLimit(filter.Limit)
-	items, err := s.repo.ListMessageRecords(ctx, filter)
+	items, err := s.sessions.ListMessageRecords(ctx, filter)
 	if err != nil {
 		return querymodel.MessagePage{}, err
 	}
@@ -21,7 +21,7 @@ func (s *Service) ListSessionHistory(ctx context.Context, filter querymodel.Sess
 
 func (s *Service) ListSessions(ctx context.Context, filter querymodel.SessionFilter) (querymodel.SessionPage, error) {
 	filter.Limit = pageFetchLimit(filter.Limit)
-	items, err := s.repo.ListSessionRecords(ctx, filter)
+	items, err := s.sessions.ListSessionRecords(ctx, filter)
 	if err != nil {
 		return querymodel.SessionPage{}, err
 	}

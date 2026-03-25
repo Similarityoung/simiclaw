@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -14,6 +15,45 @@ type GetArgs struct {
 type GetResult struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+type TextFile struct {
+	Path         string
+	ResolvedPath string
+	Visibility   string
+	Kind         string
+	Content      string
+}
+
+func ReadText(workspace, rawPath string, allowedVisibilities map[string]bool) (TextFile, bool, error) {
+	rel, abs, info, err := ResolvePathInfo(workspace, rawPath)
+	if err != nil {
+		return TextFile{}, false, err
+	}
+	if len(allowedVisibilities) > 0 && !allowedVisibilities[NormalizeVisibility(info.Visibility)] {
+		return TextFile{}, false, nil
+	}
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return TextFile{}, false, nil
+		}
+		return TextFile{}, false, err
+	}
+	content := strings.TrimSpace(string(b))
+	if content == "" {
+		return TextFile{}, false, nil
+	}
+	if normalizedAbs, err := filepath.Abs(abs); err == nil {
+		abs = normalizedAbs
+	}
+	return TextFile{
+		Path:         rel,
+		ResolvedPath: abs,
+		Visibility:   info.Visibility,
+		Kind:         info.Kind,
+		Content:      content,
+	}, true, nil
 }
 
 func Get(workspace string, args GetArgs, maxChars int) (GetResult, error) {
@@ -29,7 +69,6 @@ func Get(workspace string, args GetArgs, maxChars int) (GetResult, error) {
 	if err != nil {
 		return GetResult{}, err
 	}
-
 	raw := strings.ReplaceAll(string(b), "\r\n", "\n")
 	lines := strings.Split(raw, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {

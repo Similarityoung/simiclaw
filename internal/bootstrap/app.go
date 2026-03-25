@@ -74,20 +74,22 @@ func NewApp(cfg config.Config) (*App, error) {
 	queryRepo := storequeries.NewRepository(db)
 	run := runner.NewProviderRunner(cfg.Workspace, queryRepo, registry, providers, payloads)
 	runtimeRepo := storetx.NewRuntimeRepository(db)
+	sessionLookup := gatewaySessionLookup{scopes: db, sessions: queryRepo}
+	eventView := runtimeEventRecordView{query: queryRepo}
 	executor := runtime.NewRunnerExecutor(run, cfg.MaxToolRounds)
-	eventLoop := runtime.NewEventLoop(runtimeRepo, executor, streamHub, cfg.EventQueueCapacity)
+	eventLoop := runtime.NewEventLoop(runtimeRepo, eventView, executor, streamHub, cfg.EventQueueCapacity)
 	gatewayService := gateway.NewService(
 		cfg.TenantID,
 		runtimeRepo,
 		eventLoop,
-		gatewaybindings.NewResolver(cfg.TenantID, runtimeRepo),
+		gatewaybindings.NewResolver(cfg.TenantID, sessionLookup),
 		gatewayrouting.NewService(payloads),
 		cfg.RateLimitTenantRPS,
 		cfg.RateLimitTenantBurst,
 		cfg.RateLimitSessionRPS,
 		cfg.RateLimitSessionBurst,
 	)
-	queryService := querysvc.NewService(queryRepo)
+	queryService := querysvc.NewService(queryRepo, queryRepo, queryRepo)
 	streamObserver := runtimeevents.NewObserver(streamHub, runtimeTerminalReplaySource{query: queryService})
 
 	var telegramRuntime *telegramchannel.Runtime
