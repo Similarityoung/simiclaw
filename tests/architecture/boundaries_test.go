@@ -68,8 +68,24 @@ func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/query")
 }
 
+func TestQueryProductionCodeDoesNotImportSurfaceAdapters(t *testing.T) {
+	assertNoPackageImportPrefix(t, "internal/query",
+		"github.com/similarityyoung/simiclaw/internal/http",
+		"github.com/similarityyoung/simiclaw/internal/channels",
+		"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+	)
+}
+
 func TestRunnerProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/runner")
+}
+
+func TestRunnerProductionCodeDoesNotImportSurfaceAdapters(t *testing.T) {
+	assertNoPackageImportPrefix(t, "internal/runner",
+		"github.com/similarityyoung/simiclaw/internal/http",
+		"github.com/similarityyoung/simiclaw/internal/channels",
+		"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+	)
 }
 
 func TestRuntimeProductionCodeDoesNotImportStore(t *testing.T) {

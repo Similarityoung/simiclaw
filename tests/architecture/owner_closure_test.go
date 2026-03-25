@@ -21,3 +21,34 @@ func TestLegacySupportingPackagesDoNotExist(t *testing.T) {
 		}
 	}
 }
+
+func TestFourPlaneOwnerMapDoesNotAssignMultiplePlanesToSameModule(t *testing.T) {
+	seen := make(map[string]ownerPlane, len(fourPlaneModuleOwners))
+	for _, owner := range fourPlaneModuleOwners {
+		previous, ok := seen[owner.path]
+		if ok && previous != owner.plane {
+			t.Fatalf("module %s assigned to multiple planes: %s, %s", owner.path, previous, owner.plane)
+		}
+		seen[owner.path] = owner.plane
+	}
+}
+
+func TestFourPlaneOwnerMapDoesNotCollapseTransportExecutionObserveAndFallback(t *testing.T) {
+	for _, owner := range fourPlaneModuleOwners {
+		if hasRole(owner.roles, roleTransport) &&
+			hasRole(owner.roles, roleExecution) &&
+			hasRole(owner.roles, roleObserve) &&
+			hasRole(owner.roles, roleFallback) {
+			t.Fatalf("module %s collapses transport/execution/observe/fallback into one owner", owner.path)
+		}
+	}
+}
+
+func hasRole(roles []string, want string) bool {
+	for _, role := range roles {
+		if role == want {
+			return true
+		}
+	}
+	return false
+}

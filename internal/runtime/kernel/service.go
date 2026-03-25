@@ -46,6 +46,9 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	if s.facts == nil || s.executor == nil {
 		return nil
 	}
+
+	// claim the work item, which includes generating a run ID and recording the claim in the store.
+	// If the claim is successful, we proceed with execution; if not, we return early.
 	claim, claimedAt, ok, err := s.claim(ctx, work)
 	if err != nil {
 		logging.L("runtime.kernel").Error("claim failed",
@@ -57,6 +60,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 	if !ok {
 		return err
 	}
+
 	logger := logging.L("runtime.kernel").With(
 		logging.String("event_id", claim.Event.EventID),
 		logging.String("payload_type", claim.Event.Payload.Type),
@@ -64,6 +68,7 @@ func (s *Service) Process(ctx context.Context, work runtimemodel.WorkItem) error
 		logging.String("session_id", claim.SessionID),
 		logging.String("run_id", claim.RunID),
 	)
+
 	logger.Info("claim succeeded", logging.String("run_mode", string(claim.RunMode)))
 
 	s.publish(ctx, runtimemodel.RuntimeEvent{

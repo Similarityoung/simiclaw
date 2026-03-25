@@ -7,6 +7,7 @@
 ## Read This First
 
 - [`core-beliefs.md`](core-beliefs.md): V1 的设计信念与不愿妥协的约束
+- [`four-plane-architecture.md`](four-plane-architecture.md): spec03 的四块 owner map、依赖方向与 current-to-target mapping
 - [`runtime-flow.md`](runtime-flow.md): event 从进入系统到提交结果的主路径
 - [`module-boundaries.md`](module-boundaries.md): 哪些依赖关系被架构测试直接卡死
 - [`prompt-and-workspace-context.md`](prompt-and-workspace-context.md): prompt、memory、skills 与 workspace 文件边界
@@ -15,6 +16,7 @@
 
 - 已验证:
   - `core-beliefs.md`
+  - `four-plane-architecture.md`
   - `runtime-flow.md`
   - `module-boundaries.md`
   - `prompt-and-workspace-context.md`

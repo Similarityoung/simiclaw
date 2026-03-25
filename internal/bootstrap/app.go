@@ -40,6 +40,11 @@ type App struct {
 
 var ErrStartup = errors.New("bootstrap startup failed")
 
+// NewApp assembles the process composition root.
+//
+// Ownership stays in the underlying Surface, Runtime, Context/State, and
+// Capability packages; bootstrap only wires them together and manages process
+// lifecycle concerns.
 func NewApp(cfg config.Config) (*App, error) {
 	logger := logging.L("bootstrap").With(
 		logging.String("workspace", cfg.Workspace),

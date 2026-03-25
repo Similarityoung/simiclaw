@@ -61,3 +61,12 @@ LLM_MODEL=openai/deepseek-chat
 - 配置与环境变量: [`docs/references/configuration.md`](docs/references/configuration.md)
 - 测试矩阵: [`docs/references/testing.md`](docs/references/testing.md)
 - 工作区布局: [`docs/references/workspace-layout.md`](docs/references/workspace-layout.md)
+
+## Active Technologies
+
+- Go 1.25 + TypeScript/React (existing `web/` client, contract consumer only) + Cobra CLI, `modernc.org/sqlite`, `github.com/openai/openai-go/v3`, `gopkg.in/telebot.v4`, React + Vite (003-four-plane-architecture-refactor)
+- SQLite (`workspace/runtime/app.db`) + workspace `memory/` + prompt/workspace/context files under existing safety boundaries (003-four-plane-architecture-refactor)
+
+## Recent Changes
+
+- 003-four-plane-architecture-refactor: Added Go 1.25 + TypeScript/React (existing `web/` client, contract consumer only) + Cobra CLI, `modernc.org/sqlite`, `github.com/openai/openai-go/v3`, `gopkg.in/telebot.v4`, React + Vite

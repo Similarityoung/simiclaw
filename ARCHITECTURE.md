@@ -24,16 +24,40 @@
   - OpenAI-compatible LLM provider (`github.com/openai/openai-go/v3`)
   - Telegram long polling
 
-## Layers
+## Four-Plane Owner Map
 
-| 层 | 责任 | 主要位置 |
+| Plane | 责任 | 主要位置 |
 | --- | --- | --- |
-| 入口层 | CLI、HTTP、前端与渠道适配 | `cmd/simiclaw/`, `internal/http/`, `internal/channels/`, `web/` |
-| 应用装配层 | 配置加载、依赖组装、生命周期管理 | `internal/bootstrap/`, `internal/config/` |
-| 写路径与执行层 | gateway、event loop、runner、worker、outbox | `internal/gateway/`, `internal/runtime/`, `internal/runner/`, `internal/outbound/` |
-| 持久化与查询层 | SQLite schema、事务、读服务 | `internal/store/`, `internal/query/` |
-| 上下文与能力层 | prompt、memory、skills、workspace 文件边界 | `internal/prompt/`, `internal/memory/`, `internal/tools/`, `internal/workspace/`, `internal/workspacefile/` |
-| 对外稳定契约 | HTTP / SSE / CLI wire model 与共享类型 | `pkg/api/`, `pkg/model/`, `pkg/logging/` |
+| Surface | transport、auth、request normalization、serialization、SSE framing、CLI/Web/Telegram consumer behavior | `cmd/simiclaw/internal/`, `internal/http/`, `internal/channels/` |
+| Runtime | command ingress、claim/execute/finalize、worker lifecycle、delivery coordination、runtime observe publication | `internal/gateway/`, `internal/runtime/`, `internal/runner/`, `internal/outbound/` |
+| Context/State | durable facts、projections/read models、prompt/context assets、workspace safety boundary | `internal/store/`, `internal/query/`, `internal/prompt/`, `internal/memory/`, `internal/workspace/`, `internal/workspacefile/` |
+| Capability Plane | provider、tools，以及后续 skills/MCP/router 等可调用能力 | `internal/provider/`, `internal/tools/` |
+
+补充说明:
+
+- `internal/bootstrap/` 和 `internal/config/` 是 composition root / process wiring，不单列为第五个 plane。
+- `web/` 是 Surface contract consumer，不是后端 owner plane。
+- `pkg/api/`, `pkg/model/`, `pkg/logging/` 继续承担稳定外部契约与共享基础类型，不承载某个 plane 的内部 owner。
+
+## Current-To-Target Module Mapping
+
+| 当前模块 | 目标 owner | 说明 |
+| --- | --- | --- |
+| `internal/http/ingest`, `internal/http/query`, `internal/http/stream`, `internal/channels/telegram` | Surface | 只保留 transport 与 surface composition；不拥有 durable state transition |
+| `cmd/simiclaw/internal/chat`, `inspect`, `client`, `messages`, `root` | Surface | CLI 只消费 command/query/observe/host-control surface，不定义 runtime 事务语义 |
+| `internal/gateway` | Runtime | 作为 command ingress boundary，负责校验、session/routing policy、持久化请求进入点 |
+| `internal/runtime`, `internal/runner`, `internal/outbound` | Runtime | 负责执行内核、worker host、observe publication、durable delivery coordination |
+| `internal/store/*`, `internal/query/*` | Context/State | facts、projections 与 query read-model owner |
+| `internal/prompt`, `internal/memory`, `internal/workspace`, `internal/workspacefile` | Context/State | 上下文资产与 workspace 安全边界，不替代 SQLite facts |
+| `internal/provider`, `internal/tools` | Capability Plane | 被 Runtime 调用的能力源，不直接推进 durable state |
+
+## Dependency Directions
+
+- Surface 只调用 Runtime command/observe seam 与 Query read-model seam；不得直接 import `internal/store`、`internal/prompt`、`internal/memory`、`internal/workspace*`、`internal/provider`、`internal/tools`。
+- Runtime 不反向依赖 Surface adapter；当前最小 guardrail 是 `internal/gateway`、`internal/runtime`、`internal/outbound` 不 import `internal/http`、`internal/channels` 或 CLI command 包。
+- Runtime 对 Context/State 与 Capability 的依赖必须通过显式 owner 收口；当前最小形状是 `internal/runner` 负责消费 `prompt/memory/provider/tools`，而不是把这些依赖散回 `gateway/runtime/outbound`。
+- Capability Plane 不推进 durable runtime state；Context/State 不反向拥有 transport 或 execution 逻辑。
+- Composition root 只负责 wiring 和生命周期，不重新发明跨 plane 的“万能 service”。
 
 ## Primary Flows
 
@@ -46,9 +70,19 @@
 4. 查询与观测
    `query.Service` 负责 events / runs / sessions 的读模型；`internal/http/query` 和 `inspect` 只消费这些查询接口，而不直接暴露 store 内部类型。
 
+## Streaming Chat Ownership
+
+`POST /v1/chat:stream` 当前仍是一个对外组合入口，但 owner 已经按四块拆清：
+
+- command ingest: `internal/http/ingest` + `internal/gateway`
+- runtime observe / replay: `internal/runtime/events`
+- SSE framing 与 keepalive: `internal/http/stream`
+- client-side retry / polling fallback: `cmd/simiclaw/internal/client` 与对应 consumer
+
 ## Enforced Boundaries
 
-- `tests/architecture/boundaries_test.go` 与 `tests/architecture/runtime_kernel_boundaries_test.go` 会阻止 `internal/http`、`internal/query`、`internal/runner`、`internal/runtime`、`internal/channels`、`internal/workspace` 直接依赖 `internal/store`；gateway 通过自有 contract 与事实层解耦。
+- `tests/architecture/four_plane_boundaries_test.go`、`tests/architecture/boundaries_test.go` 与 `tests/architecture/runtime_kernel_boundaries_test.go` 会固定 owner map，并阻止 `internal/http` / `internal/channels` 直接依赖 context assets 或 capability plane，也阻止 runtime plane 反向依赖 surface adapters。
+- 现有 store guardrail 继续阻止 `internal/http`、`internal/query`、`internal/runner`、`internal/runtime`、`internal/channels`、`internal/workspace` 直接依赖 `internal/store`；gateway 通过自有 contract 与事实层解耦。
 - `pkg/api` 是稳定对外契约；内部子系统通过各自的 `internal/<subsystem>/model` 传递局部 DTO。
 - 只有 ingest 入口能直接调用 `IngestEvent`；写路径不能在系统里随意旁路。
 
@@ -69,6 +103,7 @@
 
 - 入口导航: [`AGENTS.md`](AGENTS.md)
 - 文档首页: [`docs/index.md`](docs/index.md)
+- 四块骨架: [`docs/design-docs/four-plane-architecture.md`](docs/design-docs/four-plane-architecture.md)
 - 运行链路细节: [`docs/design-docs/runtime-flow.md`](docs/design-docs/runtime-flow.md)
 - 模块边界细节: [`docs/design-docs/module-boundaries.md`](docs/design-docs/module-boundaries.md)
 - Prompt / Workspace 上下文: [`docs/design-docs/prompt-and-workspace-context.md`](docs/design-docs/prompt-and-workspace-context.md)
