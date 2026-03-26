@@ -17,9 +17,9 @@
 
 **Purpose**: 建立四块统一骨架的文档落点、目标源码形状、守护测试落点和实现入口清单
 
-- [ ] T001 创建四块架构总览文档并先写入 target source shape、current-to-target module mapping 与 owner map，同时接入索引：`docs/design-docs/four-plane-architecture.md`、`docs/design-docs/index.md`、`docs/index.md`
-- [ ] T002 [P] 创建四块架构守护测试骨架：`tests/architecture/four_plane_boundaries_test.go`
-- [ ] T003 [P] 在 `specs/003-four-plane-architecture-refactor/quickstart.md` 中固定 Phase 2 基线 gate、契约敏感路径验证命令与 checkpoint，用作后续每个 slice 的统一验收入口
+- [X] T001 创建四块架构总览文档并先写入 target source shape、current-to-target module mapping 与 owner map，同时接入索引：`docs/design-docs/four-plane-architecture.md`、`docs/design-docs/index.md`、`docs/index.md`
+- [X] T002 [P] 创建四块架构守护测试骨架：`tests/architecture/four_plane_boundaries_test.go`
+- [X] T003 [P] 在 `specs/003-four-plane-architecture-refactor/quickstart.md` 中固定 Phase 2 基线 gate、契约敏感路径验证命令与 checkpoint，用作后续每个 slice 的统一验收入口
 
 ---
 
@@ -29,11 +29,11 @@
 
 **⚠️ CRITICAL**: 本阶段完成前，不应进入任何用户故事实现
 
-- [ ] T004 在 `internal/gateway/contracts.go`、`internal/runtime/kernel/contracts.go`、`internal/query/service.go`、`internal/runtime/events/hub.go` 中定义显式 `command/query/observe` seam 与 host-control 边界
-- [ ] T005 [P] 在 `internal/runtime/kernel/facts.go`、`internal/runtime/kernel/events.go`、`internal/provider/types.go`、`internal/tools/types.go`、`internal/runner/model/types.go` 中固定 Runtime -> Context/State 与 Runtime -> Capability 的 consumer-owned contract
-- [ ] T006 [P] 在 `tests/architecture/boundaries_test.go`、`tests/architecture/http_channel_boundaries_test.go`、`tests/architecture/runtime_kernel_boundaries_test.go`、`tests/architecture/owner_closure_test.go`、`tests/architecture/four_plane_boundaries_test.go` 中编码四块 owner guardrails，禁止新的混合中心对象回流，并运行 `go test ./tests/architecture/... -v`、`make docs-style` 固定文档/边界基线
-- [ ] T007 [P] 在 `tests/integration/runtime_integration_test.go`、`tests/integration/runtime_trace_path_test.go`、`cmd/simiclaw/internal/client/client_test.go`、`web/src/app/router/router.test.tsx` 中固定 `/v1/events:ingest`、`/v1/chat:stream`、CLI stream fallback、web stream consumption 的外部契约基线，并运行 `go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery' -v`、`go test ./cmd/simiclaw/internal/client/... -v`、`make web-ci` 作为 Phase 2 contract gate
-- [ ] T008 更新 `internal/bootstrap/app.go` 与 `internal/http/server.go`，让应用装配和 HTTP server 依赖 Phase 2 中定义的 seam，而不是继续隐式拼装混合 service
+- [X] T004 在 `internal/gateway/contracts.go`、`internal/runtime/kernel/contracts.go`、`internal/query/service.go`、`internal/runtime/events/hub.go` 中定义显式 `command/query/observe` seam 与 host-control 边界
+- [X] T005 [P] 在 `internal/runtime/kernel/facts.go`、`internal/runtime/kernel/events.go`、`internal/provider/types.go`、`internal/tools/types.go`、`internal/runner/model/types.go` 中固定 Runtime -> Context/State 与 Runtime -> Capability 的 consumer-owned contract
+- [X] T006 [P] 在 `tests/architecture/boundaries_test.go`、`tests/architecture/http_channel_boundaries_test.go`、`tests/architecture/runtime_kernel_boundaries_test.go`、`tests/architecture/owner_closure_test.go`、`tests/architecture/four_plane_boundaries_test.go` 中编码四块 owner guardrails，禁止新的混合中心对象回流，并运行 `go test ./tests/architecture/... -v`、`make docs-style` 固定文档/边界基线
+- [X] T007 [P] 在 `tests/integration/runtime_integration_test.go`、`tests/integration/runtime_trace_path_test.go`、`cmd/simiclaw/internal/client/client_test.go`、`web/src/app/router/router.test.tsx` 中固定 `/v1/events:ingest`、`/v1/chat:stream`、CLI stream fallback、web stream consumption 的外部契约基线，并运行 `go test ./tests/integration/... -tags=integration -run 'TestIngestToProcessedAndQuerySQLite|TestChatStreamAcceptedToDone|TestRuntimeTracePathExposesClaimExecuteFinalizeAndDelivery' -v`、`go test ./cmd/simiclaw/internal/client/... -v`、`make web-ci` 作为 Phase 2 contract gate
+- [X] T008 更新 `internal/bootstrap/app.go` 与 `internal/http/server.go`，让应用装配和 HTTP server 依赖 Phase 2 中定义的 seam，而不是继续隐式拼装混合 service
 
 **Checkpoint**: 四块 seam、target source shape、契约基线和架构守护已经固定且基线验证通过，后续故事可以在不改变外部契约的前提下推进
 
