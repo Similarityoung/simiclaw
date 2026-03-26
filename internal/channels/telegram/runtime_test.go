@@ -14,6 +14,7 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/config"
 	"github.com/similarityyoung/simiclaw/internal/gateway"
 	gatewaybindings "github.com/similarityyoung/simiclaw/internal/gateway/bindings"
+	gatewaymodel "github.com/similarityyoung/simiclaw/internal/gateway/model"
 	gatewayrouting "github.com/similarityyoung/simiclaw/internal/gateway/routing"
 	runtimepayload "github.com/similarityyoung/simiclaw/internal/runtime/payload"
 	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
@@ -50,6 +51,16 @@ func (telegramQueueStub) TryEnqueue(string) bool { return true }
 type telegramRejectQueueStub struct{}
 
 func (telegramRejectQueueStub) TryEnqueue(string) bool { return false }
+
+type captureTelegramGateway struct {
+	got      gatewaymodel.NormalizedIngress
+	accepted gateway.AcceptedIngest
+}
+
+func (g *captureTelegramGateway) Accept(_ context.Context, in gatewaymodel.NormalizedIngress) (gateway.AcceptedIngest, *gateway.APIError) {
+	g.got = in
+	return g.accepted, nil
+}
 
 type fakeHeartbeatRecorder struct {
 	mu     sync.Mutex
@@ -535,6 +546,52 @@ func TestHandleTextLogsIngestRejected(t *testing.T) {
 		if !strings.Contains(line, part) {
 			t.Fatalf("missing %q in %q", part, line)
 		}
+	}
+}
+
+func TestHandleTextDelegatesNormalizedIngressToGatewaySeam(t *testing.T) {
+	capture := &captureTelegramGateway{
+		accepted: gateway.AcceptedIngest{
+			Result: gateway.Result{
+				EventID:    "evt_capture",
+				SessionKey: "local:dm:telegram",
+				SessionID:  "ses_capture",
+				Enqueued:   true,
+			},
+		},
+	}
+	ctx := tele.NewContext(nil, tele.Update{
+		ID: 47,
+		Message: &tele.Message{
+			ID:   12,
+			Text: "hello seam",
+			Chat: &tele.Chat{ID: 2001, Type: tele.ChatPrivate},
+			Sender: &tele.User{
+				ID: 1001,
+			},
+		},
+	})
+
+	runtime := &Runtime{
+		ctx:          context.Background(),
+		gateway:      capture,
+		allowedUsers: map[int64]struct{}{1001: {}},
+		logger:       logging.L("telegram-test"),
+	}
+	if err := runtime.handleText(ctx); err != nil {
+		t.Fatalf("handleText: %v", err)
+	}
+	if capture.got.Source != "telegram" {
+		t.Fatalf("expected telegram source, got %+v", capture.got)
+	}
+	if capture.got.IdempotencyKey != "telegram:update:47" {
+		t.Fatalf("unexpected idempotency key: %+v", capture.got)
+	}
+	if capture.got.Payload.Text != "hello seam" {
+		t.Fatalf("expected normalized text payload, got %+v", capture.got)
+	}
+	if capture.got.Conversation.ConversationID != "tg_chat_2001" {
+		t.Fatalf("unexpected normalized conversation: %+v", capture.got.Conversation)
 	}
 }
 

@@ -134,23 +134,6 @@ func (r *RuntimeRepository) GetConversationDMScope(ctx context.Context, tenantID
 	return r.db.GetConversationDMScope(ctx, tenantID, conv)
 }
 
-func (r *RuntimeRepository) GetScopeSession(ctx context.Context, sessionKey string) (bindings.SessionScopeRecord, bool, error) {
-	if r.query == nil {
-		return bindings.SessionScopeRecord{}, false, nil
-	}
-	rec, ok, err := r.query.GetSessionRecord(ctx, sessionKey)
-	if err != nil || !ok {
-		return bindings.SessionScopeRecord{}, ok, err
-	}
-	return bindings.SessionScopeRecord{
-		ConversationID: rec.ConversationID,
-		ChannelType:    rec.ChannelType,
-		ParticipantID:  rec.ParticipantID,
-		DMScope:        rec.DMScope,
-		SessionID:      rec.ActiveSessionID,
-	}, true, nil
-}
-
 func upsertConversationDMScopeTx(ctx context.Context, tx *sql.Tx, tenantID string, conv model.Conversation, dmScope string, now time.Time) error {
 	_, err := tx.ExecContext(
 		ctx,

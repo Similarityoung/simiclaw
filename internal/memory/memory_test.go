@@ -337,6 +337,76 @@ func TestGetAllowsLegacyRootCuratedPath(t *testing.T) {
 	}
 }
 
+func TestReadTextRespectsAllowedVisibility(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "private"), 0o755); err != nil {
+		t.Fatalf("mkdir private: %v", err)
+	}
+	target := filepath.Join(workspace, "memory", "private", "MEMORY.md")
+	if err := os.WriteFile(target, []byte("secret\n"), 0o644); err != nil {
+		t.Fatalf("write private memory: %v", err)
+	}
+
+	if _, ok, err := ReadText(workspace, "memory/private/MEMORY.md", map[string]bool{VisibilityPublic: true}); err != nil {
+		t.Fatalf("ReadText public-only: %v", err)
+	} else if ok {
+		t.Fatal("expected private memory to be filtered out")
+	}
+
+	text, ok, err := ReadText(workspace, "memory/private/MEMORY.md", map[string]bool{VisibilityPrivate: true})
+	if err != nil {
+		t.Fatalf("ReadText private: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected private memory to be readable")
+	}
+	if text.Visibility != VisibilityPrivate || text.Kind != "curated" || text.Content != "secret" {
+		t.Fatalf("unexpected text metadata: %+v", text)
+	}
+	wantAbs := resolvedTargetPath(t, target)
+	if text.ResolvedPath != wantAbs {
+		t.Fatalf("expected resolved path %q, got %q", wantAbs, text.ResolvedPath)
+	}
+}
+
+func TestReadTextReturnsResolvedTargetPathForSymlink(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "memory", "public"), 0o755); err != nil {
+		t.Fatalf("mkdir public: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "public", "MEMORY.md"), []byte("shared\n"), 0o644); err != nil {
+		t.Fatalf("write public memory: %v", err)
+	}
+	if err := os.Symlink(filepath.Join("memory", "public", "MEMORY.md"), filepath.Join(workspace, "MEMORY.md")); err != nil {
+		t.Fatalf("symlink legacy memory: %v", err)
+	}
+
+	text, ok, err := ReadText(workspace, "MEMORY.md", map[string]bool{VisibilityPublic: true})
+	if err != nil {
+		t.Fatalf("ReadText legacy symlink: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected legacy symlink memory to be readable")
+	}
+	wantAbs := resolvedTargetPath(t, filepath.Join(workspace, "memory", "public", "MEMORY.md"))
+	if text.ResolvedPath != wantAbs {
+		t.Fatalf("expected resolved symlink target %q, got %q", wantAbs, text.ResolvedPath)
+	}
+}
+
+func resolvedTargetPath(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("resolve target path: %v", err)
+	}
+	return abs
+}
+
 func TestVisibilityForChannel(t *testing.T) {
 	if got := VisibilityForChannel("dm"); got != VisibilityPrivate {
 		t.Fatalf("dm should map to private visibility, got %q", got)

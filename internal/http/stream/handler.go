@@ -26,22 +26,16 @@ type Gateway interface {
 	Accept(ctx context.Context, in gatewaymodel.NormalizedIngress) (gateway.AcceptedIngest, *gateway.APIError)
 }
 
-type Query interface {
-	GetEvent(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error)
-}
-
 type Handlers struct {
 	gateway Gateway
-	query   Query
-	hub     *runtimeevents.Hub
+	observe runtimeevents.StreamObserver
 	logger  *logging.Logger
 }
 
-func NewHandlers(gateway Gateway, query Query, hub *runtimeevents.Hub) *Handlers {
+func NewHandlers(gateway Gateway, observe runtimeevents.StreamObserver) *Handlers {
 	return &Handlers{
 		gateway: gateway,
-		query:   query,
-		hub:     hub,
+		observe: observe,
 		logger:  logging.L("http.stream"),
 	}
 }
@@ -73,15 +67,15 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub := h.hub.Reserve(req.IdempotencyKey)
-	defer h.hub.Release(sub)
+	sub := h.observe.Open()
+	defer sub.Close()
 
 	accepted, apiErr := h.gateway.Accept(r.Context(), normalized)
 	if apiErr != nil {
 		httpingest.WriteAPIError(w, apiErr)
 		return
 	}
-	replay := h.hub.Attach(sub, accepted.Result.EventID)
+	replay := sub.Attach(r.Context(), accepted.Result.EventID)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -123,13 +117,6 @@ func (h *Handlers) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if eventRec, ok, err := h.query.GetEvent(r.Context(), accepted.Result.EventID); err == nil && ok {
-		if terminalEvent := terminalRuntimeEventFromRecord(eventRec); terminalEvent != nil {
-			_ = writeSSEEvent(w, flusher, runtimeEventToAPI(h.hub.PublishTerminal(*terminalEvent)))
-			return
-		}
-	}
-
 	for {
 		waitCtx, cancel := context.WithTimeout(r.Context(), streamKeepaliveInterval)
 		event, ok := sub.Next(waitCtx)
@@ -189,35 +176,6 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, comment string
 	return nil
 }
 
-func terminalRuntimeEventFromRecord(rec querymodel.EventRecord) *runtimemodel.RuntimeEvent {
-	eventRecord := queryEventRecordToRuntime(rec)
-	switch rec.Status {
-	case model.EventStatusFailed:
-		return &runtimemodel.RuntimeEvent{
-			Kind:        runtimemodel.RuntimeEventFailed,
-			EventID:     rec.EventID,
-			RunID:       rec.RunID,
-			SessionKey:  rec.SessionKey,
-			SessionID:   rec.SessionID,
-			OccurredAt:  rec.UpdatedAt,
-			Error:       rec.Error,
-			EventRecord: &eventRecord,
-		}
-	case model.EventStatusProcessed, model.EventStatusSuppressed:
-		return &runtimemodel.RuntimeEvent{
-			Kind:        runtimemodel.RuntimeEventCompleted,
-			EventID:     rec.EventID,
-			RunID:       rec.RunID,
-			SessionKey:  rec.SessionKey,
-			SessionID:   rec.SessionID,
-			OccurredAt:  rec.UpdatedAt,
-			EventRecord: &eventRecord,
-		}
-	default:
-		return nil
-	}
-}
-
 func runtimeEventToAPI(event runtimemodel.RuntimeEvent) api.ChatStreamEvent {
 	out := api.ChatStreamEvent{
 		EventID:  event.EventID,
@@ -266,29 +224,6 @@ func runtimeEventToAPI(event runtimemodel.RuntimeEvent) api.ChatStreamEvent {
 		}
 	}
 	return out
-}
-
-func queryEventRecordToRuntime(rec querymodel.EventRecord) runtimemodel.EventRecord {
-	return runtimemodel.EventRecord{
-		EventID:           rec.EventID,
-		Status:            rec.Status,
-		OutboxStatus:      rec.OutboxStatus,
-		SessionKey:        rec.SessionKey,
-		SessionID:         rec.SessionID,
-		RunID:             rec.RunID,
-		RunMode:           rec.RunMode,
-		AssistantReply:    rec.AssistantReply,
-		OutboxID:          rec.OutboxID,
-		ProcessingLease:   rec.ProcessingLease,
-		ReceivedAt:        rec.ReceivedAt,
-		CreatedAt:         rec.CreatedAt,
-		UpdatedAt:         rec.UpdatedAt,
-		PayloadHash:       rec.PayloadHash,
-		Provider:          rec.Provider,
-		Model:             rec.Model,
-		ProviderRequestID: rec.ProviderRequestID,
-		Error:             rec.Error,
-	}
 }
 
 func runtimeEventRecordToAPI(rec runtimemodel.EventRecord) api.EventRecord {

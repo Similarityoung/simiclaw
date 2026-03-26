@@ -24,31 +24,32 @@ func (w blockingWorker) Run(ctx context.Context) error {
 	return nil
 }
 
-func TestSupervisorLogsWorkerLifecycle(t *testing.T) {
+func TestHostControlLogsWorkerLifecycle(t *testing.T) {
 	out := logcapture.CaptureStdout(t, func() {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		supervisor := &Supervisor{
-			background: []kernel.Worker{
-				blockingWorker{role: kernel.WorkerRole{Name: "test_worker", HeartbeatName: "test_heartbeat", PollCadence: time.Second}},
-			},
-			logger: logging.L("runtime.supervisor"),
+		host := newWorkerHost(nil, []kernel.Worker{
+			blockingWorker{role: kernel.WorkerRole{Name: "test_worker", HeartbeatName: "test_heartbeat", PollCadence: time.Second}},
+		}, logging.L("runtime.host"))
+		control := &HostControl{
+			host:   host,
+			logger: logging.L("runtime.host"),
 		}
-		if err := supervisor.Start(context.Background()); err != nil {
+		if err := control.Start(context.Background()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		supervisor.Stop()
+		control.Stop()
 		_ = logging.Sync()
 	})
 
 	logcapture.AssertContainsInOrder(t, out,
-		"[runtime.supervisor] supervisor starting",
-		"[runtime.supervisor] worker starting",
-		"[runtime.supervisor] supervisor started",
-		"[runtime.supervisor] supervisor stopping",
-		"[runtime.supervisor] worker stopped",
-		"[runtime.supervisor] supervisor stopped",
+		"[runtime.host] host starting",
+		"[runtime.host] worker starting",
+		"[runtime.host] host started",
+		"[runtime.host] host stopping",
+		"[runtime.host] worker stopped",
+		"[runtime.host] host stopped",
 	)
 	for _, part := range []string{
 		`"worker": "test_worker"`,

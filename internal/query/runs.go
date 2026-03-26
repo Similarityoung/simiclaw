@@ -7,12 +7,12 @@ import (
 )
 
 func (s *Service) GetRun(ctx context.Context, runID string) (querymodel.RunTrace, bool, error) {
-	return s.repo.GetRunTrace(ctx, runID)
+	return s.runs.GetRunTrace(ctx, runID)
 }
 
 func (s *Service) ListRuns(ctx context.Context, filter querymodel.RunFilter) (querymodel.RunPage, error) {
 	filter.Limit = pageFetchLimit(filter.Limit)
-	items, err := s.repo.ListRunTraces(ctx, filter)
+	items, err := s.runs.ListRunTraces(ctx, filter)
 	if err != nil {
 		return querymodel.RunPage{}, err
 	}

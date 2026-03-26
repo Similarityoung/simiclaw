@@ -109,3 +109,29 @@ func TestGetContextReadsRange(t *testing.T) {
 		t.Fatalf("unexpected ranged content: %q", res.Content)
 	}
 }
+
+func TestReadContextTextReturnsTrimmedContentAndResolvedPath(t *testing.T) {
+	workspace := t.TempDir()
+	target := filepath.Join(workspace, "AGENTS.md")
+	if err := os.WriteFile(target, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	text, ok, err := ReadContextText(workspace, "AGENTS.md")
+	if err != nil {
+		t.Fatalf("ReadContextText: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected readable context text")
+	}
+	if text.Path != "AGENTS.md" || text.Content != "hello" {
+		t.Fatalf("unexpected context text: %+v", text)
+	}
+	wantAbs, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatalf("resolve target: %v", err)
+	}
+	if text.ResolvedPath != wantAbs {
+		t.Fatalf("expected resolved path %q, got %q", wantAbs, text.ResolvedPath)
+	}
+}

@@ -5,20 +5,19 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/prompt"
-	"github.com/similarityyoung/simiclaw/internal/provider"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
-	"github.com/similarityyoung/simiclaw/internal/tools"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type llmPromptAssembly struct {
-	chatMessages []provider.ChatMessage
-	toolDefs     []provider.ToolDefinition
+	chatMessages []kernel.ModelMessage
+	toolDefs     []kernel.ToolDefinition
 }
 
 type llmPromptAssembler struct {
-	prompts  *prompt.Builder
-	registry *tools.Registry
+	prompts *prompt.Builder
+	tools   kernel.ToolCatalog
 }
 
 func (a llmPromptAssembler) Assemble(event model.InternalEvent, now time.Time, history []runnermodel.HistoryMessage, allowedTools map[string]struct{}) llmPromptAssembly {
@@ -31,21 +30,17 @@ func (a llmPromptAssembler) Assemble(event model.InternalEvent, now time.Time, h
 		PayloadType:  event.Payload.Type,
 	}})
 
-	chatMessages := make([]provider.ChatMessage, 0, len(history)+2)
-	chatMessages = append(chatMessages, provider.ChatMessage{Role: "system", Content: systemPrompt})
+	chatMessages := make([]kernel.ModelMessage, 0, len(history)+2)
+	chatMessages = append(chatMessages, kernel.ModelMessage{Role: "system", Content: systemPrompt})
 	chatMessages = append(chatMessages, historyToChatMessages(history)...)
-	chatMessages = append(chatMessages, provider.ChatMessage{Role: "user", Content: userText})
+	chatMessages = append(chatMessages, kernel.ModelMessage{Role: "user", Content: userText})
 
-	toolDefs := make([]provider.ToolDefinition, 0)
-	for _, def := range a.registry.Definitions() {
-		if !toolAllowed(def.Schema.Name, allowedTools) {
+	toolDefs := make([]kernel.ToolDefinition, 0)
+	for _, def := range a.tools.ToolDefinitions() {
+		if !toolAllowed(def.Name, allowedTools) {
 			continue
 		}
-		toolDefs = append(toolDefs, provider.ToolDefinition{
-			Name:        def.Schema.Name,
-			Description: def.Schema.Description,
-			Parameters:  def.Schema.Parameters,
-		})
+		toolDefs = append(toolDefs, def)
 	}
 
 	return llmPromptAssembly{

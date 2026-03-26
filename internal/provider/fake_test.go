@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 )
 
 type stubStreamSink struct {
@@ -51,5 +52,39 @@ func TestFakeProviderStreamChatSkipsDeltaWhenReturningToolCall(t *testing.T) {
 	}
 	if len(res.ToolCalls) != 1 {
 		t.Fatalf("tool calls len = %d want 1", len(res.ToolCalls))
+	}
+}
+
+func TestFactoryResolveReturnsCapabilityInvoker(t *testing.T) {
+	cfg := config.Default().LLM
+	cfg.DefaultModel = "fake/default"
+	cfg.Providers["fake"] = config.LLMProviderConfig{
+		Type:                "fake",
+		FakeResponseText:    "已收到: {{last_user_message}}",
+		FakeFinishReason:    "stop",
+		FakeRawFinishReason: "stop",
+	}
+	factory, err := NewFactory(cfg)
+	if err != nil {
+		t.Fatalf("NewFactory() error = %v", err)
+	}
+
+	invoker, actualModel, err := factory.Resolve("fake/capability-model")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if actualModel != "capability-model" {
+		t.Fatalf("actualModel = %q want capability-model", actualModel)
+	}
+
+	res, err := invoker.StreamChat(context.Background(), kernel.ModelRequest{
+		Model:    actualModel,
+		Messages: []kernel.ModelMessage{{Role: "user", Content: "hello"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("StreamChat() error = %v", err)
+	}
+	if res.Provider != "fake" {
+		t.Fatalf("provider = %q want fake", res.Provider)
 	}
 }

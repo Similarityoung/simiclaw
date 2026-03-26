@@ -30,7 +30,7 @@ func TestRuntimeLaneHooksPreserveLifecycleAndExposeSessionLane(t *testing.T) {
 		t.Fatalf("expected durable delivery after finalize, got %+v", event)
 	}
 
-	sub := app.StreamHub.Reserve(req.IdempotencyKey + ":lane-replay")
+	sub := app.StreamHub.Reserve()
 	defer app.StreamHub.Release(sub)
 	replay := app.StreamHub.Attach(sub, resp.EventID)
 	if len(replay) == 0 {

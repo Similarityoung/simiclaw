@@ -14,11 +14,15 @@ import (
 )
 
 type fakeQuery struct {
+	getEvent    func(context.Context, string) (querymodel.EventRecord, bool, error)
 	listEvents  func(context.Context, querymodel.EventFilter) (querymodel.EventPage, error)
 	lookupEvent func(context.Context, string) (querymodel.LookupEvent, bool, error)
 }
 
-func (f fakeQuery) GetEvent(context.Context, string) (querymodel.EventRecord, bool, error) {
+func (f fakeQuery) GetEvent(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error) {
+	if f.getEvent != nil {
+		return f.getEvent(ctx, eventID)
+	}
 	return querymodel.EventRecord{}, false, nil
 }
 
@@ -54,6 +58,42 @@ func (f fakeQuery) GetSession(context.Context, string) (querymodel.SessionRecord
 
 func (f fakeQuery) ListSessionHistory(context.Context, querymodel.SessionHistoryFilter) (querymodel.MessagePage, error) {
 	return querymodel.MessagePage{}, nil
+}
+
+func TestHandleGetEventDelegatesToQuerySeam(t *testing.T) {
+	var gotEventID string
+	h := NewHandlers(fakeQuery{
+		getEvent: func(_ context.Context, eventID string) (querymodel.EventRecord, bool, error) {
+			gotEventID = eventID
+			return querymodel.EventRecord{
+				EventID:        eventID,
+				Status:         model.EventStatusProcessed,
+				SessionKey:     "local:dm:u1",
+				SessionID:      "ses_1",
+				AssistantReply: "done",
+				PayloadHash:    "hash_event",
+			}, true, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/events/evt_123", nil)
+	req.SetPathValue("event_id", "evt_123")
+	rec := httptest.NewRecorder()
+	h.HandleGetEvent(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if gotEventID != "evt_123" {
+		t.Fatalf("expected query seam to receive evt_123, got %q", gotEventID)
+	}
+	var body api.EventRecord
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.EventID != "evt_123" || body.AssistantReply != "done" {
+		t.Fatalf("unexpected event body: %+v", body)
+	}
 }
 
 func TestHandleListEventsDecodesCreatedAtCursor(t *testing.T) {

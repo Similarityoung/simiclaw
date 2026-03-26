@@ -10,9 +10,9 @@ import (
 
 func TestHubPublishesSharedSequenceToSubscribers(t *testing.T) {
 	hub := NewHub()
-	sub1 := hub.Reserve("k1")
+	sub1 := hub.Reserve()
 	defer hub.Release(sub1)
-	sub2 := hub.Reserve("k2")
+	sub2 := hub.Reserve()
 	defer hub.Release(sub2)
 
 	if replay := hub.Attach(sub1, "evt_1"); len(replay) > 0 {
@@ -58,7 +58,7 @@ func TestHubReplaysTerminalToLateSubscriber(t *testing.T) {
 		t.Fatalf("expected terminal sequence 2, got %d", terminal.Sequence)
 	}
 
-	sub := hub.Reserve("k3")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	replayed := hub.Attach(sub, "evt_2")
 	if len(replayed) != 1 {
@@ -88,7 +88,7 @@ func TestHubReplaysPreAttachHistoryInOrder(t *testing.T) {
 		OccurredAt: time.Now().UTC(),
 	})
 
-	sub := hub.Reserve("k4")
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	replay := hub.Attach(sub, "evt_3")
 	if len(replay) != 2 {
@@ -102,5 +102,50 @@ func TestHubReplaysPreAttachHistoryInOrder(t *testing.T) {
 	}
 	if replay[1].Sequence != terminal.Sequence {
 		t.Fatalf("expected terminal sequence %d, got %d", terminal.Sequence, replay[1].Sequence)
+	}
+}
+
+func TestHubDropsQueueDroppableWhenSubscriberBufferIsFull(t *testing.T) {
+	hub := NewHub()
+	hub.maxQueued = 1
+
+	sub := hub.Reserve()
+	defer hub.Release(sub)
+	_ = hub.Attach(sub, "evt_qdrop")
+
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventTextDelta,
+		EventID: "evt_qdrop",
+		Delta:   "first",
+	}); err != nil {
+		t.Fatalf("Publish first delta: %v", err)
+	}
+	if err := hub.Publish(context.Background(), runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventTextDelta,
+		EventID: "evt_qdrop",
+		Delta:   "second",
+	}); err != nil {
+		t.Fatalf("Publish second delta: %v", err)
+	}
+	terminal := hub.PublishTerminal(runtimemodel.RuntimeEvent{
+		Kind:    runtimemodel.RuntimeEventCompleted,
+		EventID: "evt_qdrop",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	first, ok := sub.Next(ctx)
+	if !ok {
+		t.Fatalf("expected first event from subscription")
+	}
+	if first.Kind != runtimemodel.RuntimeEventCompleted {
+		t.Fatalf("expected terminal event, got %+v", first)
+	}
+	if first.Sequence != terminal.Sequence {
+		t.Fatalf("expected terminal sequence %d, got %d", terminal.Sequence, first.Sequence)
+	}
+	if _, ok := sub.Next(ctx); ok {
+		t.Fatalf("expected subscription to close after terminal")
 	}
 }

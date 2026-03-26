@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	openai "github.com/openai/openai-go/v3"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
@@ -112,6 +114,13 @@ func TestOpenAICompatibleProviderStreamFailureDoesNotEchoPromptBody(t *testing.T
 	}
 	if !strings.Contains(err.Error(), `invalid tool arguments for "search"`) {
 		t.Fatalf("unexpected stream error: %v", err)
+	}
+	if kind := kernel.CapabilityErrorKindOf(err); kind != kernel.CapabilityErrorInvalidResponse {
+		t.Fatalf("CapabilityErrorKindOf() = %q want %q", kind, kernel.CapabilityErrorInvalidResponse)
+	}
+	var capErr *kernel.CapabilityError
+	if !errors.As(err, &capErr) {
+		t.Fatalf("expected capability error, got %T", err)
 	}
 	if strings.Contains(err.Error(), prompt) {
 		t.Fatalf("stream error leaked prompt body: %v", err)

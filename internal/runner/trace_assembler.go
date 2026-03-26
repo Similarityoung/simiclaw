@@ -3,28 +3,28 @@ package runner
 import (
 	"time"
 
-	"github.com/similarityyoung/simiclaw/internal/provider"
 	runnercontext "github.com/similarityyoung/simiclaw/internal/runner/context"
 	runnermodel "github.com/similarityyoung/simiclaw/internal/runner/model"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/api"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type runTraceAssembler struct{}
 
-func (runTraceAssembler) AttachContext(trace *api.RunTrace, history runnercontext.Loaded) {
+func (runTraceAssembler) AttachContext(trace *api.RunTrace, history runnercontext.Bundle) {
 	trace.ContextManifest = toAPIContextManifest(history.Manifest)
 	trace.RAGHits = toAPIRAGHits(history.RAGHits)
 }
 
 func (runTraceAssembler) Fail(trace *api.RunTrace, startedAt time.Time, err error) {
 	trace.Status = model.RunStatusFailed
-	trace.Error = &model.ErrorBlock{Code: model.ErrorCodeInternal, Message: err.Error()}
+	trace.Error = kernel.ErrorBlockFromError(err)
 	trace.FinishedAt = time.Now().UTC()
 	trace.LatencyMS = time.Since(startedAt).Milliseconds()
 }
 
-func (runTraceAssembler) Complete(trace *api.RunTrace, startedAt time.Time, usage provider.Usage, last provider.ChatResult, reply string) {
+func (runTraceAssembler) Complete(trace *api.RunTrace, startedAt time.Time, usage kernel.Usage, last kernel.ModelResult, reply string) {
 	trace.Provider = last.Provider
 	trace.Model = last.Model
 	trace.PromptTokens = usage.PromptTokens

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/similarityyoung/simiclaw/internal/config"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/internal/testutil/logcapture"
 	"github.com/similarityyoung/simiclaw/pkg/logging"
 )
@@ -47,6 +49,12 @@ func TestOpenAICompatibleProviderStreamChatUsesRequestTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Fatalf("expected StreamChat to timeout quickly, took %s", elapsed)
+	}
+	if kind := kernel.CapabilityErrorKindOf(err); kind != kernel.CapabilityErrorTimeout {
+		t.Fatalf("CapabilityErrorKindOf() = %q want %q", kind, kernel.CapabilityErrorTimeout)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded cause, got %v", err)
 	}
 }
 
@@ -127,6 +135,12 @@ func TestOpenAICompatibleProviderChatStillUsesRequestTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Fatalf("expected Chat to timeout quickly, took %s", elapsed)
+	}
+	if kind := kernel.CapabilityErrorKindOf(err); kind != kernel.CapabilityErrorTimeout {
+		t.Fatalf("CapabilityErrorKindOf() = %q want %q", kind, kernel.CapabilityErrorTimeout)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded cause, got %v", err)
 	}
 }
 

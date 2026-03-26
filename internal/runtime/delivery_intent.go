@@ -5,8 +5,28 @@ import (
 	"strconv"
 	"strings"
 
+	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
+
+type deliveryIntentResolver struct{}
+
+func (deliveryIntentResolver) Resolve(event model.InternalEvent, reply string) (*runtimemodel.DeliveryIntent, error) {
+	if strings.TrimSpace(reply) == "" {
+		return nil, nil
+	}
+	intent := &runtimemodel.DeliveryIntent{Body: reply}
+	if event.Source != "telegram" {
+		return intent, nil
+	}
+	chatID, err := telegramTargetID(event)
+	if err != nil {
+		return nil, err
+	}
+	intent.Channel = "telegram"
+	intent.TargetID = chatID
+	return intent, nil
+}
 
 func telegramTargetID(event model.InternalEvent) (string, error) {
 	if event.Payload.Extra == nil {

@@ -14,6 +14,10 @@ import (
 	"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal/version"
 )
 
+// NewCommand assembles the CLI Surface tree and shared flags.
+//
+// It owns command registration only; runtime wiring and process composition stay
+// inside subcommands and bootstrap.
 func NewCommand(streams common.IOStreams) *cobra.Command {
 	globals := &common.RuntimeFlagValues{}
 	cmd := &cobra.Command{

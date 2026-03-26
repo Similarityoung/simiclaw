@@ -140,6 +140,25 @@ func TestBuilderSkipsMissingContextFiles(t *testing.T) {
 	}
 }
 
+func TestBuilderSkipsEmptyContextAndCuratedMemoryFiles(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, "USER.md"), "   \n")
+	writeFile(t, filepath.Join(workspace, "memory", "public", "MEMORY.md"), "\n\n")
+
+	b := NewBuilder(workspace)
+	got := b.Build(BuildInput{Context: RunContext{
+		Now:          time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC),
+		Conversation: model.Conversation{ChannelType: "group"},
+	}})
+
+	if strings.Contains(got, "### USER.md") {
+		t.Fatalf("expected empty context file to be skipped, got: %s", got)
+	}
+	if strings.Contains(got, "#### memory/public/MEMORY.md") {
+		t.Fatalf("expected empty curated memory to be skipped, got: %s", got)
+	}
+}
+
 func TestBuilderSkipsContextSymlinkOutsideWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	outside := t.TempDir()
@@ -360,6 +379,24 @@ func TestBuilderInjectsCanonicalAndLegacyCuratedMemory(t *testing.T) {
 	}
 	if !strings.Contains(got, "#### MEMORY.md\n\nlegacy public") {
 		t.Fatalf("expected legacy curated memory to remain injected, got: %s", got)
+	}
+}
+
+func TestBuilderDeduplicatesLegacyCuratedSymlinkToCanonicalTarget(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, "memory", "public", "MEMORY.md"), "canonical public")
+	if err := os.Symlink(filepath.Join("memory", "public", "MEMORY.md"), filepath.Join(workspace, "MEMORY.md")); err != nil {
+		t.Fatalf("symlink legacy curated: %v", err)
+	}
+
+	b := NewBuilder(workspace)
+	got := b.Build(BuildInput{Context: RunContext{Now: time.Date(2026, 3, 8, 9, 10, 11, 0, time.UTC), Conversation: model.Conversation{ChannelType: "group"}}})
+
+	if strings.Count(got, "canonical public") != 1 {
+		t.Fatalf("expected canonical curated memory to be injected once, got: %s", got)
+	}
+	if strings.Contains(got, "#### MEMORY.md\n\ncanonical public") {
+		t.Fatalf("expected legacy symlink view to be deduplicated, got: %s", got)
 	}
 }
 

@@ -23,7 +23,7 @@ func TestServiceProcessConcurrentCallsKeepIDsUnique(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(facts, executor, NopEventSink{})
+	svc := NewService(facts, nil, executor, NopEventSink{})
 	svc.SetClock(func() time.Time {
 		return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 	})
@@ -96,8 +96,4 @@ func (f *concurrentFacts) Finalize(_ context.Context, cmd runtimemodel.FinalizeC
 	defer f.mu.Unlock()
 	f.finalizeCmds = append(f.finalizeCmds, cmd)
 	return nil
-}
-
-func (f *concurrentFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{}, false, nil
 }

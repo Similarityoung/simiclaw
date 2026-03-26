@@ -8,6 +8,7 @@
 
 - [`../README.md`](../README.md): 用户与开发者的最小起步路径
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md): 系统结构总览、主数据流和硬约束
+- [`design-docs/four-plane-architecture.md`](design-docs/four-plane-architecture.md): spec03 的四块 owner map、依赖方向与 current-to-target mapping
 - [`design-docs/runtime-flow.md`](design-docs/runtime-flow.md): 从 ingest 到 finalize 的执行链路
 - [`design-docs/runtime-kernel-refactor.md`](design-docs/runtime-kernel-refactor.md): 迁移收口结果、lane-ready hooks 与 rollback/checkpoint
 - [`references/configuration.md`](references/configuration.md): 配置、环境变量、鉴权与 CLI 运行参数
@@ -18,6 +19,7 @@
 
 - [`design-docs/index.md`](design-docs/index.md): 设计文档导航页
 - [`design-docs/core-beliefs.md`](design-docs/core-beliefs.md): V1 设计原则与取舍
+- [`design-docs/four-plane-architecture.md`](design-docs/four-plane-architecture.md): 四块统一骨架、owner map 与依赖方向
 - [`design-docs/runtime-flow.md`](design-docs/runtime-flow.md): runtime 主链路
 - [`design-docs/module-boundaries.md`](design-docs/module-boundaries.md): 由架构测试强制执行的模块边界
 - [`design-docs/prompt-and-workspace-context.md`](design-docs/prompt-and-workspace-context.md): prompt、workspace、skills、memory 与写文件边界
@@ -41,7 +43,7 @@
 - 命令与测试: `Makefile`, `VERSION_STAGE`
 - 运行时主链路: `internal/bootstrap/app.go`, `internal/gateway/service.go`, `internal/runtime/eventloop.go`, `internal/runtime/kernel/service.go`, `internal/runtime/lanes/*.go`, `internal/runner/runner.go`, `internal/runner/context/*.go`
 - 存储与 schema: `internal/store/db.go`, `internal/store/schema.sql`, `internal/store/tx/*.go`, `internal/store/projections/*.go`, `internal/store/queries/*.go`
-- 边界约束: `tests/architecture/boundaries_test.go`
+- 边界约束: `tests/architecture/four_plane_boundaries_test.go`, `tests/architecture/boundaries_test.go`
 - Prompt / workspace: `internal/prompt/*.go`, `internal/prompt/system/*.md`, `internal/workspace/scaffold.go`, `internal/workspacefile/{workspacefile.go,context.go}`
 
 ## Status

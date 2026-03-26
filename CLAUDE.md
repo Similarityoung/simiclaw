@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `workspace/runtime/app.db`
 - `chat` is a client command that talks to the HTTP service. The primary interactive endpoint is the streaming chat endpoint `POST /v1/chat:stream`.
 - Built-in tools are injected into the runner through the tools registry.
-- Runtime execution is driven jointly by the event loop and supervisor workers.
+- Runtime execution is driven jointly by the event loop and named background workers managed by the runtime host.
 
 ## Common commands
 
@@ -51,13 +51,13 @@ go test ./tests/integration/... -tags=integration -run TestName
 ## Architecture map
 
 - `cmd/simiclaw/main.go`: CLI entrypoint. Dispatches `init | serve | gateway | chat | inspect | version | completion`.
-- `internal/bootstrap/app.go`: application assembly. Wires DB, tools registry, provider factory, stream hub, runner, event loop, supervisor, gateway service, and HTTP server handler.
+- `internal/bootstrap/app.go`: application assembly. Wires DB, tools registry, provider factory, stream hub, runner, event loop, runtime host/readiness, gateway service, and HTTP server handler.
 - `internal/gateway/service.go` + `internal/gateway/bindings`: ingest boundary. HTTP and channel adapters normalize transport requests first, then delegate idempotency, scope resolution, persistence, and enqueue orchestration to the unified gateway service.
 - `internal/channels/telegram/runtime.go`: Telegram channel adapter. Normalizes private text updates, forwards accepted requests into the gateway, and reports liveness through a narrow heartbeat recorder rather than a concrete store dependency.
 - `internal/http/server.go` + `internal/http/{ingest,query,stream,middleware}`: HTTP exposure layer for `healthz`, `readyz`, events, runs, sessions, ingest, and streaming chat. It maps internal query/runtime results to `pkg/api` wire models rather than returning store projections directly.
 - `internal/query/service.go` + `internal/query/model`: read-side query boundary. `internal/query/model` holds query-local filters, cursors, pages, and trace/read DTOs exchanged with the store adapter; `internal/http/query` is responsible for converting them into `pkg/api` wire models.
 - `internal/runtime/eventloop.go` + `internal/runtime/kernel` + `internal/runtime/lanes`: core execution loop. EventLoop owns queueing, repump, and lane leases; kernel owns claim -> execute -> finalize; runtime events are published after each lifecycle transition.
-- `internal/runtime/workers/` + `internal/runtime/model`: supervisor-managed background workers for heartbeat, processing recovery, outbox retry, delayed jobs, and cron. `internal/runtime/model` contains runtime-local claim/finalize/job DTOs instead of exposing store types.
+- `internal/runtime/workers/` + `internal/runtime/model`: runtime-host-managed background workers for heartbeat, processing recovery, outbox retry, delayed jobs, and cron. `internal/runtime/model` contains runtime-local claim/finalize/job DTOs instead of exposing store types.
 - `internal/runner/runner.go` + `internal/runner/model`: loads recent message history and SQLite FTS hits, resolves the configured LLM provider, executes tools through the registry, and produces trace/output. `internal/runner/model` contains runner-local history and retrieval DTOs. `memory_flush`, `cron_fire`, and `compaction` are handled as no-reply payloads that write directly into workspace memory.
 - `internal/store/db.go` + `internal/store/{tx,queries,projections}`: workspace initialization, SQLite open/schema validation, write transactions, derived session projections, recent history reads, and FTS-backed message search.
 - `internal/workspace/scaffold.go` + `internal/workspacefile/workspacefile.go`: workspace scaffolding plus workspace-safe path / patch / atomic write helpers. These helpers are the shared filesystem boundary; do not route them through `internal/store`.

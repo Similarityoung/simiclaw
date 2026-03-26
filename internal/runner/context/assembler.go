@@ -21,13 +21,13 @@ func NewAssembler(reader Reader) Assembler {
 	}
 }
 
-func (a Assembler) Load(ctx context.Context, sessionID, query string) (Loaded, error) {
+func (a Assembler) Load(ctx context.Context, sessionID, query string) (Bundle, error) {
 	history, err := a.reader.LoadPromptHistory(ctx, sessionID, a.historyLimit)
 	if err != nil {
-		return Loaded{}, err
+		return Bundle{}, err
 	}
 	ragHits, _ := a.reader.SearchRAGHits(ctx, sessionID, strings.TrimSpace(query), a.ragLimit)
-	return Loaded{
+	return Bundle{
 		History: history,
 		RAGHits: ragHits,
 		Manifest: &runnermodel.ContextManifest{

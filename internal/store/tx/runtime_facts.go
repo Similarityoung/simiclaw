@@ -1,21 +1,14 @@
 package tx
 
-import (
-	"github.com/similarityyoung/simiclaw/internal/store"
-	storequeries "github.com/similarityyoung/simiclaw/internal/store/queries"
-)
+import "github.com/similarityyoung/simiclaw/internal/store"
 
 type RuntimeRepository struct {
-	db    *store.DB
-	query *storequeries.Repository
+	db *store.DB
 }
 
 func NewRuntimeRepository(db *store.DB) *RuntimeRepository {
 	if db == nil {
 		return nil
 	}
-	return &RuntimeRepository{
-		db:    db,
-		query: storequeries.NewRepository(db),
-	}
+	return &RuntimeRepository{db: db}
 }

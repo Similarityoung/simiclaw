@@ -6,7 +6,7 @@ SimiClaw 把 prompt 视为一条有固定层次的 system message，而不是一
 
 ## Context
 
-相关代码主要在 `internal/prompt/`（含 `system/*.md` 模板）、`internal/memory/`、`internal/workspace/`、`internal/tools/` 和 `internal/workspacefile/`。这一层同时负责“给模型看什么”和“模型能安全改什么”。
+相关代码主要在 `internal/prompt/`（含 `system/*.md` 模板）、`internal/memory/`、`internal/workspace/` 和 `internal/workspacefile/`。这一层负责“给模型看什么”和“模型能安全改什么”。`internal/tools/` 属于 Capability Plane；prompt 只暴露工具契约文本或 skills 索引，不直接拥有 tool invocation。
 
 ## Details
 
@@ -40,6 +40,7 @@ SimiClaw 把 prompt 视为一条有固定层次的 system message，而不是一
 - skills 位于 `workspace/skills/<name>/SKILL.md`
 - prompt 只注入紧凑 skill 索引：`name / description / path`
 - skill 正文不会自动塞进 prompt；需要正文时应通过 `context_get` 读取
+- tool / provider 的真实执行发生在 Runtime <-> Capability Plane 边界，不在 prompt/context owner 内直接推进
 
 ### Memory
 

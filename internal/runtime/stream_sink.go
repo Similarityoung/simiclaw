@@ -10,77 +10,119 @@ import (
 )
 
 type runtimeEventStreamSink struct {
-	ctx   context.Context
-	claim runtimemodel.ClaimContext
-	sink  kernel.EventSink
+	translator streamEventTranslator
+	publisher  runtimeEventPublisher
 }
 
 func newRuntimeEventStreamSink(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) runtimeEventStreamSink {
-	return runtimeEventStreamSink{ctx: ctx, claim: claim, sink: sink}
+	return runtimeEventStreamSink{
+		translator: streamEventTranslator{},
+		publisher:  newRuntimeEventPublisher(ctx, claim, sink),
+	}
 }
 
 func (s runtimeEventStreamSink) OnStatus(string, string) {
 }
 
 func (s runtimeEventStreamSink) OnReasoningDelta(delta string) {
-	if delta == "" {
-		return
-	}
-	s.publish(runtimemodel.RuntimeEvent{
-		Kind:  runtimemodel.RuntimeEventReasoningDelta,
-		Delta: delta,
-	})
+	s.publisher.publishTranslated(s.translator.reasoningDelta(delta))
 }
 
 func (s runtimeEventStreamSink) OnTextDelta(delta string) {
-	if delta == "" {
-		return
-	}
-	s.publish(runtimemodel.RuntimeEvent{
-		Kind:  runtimemodel.RuntimeEventTextDelta,
-		Delta: delta,
-	})
+	s.publisher.publishTranslated(s.translator.textDelta(delta))
 }
 
 func (s runtimeEventStreamSink) OnToolStart(toolCallID, toolName string, args map[string]any, truncated bool) {
-	s.publish(runtimemodel.RuntimeEvent{
+	s.publisher.publish(s.translator.toolStart(toolCallID, toolName, args, truncated))
+}
+
+func (s runtimeEventStreamSink) OnToolResult(toolCallID, toolName string, result map[string]any, truncated bool, apiErr *model.ErrorBlock) {
+	s.publisher.publish(s.translator.toolResult(toolCallID, toolName, result, truncated, apiErr))
+}
+
+type streamEventTranslator struct{}
+
+func (streamEventTranslator) reasoningDelta(delta string) (runtimemodel.RuntimeEvent, bool) {
+	if delta == "" {
+		return runtimemodel.RuntimeEvent{}, false
+	}
+	return runtimemodel.RuntimeEvent{
+		Kind:  runtimemodel.RuntimeEventReasoningDelta,
+		Delta: delta,
+	}, true
+}
+
+func (streamEventTranslator) textDelta(delta string) (runtimemodel.RuntimeEvent, bool) {
+	if delta == "" {
+		return runtimemodel.RuntimeEvent{}, false
+	}
+	return runtimemodel.RuntimeEvent{
+		Kind:  runtimemodel.RuntimeEventTextDelta,
+		Delta: delta,
+	}, true
+}
+
+func (streamEventTranslator) toolStart(toolCallID, toolName string, args map[string]any, truncated bool) runtimemodel.RuntimeEvent {
+	return runtimemodel.RuntimeEvent{
 		Kind:       runtimemodel.RuntimeEventToolStarted,
 		ToolCallID: toolCallID,
 		ToolName:   toolName,
 		Args:       args,
 		Truncated:  truncated,
-	})
+	}
 }
 
-func (s runtimeEventStreamSink) OnToolResult(toolCallID, toolName string, result map[string]any, truncated bool, apiErr *model.ErrorBlock) {
-	s.publish(runtimemodel.RuntimeEvent{
+func (streamEventTranslator) toolResult(toolCallID, toolName string, result map[string]any, truncated bool, apiErr *model.ErrorBlock) runtimemodel.RuntimeEvent {
+	return runtimemodel.RuntimeEvent{
 		Kind:       runtimemodel.RuntimeEventToolFinished,
 		ToolCallID: toolCallID,
 		ToolName:   toolName,
 		Result:     result,
 		Truncated:  truncated,
 		Error:      apiErr,
-	})
+	}
 }
 
-func (s runtimeEventStreamSink) publish(event runtimemodel.RuntimeEvent) {
-	if s.sink == nil {
+type runtimeEventPublisher struct {
+	ctx   context.Context
+	claim runtimemodel.ClaimContext
+	sink  kernel.EventSink
+	now   func() time.Time
+}
+
+func newRuntimeEventPublisher(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) runtimeEventPublisher {
+	return runtimeEventPublisher{
+		ctx:   ctx,
+		claim: claim,
+		sink:  sink,
+		now: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+}
+
+func (p runtimeEventPublisher) publishTranslated(event runtimemodel.RuntimeEvent, ok bool) {
+	if !ok {
 		return
 	}
-	event.Work = s.claim.Work
-	event.EventID = s.claim.Event.EventID
-	event.RunID = s.claim.RunID
-	event.SessionKey = s.claim.SessionKey
-	event.SessionID = s.claim.SessionID
-	if event.OccurredAt.IsZero() {
-		event.OccurredAt = time.Now().UTC()
-	}
-	_ = s.sink.Publish(s.ctx, event)
+	p.publish(event)
 }
 
-func nonZeroTime(in time.Time) time.Time {
-	if in.IsZero() {
-		return time.Now().UTC()
+func (p runtimeEventPublisher) publish(event runtimemodel.RuntimeEvent) {
+	if p.sink == nil {
+		return
 	}
-	return in
+	_ = p.sink.Publish(p.ctx, p.populateMetadata(event))
+}
+
+func (p runtimeEventPublisher) populateMetadata(event runtimemodel.RuntimeEvent) runtimemodel.RuntimeEvent {
+	event.Work = p.claim.Work
+	event.EventID = p.claim.Event.EventID
+	event.RunID = p.claim.RunID
+	event.SessionKey = p.claim.SessionKey
+	event.SessionID = p.claim.SessionID
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = p.now()
+	}
+	return event
 }

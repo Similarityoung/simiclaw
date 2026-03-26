@@ -7,16 +7,16 @@ import (
 )
 
 func (s *Service) GetEvent(ctx context.Context, eventID string) (querymodel.EventRecord, bool, error) {
-	return s.repo.GetEventRecord(ctx, eventID)
+	return s.events.GetEventRecord(ctx, eventID)
 }
 
 func (s *Service) LookupEvent(ctx context.Context, idempotencyKey string) (querymodel.LookupEvent, bool, error) {
-	return s.repo.LookupEvent(ctx, idempotencyKey)
+	return s.events.LookupEvent(ctx, idempotencyKey)
 }
 
 func (s *Service) ListEvents(ctx context.Context, filter querymodel.EventFilter) (querymodel.EventPage, error) {
 	filter.Limit = pageFetchLimit(filter.Limit)
-	items, err := s.repo.ListEventRecords(ctx, filter)
+	items, err := s.events.ListEventRecords(ctx, filter)
 	if err != nil {
 		return querymodel.EventPage{}, err
 	}

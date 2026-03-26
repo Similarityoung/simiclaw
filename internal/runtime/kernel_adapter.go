@@ -7,35 +7,34 @@ import (
 	"github.com/similarityyoung/simiclaw/internal/runner"
 	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	runtimemodel "github.com/similarityyoung/simiclaw/internal/runtime/model"
-	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
 type runnerExecutor struct {
-	runner    runner.Runner
-	maxRounds int
+	runner     runner.Runner
+	maxRounds  int
+	translator runOutputTranslator
 }
 
 func NewRunnerExecutor(run runner.Runner, maxRounds int) kernel.Executor {
-	if maxRounds <= 0 {
-		maxRounds = 4
-	}
 	return runnerExecutor{
-		runner:    run,
-		maxRounds: maxRounds,
+		runner:     run,
+		maxRounds:  normalizeMaxToolRounds(maxRounds),
+		translator: runOutputTranslator{delivery: deliveryIntentResolver{}},
 	}
 }
 
 func (e runnerExecutor) Execute(ctx context.Context, claim runtimemodel.ClaimContext, sink kernel.EventSink) (runtimemodel.ExecutionResult, error) {
 	ctx = runner.WithRunID(ctx, claim.RunID)
 	output, err := e.runner.Run(ctx, claim.Event, e.maxRounds, newRuntimeEventStreamSink(ctx, claim, sink))
-	result, convErr := executionResultFromRunOutput(claim, output)
-	if err == nil && convErr != nil {
-		err = convErr
-	}
-	return result, err
+	result, convErr := e.translator.Translate(claim, output)
+	return result, firstExecutionError(err, convErr)
 }
 
-func executionResultFromRunOutput(claim runtimemodel.ClaimContext, output runner.RunOutput) (runtimemodel.ExecutionResult, error) {
+type runOutputTranslator struct {
+	delivery deliveryIntentResolver
+}
+
+func (t runOutputTranslator) Translate(claim runtimemodel.ClaimContext, output runner.RunOutput) (runtimemodel.ExecutionResult, error) {
 	result := runtimemodel.ExecutionResult{
 		RunMode:           output.RunMode,
 		AssistantReply:    output.AssistantReply,
@@ -72,7 +71,7 @@ func executionResultFromRunOutput(claim runtimemodel.ClaimContext, output runner
 	if result.SuppressOutput || strings.TrimSpace(output.AssistantReply) == "" {
 		return result, nil
 	}
-	intent, err := deliveryIntentForReply(claim.Event, output.AssistantReply)
+	intent, err := t.delivery.Resolve(claim.Event, output.AssistantReply)
 	if err != nil {
 		result.AssistantReply = ""
 		return result, err
@@ -81,19 +80,16 @@ func executionResultFromRunOutput(claim runtimemodel.ClaimContext, output runner
 	return result, nil
 }
 
-func deliveryIntentForReply(event model.InternalEvent, reply string) (*runtimemodel.DeliveryIntent, error) {
-	if strings.TrimSpace(reply) == "" {
-		return nil, nil
+func normalizeMaxToolRounds(maxRounds int) int {
+	if maxRounds <= 0 {
+		return 4
 	}
-	intent := &runtimemodel.DeliveryIntent{Body: reply}
-	if event.Source != "telegram" {
-		return intent, nil
+	return maxRounds
+}
+
+func firstExecutionError(runErr, translateErr error) error {
+	if runErr != nil {
+		return runErr
 	}
-	chatID, err := telegramTargetID(event)
-	if err != nil {
-		return nil, err
-	}
-	intent.Channel = "telegram"
-	intent.TargetID = chatID
-	return intent, nil
+	return translateErr
 }

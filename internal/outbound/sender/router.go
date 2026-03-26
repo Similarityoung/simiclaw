@@ -40,11 +40,19 @@ func NewRegistry(defaultSender Sender, senders map[string]Sender) Router {
 	return Router{senders: normalized}
 }
 
+func (r Router) Resolve(channel string) (Sender, error) {
+	sender, ok := r.senders[strings.TrimSpace(channel)]
+	if !ok {
+		return nil, fmt.Errorf("unsupported outbox channel %q", channel)
+	}
+	return sender, nil
+}
+
 func (r Router) Send(ctx context.Context, msg model.OutboxMessage) error {
 	channel := strings.TrimSpace(msg.Channel)
-	sender, ok := r.senders[channel]
-	if !ok {
-		return fmt.Errorf("unsupported outbox channel %q", msg.Channel)
+	sender, err := r.Resolve(channel)
+	if err != nil {
+		return err
 	}
 	return sender.Send(ctx, msg)
 }

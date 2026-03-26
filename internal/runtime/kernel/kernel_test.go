@@ -43,7 +43,7 @@ func TestServiceProcessPublishesLifecycleAndFinalizesSuccess(t *testing.T) {
 		},
 	}
 	sink := &captureEventSink{}
-	svc := NewService(facts, executor, sink)
+	svc := NewService(facts, nil, executor, sink)
 	svc.SetClock(func() time.Time { return now })
 	var nextID uint64
 	svc.SetIDGenerator(func() uint64 {
@@ -97,7 +97,7 @@ func TestServiceProcessStopsWhenClaimRejected(t *testing.T) {
 	facts := &stubFacts{claimOK: false}
 	executor := &stubExecutor{}
 	sink := &captureEventSink{}
-	svc := NewService(facts, executor, sink)
+	svc := NewService(facts, nil, executor, sink)
 
 	if err := svc.Process(context.Background(), runtimemodel.WorkItem{EventID: "evt_skip"}); err != nil {
 		t.Fatalf("Process: %v", err)
@@ -127,7 +127,7 @@ func TestServiceProcessRecoversExecutorPanicAsFailedFinalize(t *testing.T) {
 		},
 	}
 	sink := &captureEventSink{}
-	svc := NewService(facts, &stubExecutor{panicValue: "boom"}, sink)
+	svc := NewService(facts, nil, &stubExecutor{panicValue: "boom"}, sink)
 	svc.SetClock(func() time.Time { return now })
 
 	if err := svc.Process(context.Background(), work); err != nil {
@@ -166,7 +166,7 @@ func TestServiceProcessReturnsFinalizeError(t *testing.T) {
 		finalizeErr: errors.New("finalize write failed"),
 	}
 	sink := &captureEventSink{}
-	svc := NewService(facts, &stubExecutor{result: runtimemodel.ExecutionResult{RunMode: model.RunModeNormal}}, sink)
+	svc := NewService(facts, nil, &stubExecutor{result: runtimemodel.ExecutionResult{RunMode: model.RunModeNormal}}, sink)
 	svc.SetClock(func() time.Time { return now })
 
 	err := svc.Process(context.Background(), work)
@@ -201,7 +201,7 @@ func TestServiceProcessLogsLifecycleMilestones(t *testing.T) {
 			SessionID:  "ses_log",
 		},
 	}
-	svc := NewService(facts, &stubExecutor{result: runtimemodel.ExecutionResult{RunMode: model.RunModeNormal}}, NopEventSink{})
+	svc := NewService(facts, nil, &stubExecutor{result: runtimemodel.ExecutionResult{RunMode: model.RunModeNormal}}, NopEventSink{})
 	svc.SetClock(func() time.Time { return now })
 
 	out := logcapture.CaptureStdout(t, func() {
@@ -269,10 +269,6 @@ func (f *stubFacts) Finalize(_ context.Context, cmd runtimemodel.FinalizeCommand
 	defer f.mu.Unlock()
 	f.finalizeCmds = append(f.finalizeCmds, cmd)
 	return f.finalizeErr
-}
-
-func (f *stubFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{}, false, nil
 }
 
 type stubExecutor struct {

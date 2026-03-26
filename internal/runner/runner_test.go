@@ -178,7 +178,11 @@ func TestProviderRunnerPersistsAssistantToolCallsMessage(t *testing.T) {
 
 func TestProviderRunnerBuiltinsIncludeWorkspaceWriteTools(t *testing.T) {
 	r := newTestRunner(t, config.Default().LLM, nil)
-	defs := r.registry.Definitions()
+	registry, ok := r.tools.(*tools.Registry)
+	if !ok {
+		t.Fatalf("expected concrete tools registry, got %T", r.tools)
+	}
+	defs := registry.Definitions()
 	names := map[string]bool{}
 	for _, def := range defs {
 		names[def.Schema.Name] = true

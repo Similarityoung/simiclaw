@@ -68,8 +68,24 @@ func TestQueryProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/query")
 }
 
+func TestQueryProductionCodeDoesNotImportSurfaceAdapters(t *testing.T) {
+	assertNoPackageImportPrefix(t, "internal/query",
+		"github.com/similarityyoung/simiclaw/internal/http",
+		"github.com/similarityyoung/simiclaw/internal/channels",
+		"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+	)
+}
+
 func TestRunnerProductionCodeDoesNotImportStore(t *testing.T) {
 	assertNoPackageImport(t, storeImportPath, "internal/runner")
+}
+
+func TestRunnerProductionCodeDoesNotImportSurfaceAdapters(t *testing.T) {
+	assertNoPackageImportPrefix(t, "internal/runner",
+		"github.com/similarityyoung/simiclaw/internal/http",
+		"github.com/similarityyoung/simiclaw/internal/channels",
+		"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+	)
 }
 
 func TestRuntimeProductionCodeDoesNotImportStore(t *testing.T) {
@@ -86,6 +102,21 @@ func TestEventLoopProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 
 func TestRuntimeProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runtime")
+}
+
+func TestCapabilityPlaneProductionCodeDoesNotImportDurableStateOwners(t *testing.T) {
+	for _, dir := range []string{"internal/provider", "internal/tools"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/store",
+			"github.com/similarityyoung/simiclaw/internal/gateway",
+			"github.com/similarityyoung/simiclaw/internal/outbound",
+		)
+	}
+}
+
+func TestCapabilityPlaneProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
+	assertNoStoreDBReference(t, "internal/provider")
+	assertNoStoreDBReference(t, "internal/tools")
 }
 
 func TestQueryExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
@@ -122,6 +153,18 @@ func TestQueryModelProductionCodeDoesNotImportAPI(t *testing.T) {
 
 func TestChannelsProductionCodeDoesNotImportAPI(t *testing.T) {
 	assertNoPackageImport(t, apiImportPath, "internal/channels")
+}
+
+func TestGatewayExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/gateway")
+}
+
+func TestHTTPExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/http")
+}
+
+func TestChannelsExportedAPIDoesNotExposeStoreTypes(t *testing.T) {
+	assertNoExportedImportSelectors(t, storeImportPath, "internal/channels")
 }
 
 func TestChatProductionCodeDoesNotImportNetHTTP(t *testing.T) {

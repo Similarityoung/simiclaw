@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/similarityyoung/simiclaw/internal/provider"
+	"github.com/similarityyoung/simiclaw/internal/runtime/kernel"
 	"github.com/similarityyoung/simiclaw/pkg/model"
 )
 
@@ -28,7 +28,7 @@ var cronFireInjectedRootFiles = map[string]struct{}{
 	"HEARTBEAT.md": {},
 }
 
-func maxToolRoundsReply(last provider.ChatResult) string {
+func maxToolRoundsReply(last kernel.ModelResult) string {
 	if len(last.ToolCalls) > 0 {
 		return "工具调用轮次已达上限。"
 	}

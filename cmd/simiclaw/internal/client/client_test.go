@@ -74,6 +74,64 @@ func TestRawStreamChatReportsUnsupportedWhenNotSSE(t *testing.T) {
 	}
 }
 
+func TestStreamChatFallsBackToIngestWhenStreamEndpointUnsupported(t *testing.T) {
+	var (
+		ingestCount int
+		pollCount   atomic.Int32
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat:stream":
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/events:ingest":
+			ingestCount++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(api.IngestResponse{
+				EventID:         "evt_fallback",
+				SessionKey:      "local:dm:u1",
+				ActiveSessionID: "ses_fallback",
+				ReceivedAt:      "2026-03-07T00:00:00Z",
+				PayloadHash:     "hash_fallback",
+				Status:          "accepted",
+				StatusURL:       "/v1/events/evt_fallback",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/events/evt_fallback":
+			pollCount.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(api.EventRecord{
+				EventID:        "evt_fallback",
+				Status:         model.EventStatusProcessed,
+				AssistantReply: "fallback response",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL, 100*time.Millisecond, 10*time.Millisecond, 200*time.Millisecond)
+	var events []api.ChatStreamEvent
+	rec, err := client.StreamChat(context.Background(), testIngestRequest("c-unsupported"), func(event api.ChatStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if ingestCount != 1 {
+		t.Fatalf("expected one ingest fallback call, got %d", ingestCount)
+	}
+	if pollCount.Load() == 0 {
+		t.Fatalf("expected polling after ingest fallback")
+	}
+	if rec.EventID != "evt_fallback" || rec.AssistantReply != "fallback response" {
+		t.Fatalf("unexpected fallback record: %+v", rec)
+	}
+	if len(events) < 2 || events[0].Type != api.ChatStreamEventAccepted || events[len(events)-1].Type != api.ChatStreamEventDone {
+		t.Fatalf("expected accepted+done fallback events, got %+v", events)
+	}
+}
+
 func TestRawStreamChatTimesOutWaitingForHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)

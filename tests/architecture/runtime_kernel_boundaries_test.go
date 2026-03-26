@@ -31,6 +31,37 @@ func TestRuntimeKernelProductionCodeDoesNotReferenceStoreDB(t *testing.T) {
 	assertNoStoreDBReference(t, "internal/runtime/kernel")
 }
 
+func TestRuntimePlaneProductionCodeDoesNotImportSurfaceAdapters(t *testing.T) {
+	for _, dir := range []string{"internal/gateway", "internal/runtime", "internal/outbound"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/http",
+			"github.com/similarityyoung/simiclaw/internal/channels",
+			"github.com/similarityyoung/simiclaw/cmd/simiclaw/internal",
+		)
+	}
+}
+
+func TestRuntimeCoreProductionCodeDoesNotImportContextStatePlane(t *testing.T) {
+	for _, dir := range []string{"internal/gateway", "internal/runtime", "internal/outbound"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/query",
+			"github.com/similarityyoung/simiclaw/internal/prompt",
+			"github.com/similarityyoung/simiclaw/internal/memory",
+			"github.com/similarityyoung/simiclaw/internal/workspace",
+			"github.com/similarityyoung/simiclaw/internal/workspacefile",
+		)
+	}
+}
+
+func TestRuntimeCoreProductionCodeDoesNotImportCapabilityPlane(t *testing.T) {
+	for _, dir := range []string{"internal/gateway", "internal/runtime", "internal/outbound"} {
+		assertNoPackageImportPrefix(t, dir,
+			"github.com/similarityyoung/simiclaw/internal/provider",
+			"github.com/similarityyoung/simiclaw/internal/tools",
+		)
+	}
+}
+
 func TestStoreRootProductionCodeDoesNotImportRuntimeModel(t *testing.T) {
 	root := repoRoot(t)
 	files := goFilesUnder(t, root, "internal/store")
@@ -52,4 +83,8 @@ func TestStoreRootProductionCodeDoesNotImportRuntimeModel(t *testing.T) {
 
 func TestStoreTxProductionCodeDoesNotImportRuntimeRoot(t *testing.T) {
 	assertNoPackageImport(t, runtimeImportPath, "internal/store/tx")
+}
+
+func TestStoreTxProductionCodeDoesNotImportStoreQueries(t *testing.T) {
+	assertNoPackageImport(t, storeQueriesImportPath, "internal/store/tx")
 }

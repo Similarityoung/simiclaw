@@ -64,13 +64,13 @@ func TestEventLoopRecoversRunnerPanicAndPublishesTerminalError(t *testing.T) {
 	}
 
 	hub := runtimeevents.NewHub()
-	sub := hub.Reserve(req.IdempotencyKey)
+	sub := hub.Reserve()
 	defer hub.Release(sub)
 	if replay := hub.Attach(sub, result.EventID); len(replay) > 0 {
 		t.Fatalf("unexpected replay before processing: %+v", replay)
 	}
 
-	loop := NewEventLoop(repo, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(panicRunner{}, 1), hub, 8)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestEventLoopFailsTelegramReplyWithoutChatID(t *testing.T) {
 	}
 
 	hub := runtimeevents.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
+	loop := NewEventLoop(repo, testQueryEventView{query: queryRepo}, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{AssistantReply: "reply", RunMode: model.RunModeNormal}}, 1), hub, 8)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 		finished: make(chan struct{}),
 	}
 	hub := runtimeevents.NewHub()
-	loop := NewEventLoop(repo, NewRunnerExecutor(run, 1), hub, 1)
+	loop := NewEventLoop(repo, nil, NewRunnerExecutor(run, 1), hub, 1)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestEventLoopStopCancelsInFlightRun(t *testing.T) {
 
 func TestEventLoopHydratesSessionLaneBeforeClaim(t *testing.T) {
 	repo := &laneHydrationFacts{}
-	loop := NewEventLoop(repo, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
+	loop := NewEventLoop(repo, stubEventView{record: runtimemodel.EventRecord{EventID: "evt_lane", SessionKey: "local:dm:u1"}, ok: true}, NewRunnerExecutor(fixedOutputRunner{output: runner.RunOutput{RunMode: model.RunModeNormal}}, 1), nil, 1)
 	if err := loop.Start(context.Background()); err != nil {
 		t.Fatalf("Start loop: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
 		if err := logging.Init("info"); err != nil {
 			t.Fatalf("Init error: %v", err)
 		}
-		loop := NewEventLoop(nil, nil, nil, 1)
+		loop := NewEventLoop(nil, nil, nil, nil, 1)
 		if ok := loop.tryEnqueueWork(runtimemodel.WorkItem{EventID: "evt_1"}); !ok {
 			t.Fatal("expected first enqueue to succeed")
 		}
@@ -292,6 +292,41 @@ func TestTryEnqueueLogsDeferredWhenQueueIsFull(t *testing.T) {
 	}
 	if strings.Contains(out, "work dropped") {
 		t.Fatalf("unexpected dropped wording in %q", out)
+	}
+}
+
+func TestHostControlDelegatesLoopBoundary(t *testing.T) {
+	loop := &stubRuntimeHost{depth: 3}
+	host := newWorkerHost(loop, nil, logging.L("runtime.host"))
+	control := &HostControl{
+		host:   host,
+		logger: logging.L("runtime.host"),
+	}
+	readiness := NewReadinessProbe(readyStateRepoStub{}, host)
+
+	if err := control.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if loop.started != 1 || !control.Alive() {
+		t.Fatalf("expected host control to start loop host, host=%+v", loop)
+	}
+
+	state, err := readiness.ReadyState(context.Background())
+	if err != nil {
+		t.Fatalf("ReadyState: %v state=%+v", err, state)
+	}
+	if state["status"] != "ready" || state["queue_depth"] != 3 {
+		t.Fatalf("expected ready state from host boundary, got %+v", state)
+	}
+
+	control.Stop()
+	if loop.stopped != 1 || control.Alive() {
+		t.Fatalf("expected host control to stop loop host, host=%+v", loop)
+	}
+
+	state, err = readiness.ReadyState(context.Background())
+	if err == nil || state["event_loop"] != "down" {
+		t.Fatalf("expected loop-down readiness after stop, err=%v state=%+v", err, state)
 	}
 }
 
@@ -345,10 +380,6 @@ func (r *stopPathFacts) Finalize(_ context.Context, finalize runtimemodel.Finali
 	return nil
 }
 
-func (r *stopPathFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{}, false, nil
-}
-
 type laneHydrationFacts struct {
 	claimedWork runtimemodel.WorkItem
 }
@@ -381,9 +412,52 @@ func (r *laneHydrationFacts) Finalize(context.Context, runtimemodel.FinalizeComm
 	return nil
 }
 
-func (r *laneHydrationFacts) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
-	return runtimemodel.EventRecord{
-		EventID:    "evt_lane",
-		SessionKey: "local:dm:u1",
-	}, true, nil
+type stubEventView struct {
+	record runtimemodel.EventRecord
+	ok     bool
+	err    error
+}
+
+func (v stubEventView) GetEventRecord(context.Context, string) (runtimemodel.EventRecord, bool, error) {
+	return v.record, v.ok, v.err
+}
+
+type stubRuntimeHost struct {
+	started int
+	stopped int
+	alive   bool
+	depth   int
+}
+
+func (h *stubRuntimeHost) Start(context.Context) error {
+	h.started++
+	h.alive = true
+	return nil
+}
+
+func (h *stubRuntimeHost) Stop() {
+	h.stopped++
+	h.alive = false
+}
+
+func (h *stubRuntimeHost) IsAlive() bool {
+	return h.alive
+}
+
+func (h *stubRuntimeHost) InboundDepth() int {
+	return h.depth
+}
+
+func (h *stubRuntimeHost) TryEnqueue(string) bool {
+	return true
+}
+
+type readyStateRepoStub struct{}
+
+func (readyStateRepoStub) CheckReadWrite(context.Context) error {
+	return nil
+}
+
+func (readyStateRepoStub) HeartbeatAt(context.Context, string) (time.Time, bool, error) {
+	return time.Now().UTC(), true, nil
 }
