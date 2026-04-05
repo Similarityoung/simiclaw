@@ -21,36 +21,52 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 
 | Rule | New | Existing | Shrink Candidates |
 | --- | --- | --- | --- |
-| context-background | 0 | 2 | 0 |
-| file-lines | 0 | 7 | 0 |
-| go-statement | 0 | 12 | 0 |
+| context-background | 1 | 1 | 1 |
+| file-lines | 2 | 4 | 3 |
+| go-statement | 3 | 6 | 6 |
 | name-token | 0 | 2 | 0 |
-| panic-call | 0 | 3 | 0 |
+| panic-call | 1 | 2 | 1 |
 | print-logging | 0 | 1 | 0 |
 
 ### Shrink Candidates
 
-- No shrink candidates in this run.
+- cmd/simiclaw/internal/chat/tui.go:1 — production Go file is 801 lines (> 600)
+- cmd/simiclaw/internal/chat/tui.go:713 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:82 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:83 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:84 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:85 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:86 — review go statement ownership and shutdown behavior
+- internal/runtime/workers.go:87 — avoid new Background() in production code
+- internal/store/events.go:1 — production Go file is 413 lines (warning range 401-600)
+- internal/systemprompt/system.go:40 — review panic usage in production code
+- internal/workspacefile/workspacefile.go:1 — production Go file is 417 lines (warning range 401-600)
 
 ### Docs Links
 
-- Status: success
+- Status: failure
 
 ~~~text
 # Summary
 
 | Status         | Count |
 |----------------|-------|
-| 🔍 Total       | 67    |
+| 🔍 Total       | 77    |
 | ✅ Successful  | 0     |
 | ⏳ Timeouts    | 0     |
 | 🔀 Redirected  | 0     |
-| 👻 Excluded    | 67    |
+| 👻 Excluded    | 74    |
 | ❓ Unknown     | 0     |
-| 🚫 Errors      | 0     |
+| 🚫 Errors      | 3     |
 | ⛔ Unsupported | 0     |
 
-[Full Github Actions output](https://github.com/Similarityoung/simiclaw/actions/runs/23128388661?check_suite_focus=true)
+## Errors per input
+
+### Errors in docs/design-docs/runtime-kernel-refactor.md
+
+* [ERROR] <error:> | Error building URL for "/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/plan.md" (Attribute: Some("href")): Cannot convert path '/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/plan.md' to a URI: To resolve root-relative links in local files, provide a root dir
+* [ERROR] <error:> | Error building URL for "/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/spec.md" (Attribute: Some("href")): Cannot convert path '/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/spec.md' to a URI: To resolve root-relative links in local files, provide a root dir
+* [ERROR] <error:> | Error building URL for "/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/tasks.md" (Attribute: Some("href")): Cannot convert path '/Users/similarityyoung/Documents/SimiClaw/specs/001-runtime-kernel-refactor/tasks.md' to a URI: To resolve root-relative links in local files, provide a root dir
 ~~~
 <!-- END:CI_TECH_DEBT -->
 
