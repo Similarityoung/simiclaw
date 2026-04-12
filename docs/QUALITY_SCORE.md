@@ -26,17 +26,17 @@ _This block is maintained by repo hygiene. Do not edit it by hand._
 
 | Metric | Value |
 | --- | --- |
-| Last Run (UTC) | 2026-03-16T04:54:25Z |
-| Guardrails New | 0 |
-| Guardrails Existing | 27 |
-| Shrink Candidates | 0 |
-| Warning Hotspots | 19 |
-| Docs Links | success |
+| Last Run (UTC) | 2026-04-12T05:07:02Z |
+| Guardrails New | 7 |
+| Guardrails Existing | 16 |
+| Shrink Candidates | 11 |
+| Warning Hotspots | 16 |
+| Docs Links | failure |
 
 ### Top Rules
 
-- go-statement: 12
-- file-lines: 7
+- go-statement: 9
+- file-lines: 6
 - panic-call: 3
 - context-background: 2
 - name-token: 2
